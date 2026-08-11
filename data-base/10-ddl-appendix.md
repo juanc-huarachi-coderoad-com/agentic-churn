@@ -409,10 +409,11 @@ CREATE TABLE draft_messages (
     tone_variant         tone_variant NOT NULL,
     evidence_event_ids   UUID[] NOT NULL,
     checks_passed        BOOLEAN NOT NULL,
-    logged_to_crm_at     TIMESTAMPTZ,
+    logged_manually_at   TIMESTAMPTZ,
     copied_at            TIMESTAMPTZ,
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
-    -- NOTE: no sent_at / sent_by column exists — architectural enforcement of REQ-M10-P1
+    -- NOTE: no sent_at / sent_by column exists, and no column here writes to any
+    -- external system (including the CRM) — architectural enforcement of REQ-M10-P1 / REQ-NFR-18
 );
 
 CREATE TYPE notification_type AS ENUM ('band_change','daily_digest');

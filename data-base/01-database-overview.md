@@ -6,6 +6,10 @@
 | **Tenancy** | One schema (or database) per client deployment — no cross-tenant tables, ever |
 | **Scale target** | 50k–200k events/year per deployment |
 
+**New to this schema? Read `examples/01-end-to-end-walkthrough.md` first.** It walks five real signals through every table listed below, in order, with actual example rows and plain-English explanations of what each one is for. This document (`01`–`10`) is the reference; that one is the story.
+
+**In one sentence:** the whole database is built around one rule — *facts are permanent, opinions are derived, and every opinion has to point back at the facts that produced it.* Everything else below is that rule worked out table by table.
+
 ## Design principles
 
 1. **Append-only where it matters.** The `events` table (and `findings`, `score_runs`, `feedback_verdicts`) are insert-only. No application code path issues `UPDATE`/`DELETE` against them; this is enforced by revoking those grants from the application's database role.
@@ -14,7 +18,7 @@
 4. **Versioned context.** `client_profile_versions` is append-only; a scoring run always records the exact version it used, never "the current profile."
 5. **Decimal-exact reconciliation.** `score_contributions` stores the literal arithmetic terms (base, influence, criticality, confidence, magnitude, recency, damping) per finding so the total can be reconciled to the decimal (spec §14.3).
 6. **No opinions in the ledger.** `events` stores only observed facts. Judgments live exclusively in `findings` (Tier 3), never in Tier 1 tables.
-7. **Crypto-shreddable.** Message bodies are stored encrypted (`bytea` + per-deployment KMS-wrapped data key reference); deleting the key renders the body permanently unrecoverable while the row (and therefore score history) survives.
+7. **Crypto-shreddable.** Message bodies are stored encrypted (`bytea` + a per-deployment data key reference — a `.env`-scoped key file in Phase 1, a cloud KMS-wrapped key in Phase 2, see `architecture/03-technology-stack.md` and `decisions/00-open-questions-resolved.md` Q5); deleting the key renders the body permanently unrecoverable while the row (and therefore score history) survives.
 
 ## Schema groups
 

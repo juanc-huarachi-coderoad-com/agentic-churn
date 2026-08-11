@@ -29,7 +29,7 @@ sequenceDiagram
 
     alt All checks pass
         Checks->>UI: Render draft beside its evidence
-        UI-->>User: "Copy draft" / "Log to CRM" only — no send action exists (REQ-M10-08, REQ-M10-P1)
+        UI-->>User: "Copy draft" / "Log as sent (manual)" only — no send action, no CRM write (REQ-M10-08, REQ-M10-P1)
         User->>User: Pastes draft into own email client and sends (outside this system)
         User->>Collector: (external) Sent email lands back as a normal outbound event
         Collector->>Collector: Ledger append closes the response clock (REQ-M10-09)

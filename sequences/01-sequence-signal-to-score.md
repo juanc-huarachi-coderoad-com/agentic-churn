@@ -57,3 +57,7 @@ sequenceDiagram
 | Scoring engine | < 1s | Deterministic arithmetic |
 | Narrator | ~1s | Structured generation + fact-check |
 | **Total** | **~38s** | Within REQ-NFR-02 (< 60s target ~40s) |
+
+## Note — this is a single-source slice, not the full picture
+
+This diagram reproduces the product spec's own §10 walkthrough exactly — same finding, same arithmetic (Issue A = 39.0 points), same final score of 78 — as a check that this documentation set's version of the pipeline matches the source spec. For a larger worked example that runs five different sources through the same pipeline in one pass, with every database table populated step by step, see `examples/01-end-to-end-walkthrough.md`. That document reuses this exact ticket-#456 finding (still 39.0 points, by design) inside a bigger scenario with more issues and a different final score (85.3) — the two are deliberately consistent on the shared finding, not contradictory on the total.

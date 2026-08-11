@@ -6,6 +6,8 @@ Tier 3 · Reasoning — spec §7 (M5, M5a), §12.4, §12.5
 
 M5 turns raw ledger material into structured **findings**. Each reader answers exactly one question and cites the events it used. M5a rejects anything unproven before it can reach the score — the mechanical enforcement of product principle P1.
 
+> **Phasing note:** all eight readers are built in Phase 1 — no reader's *code* is deferred. What's phased is the material each one has to work with: **Commitment, Usage, Recurrence, Tone, and Intent** run at full strength from day one (Gmail + Zendesk + warehouse cover them completely). **Absence and Relationship** run at reduced strength in Phase 1 — they can see missed email/ticket responses but not chat silence or Slack participant changes. **Meeting** is built but stays idle in Phase 1 — there's no transcript source connected yet, so it correctly abstains on every run (REQ-M5-04) until Phase 2 adds Calendar/transcripts with documented consent. Full detail: `decisions/01-mvp-scope-and-phasing.md`.
+
 ## User stories
 
 - As a **CS lead**, I want to know that Ana's tone changed *relative to how Ana normally writes*, not against some generic sentiment scale, so that the signal reflects this specific relationship (P7).

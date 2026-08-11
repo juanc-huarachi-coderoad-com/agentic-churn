@@ -33,6 +33,8 @@ flowchart LR
 
 This document walks one real pass through all four tiers.
 
+> **Which phase is this?** This walkthrough deliberately shows the system at **full strength** — all five source types connected — so every reader and every table in this database gets exercised at least once. Per `decisions/01-mvp-scope-and-phasing.md`, the actual **Phase 1** ("first solution") build ships with only 3 of these 5 sources (Email, Tickets, Product usage); Chat and Survey are **Phase 2** additions. The source table in §1 below tags each row with its phase. If you want to see what a *Phase 1* run looks like, mentally remove sources 4 and 5 — Issue B would then rest on Ana's tone, intent, and CSAT-free evidence alone, and Diego's absence/relationship findings wouldn't exist yet (no chat to observe them in).
+
 ---
 
 ## 1. The scenario
@@ -55,13 +57,15 @@ This document walks one real pass through all four tiers.
 
 **The week we're examining:** five different systems each report something, on their own schedule, with no coordination between them — exactly as it would happen in real life. This is the whole point of the product: nobody at Meridian or at the vendor sees all five things at once. The system does.
 
-| # | Source | What happened | Who/what it's about |
-|---|---|---|---|
-| 1 | **Email** (Gmail) | Ana writes: *"Please advise on the timeline. I need to brief the board on Thursday."* — short, no greeting, mentions the board. | Ana · relationship tone |
-| 2 | **Tickets** (Zendesk) | Ticket #456 "Slow API response" is reopened for the **second time**; first response took **19 business hours** against a **4-hour** promise. Separately, ticket #398 (a minor CSV-export request) is resolved in 2 hours — well inside SLA. | `tracking_api` · a broken promise, and a kept one |
-| 3 | **Product usage** (warehouse telemetry) | Daily active usage of `tracking_api` is down **22%** over the last 3 weeks compared to the prior 8-week average. | `tracking_api` · behavior, not words |
-| 4 | **Chat** (Slack Connect) | Diego, who normally posts ~5×/week in the shared channel, has posted **zero** times in 12 days, and skipped the weekly sync twice. | Diego · going quiet |
-| 5 | **Survey** (CSAT) | Ana's CSAT response drops from **9** (three months ago) to **6** (this week), with the comment *"Support has been slower than we'd like lately."* | Ana · a number this time, not just words |
+| # | Source | Phase | What happened | Who/what it's about |
+|---|---|---|---|---|
+| 1 | **Email** (Gmail) | **1** | Ana writes: *"Please advise on the timeline. I need to brief the board on Thursday."* — short, no greeting, mentions the board. | Ana · relationship tone |
+| 2 | **Tickets** (Zendesk) | **1** | Ticket #456 "Slow API response" is reopened for the **second time**; first response took **19 business hours** against a **4-hour** promise. Separately, ticket #398 (a minor CSV-export request) is resolved in 2 hours — well inside SLA. | `tracking_api` · a broken promise, and a kept one |
+| 3 | **Product usage** (warehouse telemetry) | **1** | Daily active usage of `tracking_api` is down **22%** over the last 3 weeks compared to the prior 8-week average. | `tracking_api` · behavior, not words |
+| 4 | **Chat** (Slack Connect) | **2** | Diego, who normally posts ~5×/week in the shared channel, has posted **zero** times in 12 days, and skipped the weekly sync twice. | Diego · going quiet |
+| 5 | **Survey** (CSAT) | **2** | Ana's CSAT response drops from **9** (three months ago) to **6** (this week), with the comment *"Support has been slower than we'd like lately."* | Ana · a number this time, not just words |
+
+Sources 1–3 are what a real Phase 1 deployment sees today. Sources 4–5 (and the fuller-strength Absence/Relationship readings they enable) are Phase 2 — included here so this document can double as the complete architectural reference, not just the Phase 1 demo script.
 
 None of these five facts, alone, would trigger an escalation. Together, they will.
 
@@ -221,16 +225,16 @@ All five sources reported in. If one had failed (say, Slack), this table would s
 
 Here is what fires this week:
 
-| Reader | Type | Question it asks | Fires this week? |
-|---|---|---|---|
-| **Commitment** | code | Did a reply exceed the promised response time? | ✅ ticket #456 |
-| **Recurrence** | embeddings + clustering | Is this the same problem coming back? | ✅ ticket #456 (2nd reopen) |
-| **Usage** | statistics | Has activity deviated from normal? | ✅ `tracking_api` usage, ✅ CSAT score |
-| **Absence** | statistics | Is expected contact missing? | ✅ Diego |
-| **Relationship** | graph diff | Has the cast of people changed? | ✅ Diego stepping back |
-| **Tone** | LLM | Is this person writing differently than *they* normally do? | ✅ Ana's email |
-| **Intent** | LLM | Escalation / competitive / contractual language? | ✅ Ana's "board" mention |
-| **Meeting** | LLM | What was verbally promised, by when? | ⚪ *abstains — no transcript this week* |
+| Reader | Type | Question it asks | Fires this week? | Needs a Phase 2 source? |
+|---|---|---|---|---|
+| **Commitment** | code | Did a reply exceed the promised response time? | ✅ ticket #456 | No — Phase 1 |
+| **Recurrence** | embeddings + clustering | Is this the same problem coming back? | ✅ ticket #456 (2nd reopen) | No — Phase 1 |
+| **Usage** | statistics | Has activity deviated from normal? | ✅ `tracking_api` usage, ✅ CSAT score | Usage-on-warehouse: no. Usage-on-CSAT: **yes, Phase 2** |
+| **Absence** | statistics | Is expected contact missing? | ✅ Diego | **Yes, Phase 2** (chat-based silence — Phase 1's version only sees missed email/ticket replies) |
+| **Relationship** | graph diff | Has the cast of people changed? | ✅ Diego stepping back | **Yes, Phase 2** (needs the Slack participant graph) |
+| **Tone** | LLM | Is this person writing differently than *they* normally do? | ✅ Ana's email | No — Phase 1 (email) |
+| **Intent** | LLM | Escalation / competitive / contractual language? | ✅ Ana's "board" mention | No — Phase 1 (email) |
+| **Meeting** | LLM | What was verbally promised, by when? | ⚪ *abstains — no transcript this week* | N/A — idle until Phase 2 connects a transcript source |
 
 The Meeting reader producing **nothing** is not a bug — it is the correct behavior when there's no material to work from (REQ-M5-04). A system that invents a finding just to have something to say would be actively dangerous here; "no history, no opinion" is a design principle, not a gap.
 
@@ -497,13 +501,13 @@ The answer shown is literally Step 9.5's arithmetic, re-rendered as a component 
 
 ### `draft_messages`
 
-| id | issue_id | stakeholder_id | draft_text (excerpt) | tone_variant | checks_passed | logged_to_crm_at | copied_at |
+| id | issue_id | stakeholder_id | draft_text (excerpt) | tone_variant | checks_passed | logged_manually_at | copied_at |
 |---|---|---|---|---|---|---|---|
 | draft-1 | iss-A | stk-ana | *"Ana — we took 19 hours to respond to ticket #456; we promised 4. Engineering is on it today, and I'll call you before Thursday."* | direct | true | *(null)* | *(null)* |
 
 The CS lead reads it, likes it, and clicks **"Copy draft"** — `copied_at` gets a timestamp. That is the *only* thing that happens inside this system. **There is no send button** — not hidden, not disabled, structurally absent (`requirements/10-draft-composer.md` REQ-M10-P1). Look again at the table above: there is no `sent_at` column to fill in, even if someone wanted to. The CS lead pastes the text into their own email client and sends it themselves — a human, always, per product principle P4.
 
-If they'd instead clicked "Log to CRM," `logged_to_crm_at` would be stamped — that writes an activity record to Salesforce; it still never contacts Ana.
+If they'd instead clicked **"Log as sent (manual),"** `logged_manually_at` would be stamped — that's a flag in this table only, so the dashboard knows the draft was acted on. It writes nothing to the CRM or anywhere else outside this system; that boundary is what keeps `requirements/11-non-functional-requirements.md` REQ-NFR-18 ("never request write access to a source system") true without exception.
 
 ---
 

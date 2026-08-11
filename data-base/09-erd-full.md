@@ -113,7 +113,7 @@ erDiagram
         uuid id PK
         uuid issue_id FK
         text draft_text
-        timestamptz logged_to_crm_at
+        timestamptz logged_manually_at
     }
 ```
 

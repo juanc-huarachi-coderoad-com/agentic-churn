@@ -77,7 +77,7 @@ Detailed responsibility, interface, and technology mapping for every component i
 |---|---|---|
 | Commitment | Deterministic code | Business-hours arithmetic against M2 response pairs and M3 commitments |
 | Usage | Statistics | Time-series anomaly detection (e.g. rolling z-score / STL decomposition via `statsmodels`) against each metric's own historical distribution |
-| Recurrence | Embeddings + clustering | Text embeddings (e.g. Voyage AI `voyage-3` or open-source `sentence-transformers`) + density clustering (HDBSCAN) to group same-issue tickets/messages — **not** a generative LLM decision |
+| Recurrence | Embeddings + clustering | Text embeddings (OpenAI `text-embedding-3-small`, see `architecture/03-technology-stack.md`) + density clustering (HDBSCAN) to group same-issue tickets/messages — **not** a generative LLM decision |
 | Absence | Statistics | Expectation-window comparison (cadence/commitment vs. latest observed contact) |
 | Relationship | Graph diff | Set-diff of active participants over a rolling window vs. profile stakeholder roster |
 | **Tone** | **LLM** | Structured-output classification (deviation from a frozen per-stakeholder baseline), Anthropic Claude with a closed JSON schema |

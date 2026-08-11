@@ -1,14 +1,17 @@
 # Churn Prediction & Sentiment Agent
-## Product Specification — v1.0
+## Product Specification — v1.1
 
 | | |
 |---|---|
 | **Document** | Product Specification (pre-build) |
-| **Version** | 1.0 — Draft for review |
-| **Date** | 7 August 2026 |
+| **Version** | 1.1 — MVP scope amendment |
+| **Date** | 10 August 2026 (v1.0 was 7 August 2026) |
 | **Original brief** | CS Studio — Churn Prediction & Sentiment Agent |
-| **Status** | Ready for technical review |
+| **Status** | Approved — MVP scope locked, ready for build |
 | **Purpose** | Define what we are building and why, before any code is written |
+| **Companion documents** | `decisions/00-open-questions-resolved.md` (§17 resolutions), `decisions/01-mvp-scope-and-phasing.md` (full MVP rationale), `requirements/`, `architecture/`, `sequences/`, `data-base/`, `examples/` |
+
+> **v1.1 amendment note.** Everything in v1.0 is still the product — nothing described below has been cut. What's new in v1.1 is an explicit **MVP boundary**: which of these sources, readers, and conveniences ship in the first buildable release versus a fast-following second one. MVP items are marked inline; unmarked items are MVP by default (most of the product is). See the new §3.4 for the full picture, and don't confuse this with the **build order** in §16, which is a different axis — the sequence in which modules get *built*, not which data sources feed them once built.
 
 ---
 
@@ -102,7 +105,7 @@ The team learns about the problem **three weeks earlier**, which is the differen
 |---|---|
 | **Customer Success lead** *(primary)* | Is this account safe? What needs me today? |
 | **Support lead** | Which of my forty tickets actually matters? |
-| **Account executive** | What do I need to know before the renewal call? |
+| **Account executive** *(Post-MVP — read-only, see §3.4)* | What do I need to know before the renewal call? |
 | **Engineering manager** *(occasional)* | Is a technical issue damaging a commercial relationship? |
 
 ## 3.2 Scope
@@ -124,6 +127,37 @@ The team learns about the problem **three weeks earlier**, which is the differen
 - We are not predicting cancellation probability
 - We are not measuring the performance of individual employees
 - We are not surfacing this tool or its scores to the client
+
+## 3.4 MVP scope — what ships first, and why
+
+The architecture described in this document (all ten modules, all eight readers) is **not phased — it is built complete.** What's phased is *how much of the world it can see* and a handful of process conveniences. This is a deliberate choice, not a shortcut: it proves the hardest, most load-bearing part of the product — a defensible, evidence-backed number — end to end, on the smallest set of inputs that can produce a genuinely interesting result, before spending effort on breadth.
+
+**Sources:**
+
+| Source | MVP | Why |
+|---|---|---|
+| Email (Gmail) | ✅ | Primary input to Tone and Intent readers |
+| Tickets (Zendesk) | ✅ | Primary input to Commitment and Recurrence readers |
+| Product usage (warehouse) | ✅ | Primary input to the Usage reader |
+| Chat (Slack Connect) | Post-MVP | Sharpens Absence/Relationship readers; doesn't unlock a capability nothing else offers |
+| Surveys (CSAT/NPS) | Post-MVP | Adds a second tracked metric to the Usage reader |
+| Meetings (Calendar/transcripts) | Post-MVP | Legally consent-gated (§6.3) — the review can run in parallel with MVP build |
+| CRM/contracts (Salesforce) | Post-MVP | `renewal_date` and `contract_value_band` come from the client profile in the MVP instead |
+
+**Readers:** all eight are *built* in the MVP. Commitment, Usage, Recurrence, Tone, and Intent run at full strength (their sources are all MVP sources). Absence and Relationship run at **reduced strength** — they see missed email/ticket responses but not chat silence or Slack participant changes, and the dashboard's coverage/learning states say so honestly rather than hiding it. Meeting is built but correctly produces nothing (§7 M5: "abstention is a first-class output") until a transcript source exists.
+
+**Process/UI conveniences deferred to Post-MVP:**
+
+| Area | MVP | Post-MVP |
+|---|---|---|
+| Client profile authoring | CS lead edits the YAML file directly | Profile editor screen (§11.2) |
+| Base scoring weights | Seed defaults, product-authored | Elicitation workshop with real CS leads (§17 Q4) |
+| Message-body retention | 90-day policy, manually enforced | Automated crypto-shredding job (§17 Q5) |
+| Notifications | In-app only | Email / Slack (§17 Q6) |
+| Playbook | 3–5 standard actions | Expanded library as real cases surface gaps (§17 Q7) |
+| Score visibility | CS lead only | + Account executive, read-only (§17 Q8) |
+
+None of the hard product boundaries in §13.1 are phased — they are true from the first line of code, in the MVP and every release after it. Full rationale for every line above: `decisions/01-mvp-scope-and-phasing.md`. The eight build-start decisions this implies: `decisions/00-open-questions-resolved.md`.
 
 ---
 
@@ -178,15 +212,17 @@ Shared vocabulary for the whole team. Use these words precisely.
 
 ## 6.1 Sources
 
-| Source | Examples | Signals extracted |
-|---|---|---|
-| **Tickets** | Zendesk, Jira, Intercom | Response times, reopens, priority, ageing, who filed |
-| **Email** | Gmail, Microsoft 365 | Message content, participants, threading, timing |
-| **Chat** | Slack Connect, Teams | Message rhythm, reactions, channel activity |
-| **Product usage** | Warehouse / telemetry | Feature activity vs normal |
-| **Surveys** | CSAT, NPS | Score plus written comment |
-| **Meetings** | Calendar, transcripts | Attendance, participation, verbal commitments |
-| **CRM / contracts** | Salesforce, contract store | Renewal date, contract value, agreed commitments |
+| Source | Examples | Signals extracted | MVP? |
+|---|---|---|---|
+| **Tickets** | Zendesk, Jira, Intercom | Response times, reopens, priority, ageing, who filed | ✅ MVP |
+| **Email** | Gmail, Microsoft 365 | Message content, participants, threading, timing | ✅ MVP |
+| **Chat** | Slack Connect, Teams | Message rhythm, reactions, channel activity | Post-MVP |
+| **Product usage** | Warehouse / telemetry | Feature activity vs normal | ✅ MVP |
+| **Surveys** | CSAT, NPS | Score plus written comment | Post-MVP |
+| **Meetings** | Calendar, transcripts | Attendance, participation, verbal commitments | Post-MVP, consent-gated |
+| **CRM / contracts** | Salesforce, contract store | Renewal date, contract value, agreed commitments | Post-MVP |
+
+See §3.4 for the reasoning behind this split.
 
 ## 6.2 The client profile
 
@@ -255,8 +291,8 @@ history:
 | **Sensitive data** | Redacted at the collector, before storage; redactions recorded |
 | **Encryption** | Message bodies encrypted at rest, keys scoped per deployment |
 | **Access** | Read-only, narrowest available scopes, documented per source |
-| **Deletion** | Crypto-shredding — destroy keys, keep the event skeleton so score history survives |
-| **Retention** | Message bodies expire on a schedule; findings and scores persist |
+| **Deletion** | Crypto-shredding — destroy keys, keep the event skeleton so score history survives. **MVP:** manual, policy-enforced at 90 days. **Post-MVP:** automated scheduled job |
+| **Retention** | Message bodies expire on a schedule; findings and scores persist. Same MVP (manual) / Post-MVP (automated) split as Deletion |
 | **Isolation** | One deployment, one client, one key set — no shared storage |
 | **Audit** | Append-only ledger with hash chaining for tamper evidence |
 
@@ -280,6 +316,8 @@ Ten modules, in four tiers. Each has one job and is forbidden from doing the nex
 
 **Forbidden:** assigning severity, filtering by importance, knowing what any product area means.
 
+**MVP sources:** Gmail, Zendesk, warehouse telemetry only — Slack, CSAT/NPS, and Calendar/transcripts connect Post-MVP (§3.4, §6.1). The collector interface itself is identical either way; only which adapters are wired up changes.
+
 ### M2 · Event ledger
 **Job:** one append-only timeline that is the single source of truth.
 
@@ -300,6 +338,7 @@ Ten modules, in four tiers. Each has one job and is forbidden from doing the nex
 - Supplies the `influence` and `criticality` multipliers used in scoring
 - Supplies communication norms and working calendar to the readers
 - Every scoring run records which profile version it used
+- **MVP:** the CS lead edits the YAML file directly. **Post-MVP:** a profile editor screen (§11.2) replaces direct file editing, same versioning underneath
 
 ### M4 · Feedback memory
 **Job:** remember what the team said we got wrong.
@@ -324,6 +363,8 @@ Ten modules, in four tiers. Each has one job and is forbidden from doing the nex
 | **Tone** | **LLM** | Is this person writing differently *than they normally do*? |
 | **Intent** | **LLM** | Are there escalation, competitive or contractual phrases? |
 | **Meeting** | **LLM** | What did we verbally promise, and by when? |
+
+All eight readers are built in the MVP — none of the *code* is deferred. **Absence** and **Relationship** run at reduced strength in the MVP (email/ticket cadence only, no chat) until Slack lands Post-MVP. **Meeting** is built but has nothing to read until Calendar/transcripts connect Post-MVP — see "abstention is a first-class output," below.
 
 Key rules:
 - Tone is **baseline-relative**, never absolute sentiment. The baseline is frozen at a human-confirmed healthy period
@@ -618,7 +659,7 @@ The quieter the interface, the more serious the number feels.
 | **Evidence trace panel** | Opens from any number. Shows the proof |
 | **Ask thread** | Question box and rendered answers |
 | **Draft composer** | Message editing beside its evidence |
-| **Profile editor** | Maintaining the client context card |
+| **Profile editor** *(Post-MVP — MVP edits the YAML file directly, §3.4)* | Maintaining the client context card |
 | **System health** | Sources, coverage, quarantine |
 
 ## 11.3 Dashboard components
@@ -836,6 +877,8 @@ A strong demo makes three things clear:
 
 Each phase leaves a working system. Nothing is ever half-wired.
 
+**This is a different axis from the MVP scope in §3.4.** The eight phases below are the *sequence in which modules get built* — all eight target the MVP's three sources (Gmail, Zendesk, warehouse) first. Once phase 8 is complete, the system is fully built and MVP-ready; connecting the Post-MVP sources (Slack, CSAT, Calendar) afterward is additive — it does not restart or reorder this build sequence.
+
 | Phase | Deliverable | Why this order |
 |---|---|---|
 | **1** | Event ledger + client profile | Unglamorous and foundational. Auditability cannot be added later |
@@ -866,6 +909,21 @@ Decisions needed before build starts.
 | 7 | Who signs off the playbook of standard actions? | CS lead | Phase 6 |
 | 8 | Do we display the score to the account executive, or only to CS? | Product | Phase 4 |
 
+## 17.1 Resolutions (v1.1)
+
+All eight are now resolved. Each decision names what happens in the **MVP** first, then what's added **Post-MVP**. Full rationale for each: `decisions/00-open-questions-resolved.md`.
+
+| # | MVP decision | Post-MVP |
+|---|---|---|
+| 1 | Gmail, Zendesk, warehouse telemetry | Slack, CSAT, Calendar |
+| 2 | CS lead edits the YAML profile directly | Profile editor UI |
+| 3 | Out of scope | In scope, gated on documented all-party consent |
+| 4 | Seed default weights, product-authored | Elicitation workshop with real CS leads |
+| 5 | 90 days, manually enforced | Automated crypto-shredding job |
+| 6 | In-app only | Email / Slack |
+| 7 | Marta (CS lead) signs off a 3–5 action playbook | Expanded library |
+| 8 | CS lead only | + Account executive, read-only |
+
 ---
 
 ## Appendix A — Design commitments, in one page
@@ -885,4 +943,4 @@ Pin this where the team can see it.
 
 ---
 
-*End of document — v1.0*
+*End of document — v1.1*

@@ -22,7 +22,7 @@ Writes the client-facing message. Opens beside the evidence. Offers tone variant
 | REQ-M10-05 | THE SYSTEM SHALL offer tone variants (e.g. more formal / more direct) for the same underlying content. |
 | REQ-M10-06 | WHEN the appropriate action is a call rather than a message, THE SYSTEM SHALL say so explicitly and provide talking points instead of message text. |
 | REQ-M10-07 | THE SYSTEM SHALL run automatic checks before displaying any draft: every fact stated exists in the evidence; no dated promise appears unless a human supplied that date; nothing internal (scores, internal notes, other clients) leaks into the text. |
-| REQ-M10-08 | **(Resolves the mockup's "Send & Log to CRM" affordance.)** THE SYSTEM SHALL provide only a **"Copy draft"** action and a **"Log to CRM"** action (writes an activity record to the CRM — subject, body, timestamp, logged-by-user — with no transmission to the client). THE SYSTEM SHALL NOT provide, render, or expose via API any action that transmits the drafted message to the client or any external recipient. |
+| REQ-M10-08 | **(Resolves the mockup's "Send & Log to CRM" affordance.)** THE SYSTEM SHALL provide only a **"Copy draft"** action and a **"Log as sent (manual)"** action (an internal-only flag recording that the CS lead copied and sent this draft themselves — it writes nothing to any external system, including the CRM). THE SYSTEM SHALL NOT provide, render, or expose via API any action that transmits the drafted message to the client or any external recipient, and SHALL NOT request write access to any external source system for this purpose. |
 | REQ-M10-09 | WHEN the human sends the message through their own email/chat client and it is picked up by a collector (M1) as a normal outbound event, THE SYSTEM SHALL close the response clock for the related commitment and let subsequent runs observe whether the suggestion worked. |
 
 ## Explicit prohibitions
@@ -39,7 +39,7 @@ Writes the client-facing message. Opens beside the evidence. Offers tone variant
 ## Inputs / Outputs
 
 - **Input:** top issue + evidence (M6/M7 output), client profile communication norms, thread history (M2), human-supplied dates/commitments.
-- **Output:** `draft_messages` (content, tone variant, evidence references, `logged_to_crm_at` nullable — **no `sent_at` column exists in the schema by design**).
+- **Output:** `draft_messages` (content, tone variant, evidence references, `logged_manually_at` nullable — an internal bookkeeping flag only — **no `sent_at` column, and no CRM or other external write, exists in the schema by design**).
 
 ## Non-functional constraints
 
@@ -50,7 +50,7 @@ Writes the client-facing message. Opens beside the evidence. Offers tone variant
 - [ ] No code path, UI element, or API route exists that transmits a drafted message to an external recipient (verified by architecture review — this is a structural, not a UI-only, guarantee).
 - [ ] A draft referencing a fact absent from the evidence is blocked from display in a scripted red-team test.
 - [ ] A draft never contains the words "score," "risk," "monitoring," or equivalent self-referential language about the tool itself.
-- [ ] "Log to CRM" writes an activity record and never contacts the client.
+- [ ] "Log as sent (manual)" writes only to this system's own `draft_messages` table and never opens a connection to any external system, including the CRM.
 
 ## Traceability
 

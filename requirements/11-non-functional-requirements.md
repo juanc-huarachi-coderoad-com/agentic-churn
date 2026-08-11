@@ -32,9 +32,9 @@ Cross-cutting — spec §6.4, §9.4, §13, §14
 |---|---|---|
 | Sensitive data | Redacted at the collector, before storage; redactions recorded | REQ-NFR-10 |
 | Encryption | Message bodies encrypted at rest; keys scoped per deployment | REQ-NFR-11 |
-| Access | Read-only, narrowest available scopes, documented per source | REQ-NFR-12 |
-| Deletion | Crypto-shredding — destroy keys, keep event skeleton so score history survives | REQ-NFR-13 |
-| Retention | Message bodies expire on a schedule; findings and scores persist | REQ-NFR-14 |
+| Access | Read-only, narrowest available scopes, documented per source — for every collector (M1) and every source system, with no exception | REQ-NFR-12 |
+| Deletion | Crypto-shredding — destroy keys, keep event skeleton so score history survives. **Phase 1:** manual, policy-enforced deletion at 90 days. **Phase 2:** automated scheduled job (`decisions/00-open-questions-resolved.md` Q5) | REQ-NFR-13 |
+| Retention | Message bodies expire on a schedule; findings and scores persist. Same Phase 1 (manual) / Phase 2 (automated) split as REQ-NFR-13 | REQ-NFR-14 |
 | Isolation | One deployment, one client, one key set — no shared storage across deployments | REQ-NFR-15 |
 | Audit | Append-only ledger with hash chaining for tamper evidence | REQ-NFR-16 |
 
@@ -43,7 +43,7 @@ Cross-cutting — spec §6.4, §9.4, §13, §14
 | ID | Requirement |
 |---|---|
 | REQ-NFR-17 | THE SYSTEM SHALL exclude threads listed in the client profile's `exclusions` (legal, HR, commercial negotiation). |
-| REQ-NFR-18 | THE SYSTEM SHALL NEVER request write access to a source system. |
+| REQ-NFR-18 | THE SYSTEM SHALL NEVER request write access to a source system. This applies without exception — including the draft composer (M10), which is why its "Log as sent" action (`requirements/10-draft-composer.md` REQ-M10-08) is a purely internal flag rather than a CRM write. |
 | REQ-NFR-19 | THE SYSTEM SHALL NEVER collect individual employee performance data. |
 | REQ-NFR-20 | THE SYSTEM SHALL NEVER ingest meeting recordings without documented consent from all parties. |
 

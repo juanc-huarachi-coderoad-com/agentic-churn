@@ -7,6 +7,8 @@
 | **Source of truth** | `base/Churn-Sentiment-Agent-Product-Specification.md` v1.0 |
 | **Status** | Ready for technical review |
 
+> **Phasing note:** every requirement below describes the full product. It does not describe what gets *built first*. For the Phase 1 ("first solution") vs. Phase 2 boundary — which sources, which readers, which UI conveniences are deferred — see `decisions/01-mvp-scope-and-phasing.md`. For the eight build-start decisions this implies (spec §17), see `decisions/00-open-questions-resolved.md`.
+
 This folder turns the product specification into engineering-ready, testable requirements — one file per module, plus this overview and a traceability matrix. It follows a **spec-driven development (SDD)** discipline:
 
 1. Every requirement has a stable ID and traces back to a section of the source spec.
@@ -48,7 +50,7 @@ This folder turns the product specification into engineering-ready, testable req
 
 Explicit non-goals: not a helpdesk/CRM replacement; not a cancellation predictor; not an employee-performance tool; never surfaced to the client.
 
-> **Resolved product decision:** the reference mockup (`base/mockup-mainPage.jpg`) shows a "Send & Log to CRM" button in the Action & Draft Hub. This conflicts with product principle **P4** and module **M10**. Requirement `REQ-M10-08` resolves this: the UI offers **"Log to CRM"** (writes an activity record only) and **"Copy draft"**, and contains no action that transmits the message to the client. See `10-draft-composer.md`.
+> **Resolved product decision:** the reference mockup (`base/mockup-mainPage.jpg`) shows a "Send & Log to CRM" button in the Action & Draft Hub. This conflicts with product principle **P4** and module **M10** — and, on closer review, a "Log to CRM" action would also require write access to an external source system, which conflicts with `requirements/11-non-functional-requirements.md` REQ-NFR-18. Requirement `REQ-M10-08` resolves both: the UI offers **"Copy draft"** and **"Log as sent (manual)"** — the second is a purely internal flag, not a write to the CRM or anywhere else — and contains no action that transmits the message to the client. See `10-draft-composer.md`.
 
 ## Personas (spec §3.1)
 
@@ -56,7 +58,7 @@ Explicit non-goals: not a helpdesk/CRM replacement; not a cancellation predictor
 |---|---|---|
 | Customer Success lead *(primary)* | "Is this account safe? What needs me today?" | M8, M9 |
 | Support lead | "Which of my forty tickets actually matters?" | M8, M9, M5 (Commitment reader) |
-| Account executive | "What do I need to know before the renewal call?" | M8, M9 |
+| Account executive *(Phase 2 — see `decisions/00-open-questions-resolved.md` Q8)* | "What do I need to know before the renewal call?" | M8, M9 |
 | Engineering manager *(occasional)* | "Is a technical issue damaging a commercial relationship?" | M5 (Recurrence reader), M9 |
 
 ## Product principles — the tie-breakers (spec §4)

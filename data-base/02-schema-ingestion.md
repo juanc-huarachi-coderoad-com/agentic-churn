@@ -2,9 +2,11 @@
 
 Tables that back the Signal collectors and Absence collector. See `requirements/01-signal-collectors.md`.
 
+Every table on this page answers a "where did this come from, and can we prove it?" question — nothing here decides whether anything matters. All examples below reuse the same worked scenario as `examples/01-end-to-end-walkthrough.md` (client: Meridian Logistics), so you can cross-reference the two documents directly.
+
 ## `sources`
 
-One row per connected source system for this deployment.
+**In plain terms:** the phone book of connected systems for this one client deployment. One row exists per system before any data ever flows — it's set up once, during onboarding, not created dynamically.
 
 | Field | Type | Description |
 |---|---|---|
@@ -16,9 +18,15 @@ One row per connected source system for this deployment.
 | `last_successful_sync_at` | TIMESTAMPTZ | Drives the "complete to HH:MM" coverage line |
 | `created_at` | TIMESTAMPTZ | |
 
+**Example row:**
+
+| id | source_type | display_name | status | last_successful_sync_at |
+|---|---|---|---|---|
+| `src-tickets` | `zendesk` | Meridian — Support | `connected` | 2026-08-07 07:41 |
+
 ## `collector_runs`
 
-One row per collector execution (webhook trigger or scheduled poll).
+**In plain terms:** a receipt for every time an adapter went and fetched something — whether triggered by a webhook (the source pushed to us) or a scheduled poll (we asked the source). If a collector ever runs and finds nothing new, there's still a row here, just with `envelopes_emitted = 0`.
 
 | Field | Type | Description |
 |---|---|---|
@@ -32,9 +40,17 @@ One row per collector execution (webhook trigger or scheduled poll).
 | `error` | TEXT NULL | Populated on failure; NULL on success |
 | `started_at` / `finished_at` | TIMESTAMPTZ | |
 
+**Example row:** the Zendesk poll that picked up ticket #456's reopen and ticket #398's resolution in the same run:
+
+| id | source_id | trigger | envelopes_emitted | duplicates_skipped | error |
+|---|---|---|---|---|---|
+| `run-2` | `src-tickets` | `poll` | 2 | 0 | *(null)* |
+
+If this exact poll ran again five minutes later before anything new happened at Zendesk, you'd expect a **new** `collector_runs` row with `envelopes_emitted = 0` and `duplicates_skipped = 0` — not a second copy of ticket #456. The de-duplication happens one layer down, in `raw_envelopes`, via `idempotency_key`.
+
 ## `coverage_reports`
 
-One row per `collector_runs` execution, or one rollup row per scoring-relevant time window — the artifact behind spec's coverage line and REQ-M1-07.
+**In plain terms:** the honest answer to "how much of the world did we actually see this time?" — this is what makes the dashboard's coverage line ("Reading 5 of 5 sources · complete to 10:16") true rather than a guess.
 
 | Field | Type | Description |
 |---|---|---|
@@ -46,9 +62,23 @@ One row per `collector_runs` execution, or one rollup row per scoring-relevant t
 | `complete_to` | TIMESTAMPTZ | Latest timestamp the report can vouch for |
 | `created_at` | TIMESTAMPTZ | |
 
+**Example row — a clean run** (all five Phase-1-and-beyond sources connected in this illustration):
+
+| collector_run_id | sources_expected | sources_read | gap_reason | complete_to |
+|---|---|---|---|---|
+| `run-5` | 5 | 5 | *(null)* | 2026-08-07 10:16 |
+
+**Example row — a degraded run**, for contrast (Slack briefly disconnected):
+
+| collector_run_id | sources_expected | sources_read | gap_reason | complete_to |
+|---|---|---|---|---|
+| `run-9` | 5 | 4 | "Slack OAuth token expired 08-09 14:02" | 2026-08-09 09:00 |
+
+That second row is exactly what makes `requirements/11-non-functional-requirements.md` REQ-NFR-07 real: the scoring engine sees `sources_read < sources_expected` and freezes the score with a visible banner instead of silently scoring on 4/5 of the picture as if it were the whole thing.
+
 ## `identity_map`
 
-Resolved (and explicitly unresolved) mappings from source-native identifiers to profile stakeholders.
+**In plain terms:** answers "who actually sent this?" by mapping a raw email address or username to a real person in the client profile — or explicitly recording that nobody could be matched, rather than guessing.
 
 | Field | Type | Description |
 |---|---|---|
@@ -60,9 +90,18 @@ Resolved (and explicitly unresolved) mappings from source-native identifiers to 
 | `resolved_by` | ENUM(`exact_match`,`human_confirmed`,`unresolved`) | |
 | `first_seen_at` | TIMESTAMPTZ | Powers the "Someone at meridian.com has written 3 times…" unresolved-person state (spec §11.5) |
 
+**Example rows** — one resolved, one deliberately not:
+
+| source_identifier | source_type | stakeholder_id | match_confidence | resolved_by |
+|---|---|---|---|---|
+| `ana.reyes@meridian.com` | `gmail` | `stk-ana` | *(null)* | `exact_match` |
+| *(Zendesk's generic support-desk contact address)* | `zendesk` | *(null)* | *(null)* | `unresolved` |
+
+The second row is not an error — it's the system correctly refusing to guess. Ticket #456 still gets collected, still gets a Commitment finding, and still contributes to the score in Step 9 of `examples/01-end-to-end-walkthrough.md` — it just does so without a stakeholder-specific `influence` multiplier, because nobody named is attached to it.
+
 ## `raw_envelopes`
 
-The standard wrapper every collector produces before ledger append — kept as a staging/audit table distinct from the immutable `events` table so malformed envelopes never corrupt the ledger.
+**In plain terms:** the one consistent shape every source's output gets forced into before it's allowed anywhere near the permanent record. This is also where the message body gets encrypted and where anything on the client profile's exclusion list gets stripped out — both *before* storage, never after.
 
 | Field | Type | Description |
 |---|---|---|
@@ -74,9 +113,17 @@ The standard wrapper every collector produces before ledger append — kept as a
 | `identity_status` | ENUM(`resolved`,`unresolved`) | |
 | `redacted_fields` | TEXT[] | Which fields were stripped per `exclusions` (REQ-M1-09) |
 | `payload_encrypted` | BYTEA | Envelope-encrypted raw payload |
-| `data_key_ref` | TEXT | Reference to the per-deployment KMS-wrapped data key (crypto-shredding target) |
+| `data_key_ref` | TEXT | Reference to the per-deployment data key — a `.env`-scoped key file in Phase 1, KMS-wrapped in Phase 2 (crypto-shredding target either way) |
 | `ledger_event_id` | UUID FK → `events.id`, NULL | Set once appended to the ledger; NULL if quarantined pre-ledger |
 | `created_at` | TIMESTAMPTZ | |
+
+**Example row** — Ana's Monday-morning email, on its way into the ledger:
+
+| id | source_native_id | idempotency_key | occurred_at | identity_status | redacted_fields | ledger_event_id |
+|---|---|---|---|---|---|---|
+| `env-1` | `gmail-msg-8831` | `hash(gmail, 8831)` | 2026-08-03 09:14 | `resolved` | `{}` | `evt-1` |
+
+`redacted_fields` is `{}` (empty) here because nothing in this particular email touched an excluded topic. If Ana had cc'd Meridian's legal counsel about a contract dispute in the same thread, the `commercial_negotiation` exclusion (spec §6.3) would strip that portion before this row is even written, and `redacted_fields` would read `{"legal_cc_thread"}` — the redaction is visible and auditable, not silently vanished.
 
 ## Notes
 

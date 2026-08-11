@@ -2,6 +2,8 @@
 
 Tier 1 · Ingestion — spec §7 (M1), §6.1, §13.2
 
+> **Phasing note:** this module's requirements are source-agnostic by design — the same collector interface (REQ-M1-01) serves every source, Phase 1 or Phase 2. What differs by phase is *which* sources are actually connected: **Phase 1** ships Gmail, Zendesk, and warehouse telemetry; **Phase 2** adds Slack Connect, CSAT, and Calendar/transcripts. See `decisions/01-mvp-scope-and-phasing.md` for the full rationale, including why chat and meeting transcripts specifically wait for Phase 2.
+
 ## Purpose
 
 Get material out of source systems and onto the event ledger, without interpreting it. One adapter per source, all implementing the same interface, plus a dedicated collector for the absence of expected contact.
