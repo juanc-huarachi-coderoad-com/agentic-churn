@@ -20,7 +20,7 @@ sequenceDiagram
     Collector->>Collector: Resolve Ana -> stk_ana (REQ-M1-04)
     Collector->>Ledger: Emit envelope (REQ-M1-10)
     Ledger->>Ledger: Append event, open response clock (REQ-M2-01, REQ-M2-05)
-    Ledger->>Ledger: Update rollup: 14 words vs 47-word baseline; no greeting
+    Ledger->>Ledger: Update rollup — 14 words vs 47-word baseline, no greeting
 
     Ledger-->>Readers: Queue only the affected windows for re-reading
 

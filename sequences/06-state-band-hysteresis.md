@@ -8,15 +8,15 @@ Spec §8.6. Traces `REQ-M6-17 … REQ-M6-19`. The gap between the 65-enter and 5
 stateDiagram-v2
     [*] --> Healthy
 
-    Healthy --> Watch: score >= 35\n(held 2 consecutive runs)
-    Watch --> Healthy: score < 35\n(held 2 consecutive runs)
+    Healthy --> Watch: score at least 35 (held 2 consecutive runs)
+    Watch --> Healthy: score below 35 (held 2 consecutive runs)
 
-    Watch --> AtRisk: score >= 65\n(held 2 consecutive runs)
-    AtRisk --> Watch: score < 55\n(held 2 consecutive runs)
+    Watch --> AtRisk: score at least 65 (held 2 consecutive runs)
+    AtRisk --> Watch: score below 55 (held 2 consecutive runs)
 
-    Healthy --> Healthy: score stays < 35
-    Watch --> Watch: 35 <= score < 65,\nor single-run dip < 35 not yet confirmed
-    AtRisk --> AtRisk: score stays >= 55\n(even if it fell from a higher peak)
+    Healthy --> Healthy: score stays below 35
+    Watch --> Watch: score between 35 and 65, or a single-run dip below 35 not yet confirmed
+    AtRisk --> AtRisk: score stays at least 55, even if it fell from a higher peak
 
     note right of AtRisk
         Escalation into At risk can be fast.

@@ -32,7 +32,7 @@ sequenceDiagram
         Ask->>UI: Fallback plain text, clearly marked, with sources attached (REQ-M9-04)
     end
 
-    UI-->>User: Rendered component or decline message (< 3s, REQ-M9-08)
+    UI-->>User: Rendered component or decline message (under 3s, REQ-M9-08)
 ```
 
 ## Key invariant

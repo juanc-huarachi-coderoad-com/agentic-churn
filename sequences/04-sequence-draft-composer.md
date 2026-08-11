@@ -34,7 +34,7 @@ sequenceDiagram
         User->>Collector: (external) Sent email lands back as a normal outbound event
         Collector->>Collector: Ledger append closes the response clock (REQ-M10-09)
     else Any check fails
-        Checks->>UI: Block display; do not render the failing draft
+        Checks->>UI: Block display — do not render the failing draft
     end
 ```
 

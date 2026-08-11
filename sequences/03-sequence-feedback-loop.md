@@ -16,7 +16,7 @@ sequenceDiagram
     User->>Card: Clicks verdict: correct / false_alarm / resolved (REQ-M4-01)
     Card->>FM: Submit verdict + finding type + event-signature class
     FM->>FM: Match against existing pattern history (REQ-M4-02)
-    FM->>Damp: Upsert damping weight (<= 1.0) for this pattern (REQ-M4-03)
+    FM->>Damp: Upsert damping weight (at most 1.0) for this pattern (REQ-M4-03)
 
     Note over FM,Damp: No retraining, no fine-tuning — a stored number (REQ-M4-05)
 
