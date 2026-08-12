@@ -37,11 +37,13 @@ sequenceDiagram
 
     Scorer->>Scorer: Recalculate from zero across all live findings (REQ-M6-20)
     Note over Scorer: Issue A (tracking tool) 39.0 + Issue B (people) 14.4 - positive 4.0 = 49.4 pts -> score 78
+    Scorer->>Scorer: Persist score_run + score_contributions + band_history (REQ-M6-01)
+    Note over Scorer: score_runs is written by M6 only - never by M7 (architecture/02-component-catalog.md)
 
-    Scorer->>Narrator: Ranked findings + point contributions
+    Scorer->>Narrator: Ranked findings + point contributions (in-memory, already persisted above)
     Narrator->>Narrator: Write headline, reasons, plan (REQ-M7-02, mechanically fact-checked REQ-M7-06)
 
-    Narrator->>Dash: Store narrator_output + score_run
+    Narrator->>Dash: Store narrator_output, referencing the score_run M6 already persisted
     Dash-->>Dash: Next dashboard read shows 78 - At risk - up 12, five clickable reasons (REQ-M8-01)
 ```
 

@@ -23,15 +23,15 @@ Append-only. One row per edit.
 | `languages` | TEXT[] | |
 | `communication_norms` | TEXT | Free-text norms description, supplied to readers as context only (never scoring logic — REQ-M3-P1) |
 | `exclusions` | TEXT[] | Thread categories deliberately not collected (REQ-NFR-17) |
-| `authored_by` | TEXT | CS lead who submitted this version |
+| `authored_by_user_id` | UUID FK → `users.id` | CS lead who submitted this version (`data-base/12-users-and-auth.md`) — a real identity, not free text |
 | `created_at` | TIMESTAMPTZ | |
 | `is_current` | BOOLEAN | Exactly one TRUE row per deployment at any time |
 
 **Example row:**
 
-| id | version_number | client_name | renewal_date | contract_value_band | working_hours | timezone | exclusions | authored_by | is_current |
+| id | version_number | client_name | renewal_date | contract_value_band | working_hours | timezone | exclusions | authored_by_user_id | is_current |
 |---|---|---|---|---|---|---|---|---|---|
-| `pv-3` | 3 | Meridian Logistics | 2026-11-08 | `strategic` | 08:00–18:00 | America/Bogota | `{legal_threads, commercial_negotiation}` | Marta (CS lead) | **true** |
+| `pv-3` | 3 | Meridian Logistics | 2026-11-08 | `strategic` | 08:00–18:00 | America/Bogota | `{legal_threads, commercial_negotiation}` | Marta's user row | **true** |
 
 If Marta edits the working hours next month, the system writes `pv-4` with `is_current = true` and flips `pv-3.is_current` to `false` — `pv-3` is never deleted, so any score computed while it was current can still be explained against the exact rules that produced it.
 
@@ -126,5 +126,5 @@ Free-form narrative history (spec §6.2 `history:` block) — context for reader
 ## Notes
 
 - `stakeholders.signs_renewal` must have ≥ 1 TRUE row per `profile_version_id` — validated by REQ-M3-07 before a version is accepted.
-- Multiplier *values* live on the row (`influence_multiplier`, `criticality_multiplier`); the *mapping* from category → default value is a small seed/config table maintained separately from client data so it can be tuned globally without touching every deployment's profile (see `06-schema-scoring.md` → `finding_type_config`).
+- Multiplier *values* live on the row (`influence_multiplier`, `criticality_multiplier`); the *mapping* from category → default value is a small seed/config table maintained separately from client data so it can be tuned globally without touching every deployment's profile (see `05-schema-reasoning.md` → `finding_type_config`).
 - In Phase 1, every table on this page is edited by the CS lead directly through the YAML profile file, not a UI — see `decisions/00-open-questions-resolved.md` Q2 and `decisions/01-mvp-scope-and-phasing.md`.

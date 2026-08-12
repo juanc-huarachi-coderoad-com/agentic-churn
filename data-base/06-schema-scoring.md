@@ -54,7 +54,7 @@ Per-finding line items — must sum exactly to `score_runs.total_points`.
 | `confidence` | NUMERIC(4,3) | |
 | `magnitude` | NUMERIC(4,3) | |
 | `recency` | NUMERIC(4,3) | |
-| `damping` | NUMERIC(4,3) | Always ≤ 1.000 (REQ-M6-05, REQ-M6-P3 enforced by `CHECK`) |
+| `damping` | NUMERIC(4,3) | Always between 0 and 1.000 (REQ-M6-05, REQ-M6-P3 enforced by `CHECK`) — the lower bound stops a damping value from ever flipping a penalty into a bonus |
 | `rank_within_issue_factor` | NUMERIC(4,3) | 1.000 / 0.600 / 0.360 / 0.220 … (REQ-M6-07) |
 | `points_contributed` | NUMERIC(8,3) | `base * influence * criticality * confidence * magnitude * recency * damping * rank_within_issue_factor` |
 | `is_positive` | BOOLEAN | TRUE for milestone/goodwill findings |
@@ -96,5 +96,5 @@ Display-only trend/notification/stickiness support (spec §8.7 — history is no
 ## Notes
 
 - `SUM(score_contributions.points_contributed)` for a given `score_run_id`, split by `is_positive`, reproduces `score_runs.total_negative_points` and `score_runs.total_positive_points` exactly — this is the reconciliation check behind REQ-NFR-30, implemented as an automated test that runs after every scoring pipeline change.
-- `damping NUMERIC(4,3) CHECK (damping <= 1.000)` enforces REQ-M6-P3 at the schema level, not just in application logic.
+- `damping NUMERIC(4,3) CHECK (damping BETWEEN 0 AND 1.000)` enforces REQ-M6-P3 at the schema level, not just in application logic.
 - `score_runs.score` never reaches 100.00 in practice because of the asymptotic formula (REQ-M6-16) — no additional `CHECK` is needed, but a test asserts this over a wide input range.

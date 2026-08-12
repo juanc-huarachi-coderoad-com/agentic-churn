@@ -25,14 +25,16 @@
 | File | Tables | Maps to |
 |---|---|---|
 | `02-schema-ingestion.md` | `sources`, `collector_runs`, `coverage_reports`, `identity_map`, `raw_envelopes` | M1 |
-| `03-schema-ledger.md` | `events`, `event_threads`, `response_pairs`, `rollups` | M2 |
+| `03-schema-ledger.md` | `events`, `event_threads`, `response_pairs`, `rollups`, `baseline_confirmations`, `replay_runs` | M2 |
 | `04-schema-context.md` | `client_profile_versions`, `stakeholders`, `product_areas`, `commitments`, `profile_history_entries` | M3 |
-| `05-schema-reasoning.md` | `findings`, `issues`, `finding_issue_map`, `quarantine`, `validation_failures` | M5, M5a |
+| `05-schema-reasoning.md` | `findings`, `issues`, `finding_issue_map`, `quarantine`, `validation_failures`, `finding_type_config` | M5, M5a |
 | `06-schema-scoring.md` | `score_runs`, `score_contributions`, `band_history` | M6 |
 | `07-schema-feedback.md` | `feedback_verdicts`, `damping_weights` | M4 |
-| `08-schema-experience.md` | `narrator_outputs`, `ask_queries`, `draft_messages`, `notifications` | M7, M8, M9, M10 |
+| `08-schema-experience.md` | `narrator_outputs`, `playbook_actions`, `ask_queries`, `draft_messages`, `notifications` | M7, M8, M9, M10 |
 | `09-erd-full.md` | Consolidated ER diagram of all tables above | — |
 | `10-ddl-appendix.md` | Runnable `CREATE TABLE` statements for every table | — |
+| `11-seed-data.sql` | Runnable seed data: `finding_type_config`, playbook, Meridian profile, identity map | — |
+| `12-users-and-auth.md` | `users`, `auth_tokens` | Cross-cutting, backs `requirements/14-authentication.md` |
 
 ## Naming conventions
 
@@ -51,10 +53,12 @@ flowchart LR
     E -->|replay job| P3[rollups]
     CP[(client_profile_versions)] -->|replay job| P1
     CP -->|replay job| P2
+    BC[(baseline_confirmations\nnever truncated)] -->|sets is_baseline| P3
     Trigger["Trigger: profile edit,\nweight edit, or manual request"] --> ReplayJob["Replay job:\nTRUNCATE projections, replay events in order"]
     ReplayJob --> P1
     ReplayJob --> P2
     ReplayJob --> P3
+    ReplayJob -.->|one row per run| RR[(replay_runs\naudit trail)]
 ```
 
-Truncating `event_threads`, `response_pairs`, and `rollups` and re-running the replay job against `events` (in `occurred_at` order) must reproduce byte-identical projection state — this is the mechanical test behind REQ-NFR-09 / REQ-NFR-28.
+Truncating `event_threads`, `response_pairs`, and `rollups` and re-running the replay job against `events` + `client_profile_versions` + `baseline_confirmations` (in `occurred_at` order) must reproduce byte-identical projection state — this is the mechanical test behind REQ-NFR-09 / REQ-NFR-28. `baseline_confirmations` and `replay_runs` are themselves never truncated — see `data-base/03-schema-ledger.md` for why `is_baseline` needed a durable table of its own.

@@ -18,13 +18,29 @@ Append-only. **No `UPDATE`/`DELETE` grant exists on this table for the applicati
 | `stakeholder_id` | UUID FK → `stakeholders.id`, NULL | Resolved participant, if any |
 | `product_area_id` | UUID FK → `product_areas.id`, NULL | |
 | `body_encrypted` | BYTEA NULL | Message body, envelope-encrypted; NULL after retention expiry (crypto-shredded) |
-| `data_key_ref` | TEXT NULL | Data-key reference (`.env`-scoped in Phase 1, KMS in Phase 2); setting this NULL (destroying the key) is the deletion mechanism |
+| `data_key_ref` | TEXT **NOT NULL** | Permanent reference to the data key that protects `body_encrypted` (`.env`-scoped file in the MVP, KMS Post-MVP). **Never cleared** — see the crypto-shredding note below |
 | `structured_payload` | JSONB | Non-body structured fields (ticket priority, usage delta, survey score, etc.) |
 | `supersedes_event_id` | UUID FK → `events.id`, NULL | Set when this event is a correction of a prior one (REQ-M2-03) |
 | `thread_key` | TEXT NULL | Cross-channel thread identifier assigned by stitching |
-| `prev_event_hash` | TEXT | Hash-chain link (REQ-M2-08) |
-| `event_hash` | TEXT | `H(payload + prev_event_hash)` |
+| `prev_event_hash` | TEXT | Hash-chain link (REQ-M2-08) — see "Hash chain, precisely" below |
+| `event_hash` | TEXT | `SHA256(canonical_fields \|\| prev_event_hash)` — see "Hash chain, precisely" below |
 | `created_at` | TIMESTAMPTZ | Row insert time (equals `recorded_at` in practice; kept separate for clarity) |
+
+**Crypto-shredding, precisely — resolving an earlier contradiction.** An earlier draft of this schema said "setting `data_key_ref` to NULL is the deletion mechanism," which doesn't work: `events` is insert-only, so no application code path is allowed to `UPDATE` it at all, and `data_key_ref` was typed `NULL`-able as if that mattered. The corrected model, now reflected in the DDL:
+
+- `data_key_ref` is **`NOT NULL`, permanent, and never modified** — it's a historical record of which key *used to* protect this row.
+- `body_encrypted` is the column that actually gets nulled, once the retention window expires and the key it depends on is destroyed in the key store.
+- Nulling `body_encrypted` is the **one narrowly-scoped exception** to `events`' append-only rule: a dedicated `shredder_role` (not the application's normal role) holds `UPDATE (body_encrypted)` and nothing else on this table — see `data-base/10-ddl-appendix.md`.
+
+**Hash chain, precisely.** "Hash-chain link" meant nothing runnable until this revision. It now is:
+
+| | |
+|---|---|
+| Algorithm | SHA-256 |
+| Canonical input | `id \| envelope_id \| event_type \| occurred_at \| recorded_at \| stakeholder_id \| product_area_id \| structured_payload::text \| supersedes_event_id \| thread_key \| prev_event_hash` (pipe-delimited, NULLs as empty string) |
+| Genesis value | `prev_event_hash = repeat('0', 64)` for the very first event ever inserted into a deployment's ledger |
+| Deliberately excluded | `body_encrypted` and `data_key_ref` — ciphertext/key-management fields, not the fact being chained. Crypto-shredding a body therefore never breaks the chain's own integrity check |
+| Verification | `verify_hash_chain()`, a runnable function in `data-base/10-ddl-appendix.md` — walks the chain in `occurred_at` order, recomputes every hash, and returns one row per broken link (empty result = chain intact) |
 
 **Example rows** — two of the six events from the worked example, chosen to show the contrast between a message and a structured system fact:
 
@@ -101,7 +117,7 @@ Per-person / per-metric aggregates used as reader baselines and dashboard sparkl
 | `metric` | TEXT | e.g. `avg_words_per_message`, `greeting_rate`, `feature_usage_weekly` |
 | `window_start` / `window_end` | TIMESTAMPTZ | |
 | `value` | NUMERIC | |
-| `is_baseline` | BOOLEAN | TRUE if this window was human-confirmed as the healthy baseline (REQ-M5-06) |
+| `is_baseline` | BOOLEAN | TRUE if this window was human-confirmed as the healthy baseline (REQ-M5-06) — **set by the replay job FROM `baseline_confirmations`, below; never hand-authored directly on this row** |
 | `computed_at` | TIMESTAMPTZ | |
 
 **Example rows** — Ana's writing-style baseline, and this week's actual value, side by side:
@@ -113,8 +129,47 @@ Per-person / per-metric aggregates used as reader baselines and dashboard sparkl
 
 The Tone reader (Step 4 of `examples/01-end-to-end-walkthrough.md`) is exactly this comparison — 14 words against a confirmed-healthy baseline of 47 — turned into a finding. This is also what "baseline-relative, never absolute sentiment" (spec P7) means concretely: there's no universal "47 words is normal" rule anywhere in the system, only *this specific person's* own history.
 
+**Why `is_baseline` needed its own table — a replay contradiction, fixed.** `rollups` is a projection: principle 3 in `01-database-overview.md` says it gets `TRUNCATE`d and rebuilt from `events` on every replay. If a human's "yes, this window is the healthy baseline" confirmation lived *only* as `is_baseline = true` on a rollup row, replay would silently erase it — the rebuilt row would have no way to know it used to be confirmed. That's exactly the kind of silent data loss product principle P5 exists to prevent.
+
+## `baseline_confirmations`
+
+**In plain terms:** the durable record of every "yes, mark this window as normal" decision a human has made. Unlike `rollups`, this table is **never truncated** — it's the source of truth the replay job reads from, not a projection itself.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID PK | |
+| `subject_type` | ENUM(`stakeholder`,`product_area`,`account`) | Same enum as `rollups.subject_type` |
+| `subject_id` | UUID | |
+| `metric` | TEXT | |
+| `window_start` / `window_end` | TIMESTAMPTZ | |
+| `confirmed_by_user_id` | UUID FK → `users.id` | Who confirmed it (`data-base/12-users-and-auth.md`) |
+| `confirmed_at` | TIMESTAMPTZ | |
+
+**Example row** — the confirmation behind Ana's baseline above:
+
+| subject_type | subject_id | metric | window | confirmed_by_user_id |
+|---|---|---|---|---|
+| `stakeholder` | `stk-ana` | `avg_words_per_message` | last healthy quarter | (Marta's user row) |
+
+On every replay, the job sets `rollups.is_baseline = true` for any rebuilt window that matches a row here — the confirmation survives the `TRUNCATE` because it never lived in the truncated table to begin with.
+
+## `replay_runs`
+
+**In plain terms:** an audit trail for replay itself. Previously, a replay (triggered by a profile edit, a weight edit, or a manual request) left no trace once it finished — this table gives every replay a row, so "did the last profile edit actually replay cleanly?" has a real answer.
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | UUID PK | |
+| `trigger` | ENUM(`profile_edit`,`weight_edit`,`manual`) | |
+| `triggered_by_user_id` | UUID FK → `users.id`, NULL | NULL for automated triggers |
+| `started_at` / `finished_at` | TIMESTAMPTZ | |
+| `projections_rebuilt` | TEXT[] | Defaults to all three: `event_threads`, `response_pairs`, `rollups` |
+| `events_replayed_count` | INTEGER | |
+| `status` | ENUM(`running`,`succeeded`,`failed`) | |
+| `error` | TEXT NULL | |
+
 ## Notes
 
 - `events.occurred_at` vs `events.recorded_at`: querying "what did we know as of last Tuesday" filters on `recorded_at` up to that point in time, ordering the timeline by `occurred_at`. This is what makes historical replay honest (REQ-M2-09).
 - `supersedes_event_id` forms a forward-only correction chain — the original row is never touched, only referenced.
-- All three projection tables can be `TRUNCATE`d and rebuilt from `events` + `client_profile_versions` alone (see `01-database-overview.md`).
+- All three projection tables (`event_threads`, `response_pairs`, `rollups`) can be `TRUNCATE`d and rebuilt from `events` + `client_profile_versions` + `baseline_confirmations` alone (see `01-database-overview.md`). `baseline_confirmations` and `replay_runs` themselves are **not** projections — they are never truncated.

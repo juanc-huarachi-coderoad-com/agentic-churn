@@ -42,15 +42,15 @@ Human-authored library of standard actions the Narrator personalizes from (REQ-M
 | `applies_to_finding_type` | TEXT | |
 | `default_owner_role` | TEXT | |
 | `default_sla_days` | INTEGER | |
-| `signed_off_by` | TEXT | Per `decisions/00-open-questions-resolved.md` Q7 — playbook owner |
+| `signed_off_by_user_id` | UUID FK → `users.id`, NULL | Per `decisions/00-open-questions-resolved.md` Q7 — playbook owner, a real identity (`data-base/12-users-and-auth.md`) |
 | `is_active` | BOOLEAN | |
 
 **Example rows** — two of the Phase 1 playbook's 3–5 actions (`decisions/00-open-questions-resolved.md` Q7):
 
-| id | template_text | applies_to_finding_type | default_owner_role | signed_off_by |
+| id | template_text | applies_to_finding_type | default_owner_role | signed_off_by_user_id |
 |---|---|---|---|---|
-| `pb-escalate-p1` | "Escalate {ticket_ref} with engineering {when}" | `broken_response_promise` | Support lead | Marta |
-| `pb-call-sponsor` | "Call {stakeholder_name} before {deadline} — don't email" | `escalation_language` | CS lead | Marta |
+| `pb-escalate-p1` | "Escalate {ticket_ref} with engineering {when}" | `broken_response_promise` | Support lead | Marta's user row |
+| `pb-call-sponsor` | "Call {stakeholder_name} before {deadline} — don't email" | `escalation_language` | CS lead | Marta's user row |
 
 ## `ask_queries`
 
@@ -66,7 +66,7 @@ Log of every Ask agent interaction — also the dataset for measuring the ~90% i
 | `rendered_component` | TEXT NULL | Which UI component was built |
 | `declined_reason` | ENUM(`prediction`,`colleague_judgment`,`source_not_connected`,`unclear`) NULL | REQ-M9-05/06/07 |
 | `response_time_ms` | INTEGER | Must stay < 3000 (REQ-M9-08) |
-| `asked_by` | TEXT | |
+| `asked_by_user_id` | UUID FK → `users.id` | A real identity, not free text — see `data-base/12-users-and-auth.md` |
 | `created_at` | TIMESTAMPTZ | |
 
 **Example rows** — one answered normally, one declined:
@@ -89,9 +89,10 @@ The second row shows the decline path: the agent recognized this as a forecastin
 | `id` | UUID PK | |
 | `issue_id` | UUID FK → `issues.id` | Top issue this draft addresses |
 | `stakeholder_id` | UUID FK → `stakeholders.id` | Intended recipient (for context only — never used to send) |
+| `requested_by_user_id` | UUID FK → `users.id` | Who clicked "Write to X about this" (`data-base/12-users-and-auth.md`) |
 | `draft_text` | TEXT | |
 | `tone_variant` | ENUM(`direct`,`formal`,`brief`) | REQ-M10-05 |
-| `evidence_event_ids` | UUID[] | |
+| `evidence_event_ids` | UUID[], `array_length >= 1` | Non-empty by constraint — a draft with zero cited evidence is structurally unrepresentable, same discipline as `findings.cited_event_ids` |
 | `checks_passed` | BOOLEAN | Result of REQ-M10-07 pre-display checks; a FALSE row is never rendered |
 | `logged_manually_at` | TIMESTAMPTZ NULL | Set only when the user clicks "Log as sent (manual)" (REQ-M10-08) — an internal flag in *this* table only, never a write to the CRM or any other external system |
 | `copied_at` | TIMESTAMPTZ NULL | Set when the user clicks "Copy draft" |
@@ -99,9 +100,9 @@ The second row shows the decline path: the agent recognized this as a forecastin
 
 **Example row** — the draft to Ana from the worked example:
 
-| id | issue_id | stakeholder_id | draft_text (excerpt) | checks_passed | logged_manually_at | copied_at |
-|---|---|---|---|---|---|---|
-| `draft-1` | `iss-A` | `stk-ana` | "Ana — we took 19 hours to respond to ticket #456; we promised 4. Engineering is on it today…" | **true** | *(null)* | 2026-08-10 09:02 |
+| id | issue_id | stakeholder_id | requested_by_user_id | draft_text (excerpt) | checks_passed | logged_manually_at | copied_at |
+|---|---|---|---|---|---|---|---|
+| `draft-1` | `iss-A` | `stk-ana` | Marta's user row | "Ana — we took 19 hours to respond to ticket #456; we promised 4. Engineering is on it today…" | **true** | *(null)* | 2026-08-10 09:02 |
 
 The CS lead copied this draft (`copied_at` is stamped) and pasted it into their own email client to actually send it — an action that happened entirely outside this system's boundary, which is exactly why no row, anywhere in this database, ever records "sent," and no external system — CRM included — is ever contacted by this table.
 

@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | Requirements overview (spec-driven development root document) |
 | **Version** | 1.0 |
-| **Source of truth** | `base/Churn-Sentiment-Agent-Product-Specification.md` v1.0 |
+| **Source of truth** | `base/Churn-Sentiment-Agent-Product-Specification.md` v1.1 |
 | **Status** | Ready for technical review |
 
 > **Phasing note:** every requirement below describes the full product. It does not describe what gets *built first*. For the Phase 1 ("first solution") vs. Phase 2 boundary — which sources, which readers, which UI conveniences are deferred — see `decisions/01-mvp-scope-and-phasing.md`. For the eight build-start decisions this implies (spec §17), see `decisions/00-open-questions-resolved.md`.
@@ -36,6 +36,8 @@ This folder turns the product specification into engineering-ready, testable req
 | `10-draft-composer.md` | M10 · Draft composer | 4 · Experience |
 | `11-non-functional-requirements.md` | Cross-cutting (performance, privacy, security, determinism) | — |
 | `12-traceability-matrix.md` | REQ-ID → spec section → module → acceptance test | — |
+| `13-scoring-calibration-appendix.md` | Calibration values for M6 that were previously undocumented (ageing rate, fade formula, damping function, etc.) | 3 · Reasoning |
+| `14-authentication.md` | Cross-cutting — username/password + token, full access at this stage | — |
 
 ## Scope (from spec §3.2–3.3)
 

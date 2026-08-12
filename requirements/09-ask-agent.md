@@ -39,7 +39,7 @@ The question box. Answers by building UI components, not paragraphs. Looks facts
 
 ## Non-functional constraints
 
-- ≥ 3 seconds max response time (spec §9.4).
+- < 3 seconds response time for intent-matched questions (spec §9.4; matches REQ-M9-08 exactly — this line previously read "≥ 3 seconds max," which said the opposite of the requirement).
 - The small, fixed intent menu should resolve ~90% of real questions per spec §12.2 — measured, not assumed; tracked via `ask_queries.intent = 'fallback'` rate.
 
 ## Acceptance criteria

@@ -18,6 +18,8 @@ Maps every requirement block to its module, source spec section, and acceptance-
 | REQ-M9-01 … REQ-M9-08, REQ-M9-P1 … P3 | M9 · Ask agent | `09-ask-agent.md` | §7 (M9), §9.3, §9.4, §12.2 | `09-ask-agent.md` §Acceptance criteria |
 | REQ-M10-01 … REQ-M10-09, REQ-M10-P1 … P6 | M10 · Draft composer | `10-draft-composer.md` | §7 (M10), §12.3, P4 | `10-draft-composer.md` §Acceptance criteria |
 | REQ-NFR-01 … REQ-NFR-33 | Cross-cutting | `11-non-functional-requirements.md` | §6.3, §6.4, §9.4, §13, §14.1–14.3, §15 | `11-non-functional-requirements.md` |
+| REQ-M6-CAL-01 … REQ-M6-CAL-08 | M6 · Scoring engine (calibration) | `13-scoring-calibration-appendix.md` | §8 (fills in values §8 implied but didn't state) | Worked checks inline in each REQ-M6-CAL entry |
+| REQ-AUTH-01 … REQ-AUTH-09, REQ-AUTH-P1 … P3 | Authentication (cross-cutting) | `14-authentication.md` | New in v1.1 — not in the original spec, added per explicit build-start request | `14-authentication.md` §Acceptance criteria |
 
 ## Spec section → requirements coverage (reverse index)
 
@@ -51,10 +53,11 @@ Maps every requirement block to its module, source spec section, and acceptance-
 | §14.3 Engineering acceptance criteria | REQ-NFR-27 … REQ-NFR-33 |
 | §15 Risks | Referenced per-module in "Traceability" sections where a mitigation is implemented |
 | §16 Build order | Not a requirement — sequencing guidance; see project plan / build phases, out of scope for this requirements set |
-| §17 Open questions | Flagged inline where relevant (REQ-M3, REQ-M7 traceability notes); remain open decisions, not requirements |
+| §17 / §17.1 Open questions & resolutions | All eight resolved as of spec v1.1 — see `decisions/00-open-questions-resolved.md`. Flagged inline in REQ-M3, REQ-M7 traceability notes; still non-normative (scope/process decisions, not testable requirements) |
 
 ## Orphan check
 
-- Every REQ-ID in `01`–`11` appears in the forward table above. ✅
+- Every REQ-ID in `01`–`11`, `13`, `14` appears in the forward table above. ✅
 - Every numbered spec section (§1–§17) has at least one entry in the reverse index. ✅
 - §16 (Build order) and §17 (Open questions) are intentionally non-normative — they inform delivery sequencing and outstanding decisions, not testable requirements — and are marked as such rather than force-fit into a REQ-ID.
+- `13-scoring-calibration-appendix.md` and `14-authentication.md` are additive: the calibration appendix fills in values REQ-M6-* always implied but never stated; authentication is genuinely new, added at the user's explicit request rather than traced from the original spec.

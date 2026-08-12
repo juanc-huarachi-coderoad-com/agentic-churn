@@ -22,7 +22,7 @@ Ambient awareness. Answers one question: *does anything need me today?* Calculat
 | REQ-M8-04 | Client quoted words SHALL render in a serif typeface as quotes; system-generated words SHALL render in a sans-serif typeface — never visually conflated. |
 | REQ-M8-05 | WHEN the account is Healthy with no pending items, THE SYSTEM SHALL display a near-empty screen with the message "Nothing needs you today. Last checked [N] minutes ago." |
 | REQ-M8-06 | THE SYSTEM SHALL display a coverage line stating how many of the connected sources are currently readable and how current the data is (e.g. "Reading 4 of 5 sources · complete to 09:12"). |
-| REQ-M8-07 | THE SYSTEM SHALL render one of the defined system states verbatim when applicable: Healthy, Learning ("still learning — N of 6 signal types available"), Source down, Catching up, Unresolved person. |
+| REQ-M8-07 | THE SYSTEM SHALL render one of the defined system states verbatim when applicable: Healthy, Learning ("still learning — N of 6 signal types available" — the 6 are Tickets, Email, Chat, Product usage, Surveys, Meetings; CRM/contracts is reference data for the client profile, not a counted signal type, per spec §11.5), Source down, Catching up, Unresolved person. |
 | REQ-M8-08 | Every number on the dashboard SHALL be clickable through to the evidence trace panel, and from there to the original source message. |
 | REQ-M8-09 | THE SYSTEM SHALL NOT render: ticket-volume charts, per-message sentiment lines, monthly sentiment averages, category pie charts, or any metric that would not change a decision if it changed value. |
 | REQ-M8-10 | Nothing SHALL render in the risk accent color (red) until a promise is broken or a sponsor has disengaged; amber covers drift; healthy states use no risk color. |

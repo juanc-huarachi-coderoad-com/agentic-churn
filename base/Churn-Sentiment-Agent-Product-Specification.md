@@ -692,7 +692,7 @@ Two design rules: the comparison is shown rather than summarised, and the maths 
 | State | Message |
 |---|---|
 | **Healthy** | *"Nothing needs you today. Last checked 4 minutes ago."* |
-| **Learning** | *"Still learning — 3 of 6 signal types available."* |
+| **Learning** | *"Still learning — 3 of 6 signal types available."* — the 6 are Tickets, Email, Chat, Product usage, Surveys, and Meetings (the behavioral/communication sources a reader interprets). CRM/contracts, the 7th source in §6.1, supplies reference data (renewal date, contract value, commitments) to the client profile rather than a reader — it isn't counted as a "signal type" here |
 | **Source down** | *"Email hasn't been read since Tuesday — reconnect."* |
 | **Catching up** | *"Partial data — 40 minutes behind."* |
 | **Unresolved person** | *"Someone at meridian.com has written 3 times and isn't in the profile. Who is this?"* |

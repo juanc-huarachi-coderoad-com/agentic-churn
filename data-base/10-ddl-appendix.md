@@ -1,12 +1,43 @@
 # 10 · DDL appendix
 
-Runnable PostgreSQL 16 DDL for every table described in `02`–`08`. Grants and triggers that enforce the append-only/no-send guarantees are included inline where they matter most; a full grants script belongs in the deployment repo, not this document.
+Runnable PostgreSQL 16 DDL for every table described in `02`–`08` and `12`. This revision (v1.1) closes seven gaps found in a full-repo consistency review: missing indexes, roles/grants that were placeholders, an unspecified hash-chain algorithm, a replay-vs-human-confirmation contradiction on `rollups.is_baseline`, a crypto-shredding contradiction on `data_key_ref`, free-text "who did this" columns with no real identity behind them, and four enum columns that were left as plain `TEXT`.
 
 ```sql
 -- ============================================================
 -- Extensions
 -- ============================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ============================================================
+-- 00 · Authentication & identity (backs requirements/14-authentication.md)
+-- Created first: every "who did this" column below references users(id).
+-- ============================================================
+CREATE TYPE user_role AS ENUM ('cs_lead','support_lead','account_executive','engineering_manager','admin');
+-- MVP note: role is informational only. Every authenticated user has full
+-- functional access at this stage (REQ-AUTH-05) — role-based restriction
+-- (e.g. read-only account_executive) is a Post-MVP refinement, not built yet.
+
+CREATE TABLE users (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username       TEXT NOT NULL UNIQUE,
+    password_hash  TEXT NOT NULL,          -- argon2id hash, never plaintext or reversible (REQ-AUTH-02)
+    display_name   TEXT NOT NULL,
+    role           user_role,
+    is_active      BOOLEAN NOT NULL DEFAULT true,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_login_at  TIMESTAMPTZ
+);
+
+CREATE TABLE auth_tokens (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES users(id),
+    token_hash   TEXT NOT NULL UNIQUE,     -- SHA-256 of the bearer token; the raw token is never stored (REQ-AUTH-03)
+    issued_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ NOT NULL,
+    revoked_at   TIMESTAMPTZ
+);
+
+CREATE INDEX idx_auth_tokens_user_id ON auth_tokens(user_id);
 
 -- ============================================================
 -- 02 · Ingestion
@@ -67,6 +98,12 @@ CREATE TABLE identity_map (
 
 CREATE TYPE identity_status AS ENUM ('resolved','unresolved');
 
+-- Crypto-shredding model (resolves the data_key_ref contradiction):
+-- data_key_ref is a PERMANENT, NOT NULL reference to a key ID — it is never
+-- cleared, because raw_envelopes is an insert-only table. Deletion happens by
+-- destroying the referenced key in the key store (.env file in the MVP, KMS
+-- Post-MVP); once destroyed, payload_encrypted is cryptographically
+-- unrecoverable even though this row and its data_key_ref value are untouched.
 CREATE TABLE raw_envelopes (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     collector_run_id   UUID NOT NULL REFERENCES collector_runs(id),
@@ -76,8 +113,8 @@ CREATE TABLE raw_envelopes (
     identity_status    identity_status NOT NULL,
     redacted_fields    TEXT[] NOT NULL DEFAULT '{}',
     payload_encrypted  BYTEA NOT NULL,
-    data_key_ref       TEXT NOT NULL,
-    ledger_event_id    UUID,               -- FK added after events table exists
+    data_key_ref       TEXT NOT NULL,       -- permanent reference; see crypto-shredding note above
+    ledger_event_id    UUID,                -- FK added after events table exists; NULL if quarantined pre-ledger
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -89,6 +126,19 @@ CREATE TYPE event_type AS ENUM (
     'meeting','absence','crm_change'
 );
 
+-- Hash chain specification (was previously unspecified):
+--   Algorithm: SHA-256, via pgcrypto's digest().
+--   Canonical serialization (pipe-delimited, NULLs as empty string):
+--     id | envelope_id | event_type | occurred_at | recorded_at |
+--     stakeholder_id | product_area_id | structured_payload::text |
+--     supersedes_event_id | thread_key | prev_event_hash
+--   (body_encrypted/data_key_ref are deliberately excluded from the hashed
+--   payload — they are ciphertext/key-management fields, not the fact being
+--   chained, and excluding them means crypto-shredding a body never breaks
+--   the hash chain's own integrity check.)
+--   Genesis value: prev_event_hash = repeat('0', 64) for the very first event
+--   ever inserted into this deployment's ledger.
+--   Verification: see verify_hash_chain() at the bottom of this file.
 CREATE TABLE events (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     envelope_id         UUID NOT NULL REFERENCES raw_envelopes(id),
@@ -97,8 +147,8 @@ CREATE TABLE events (
     recorded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     stakeholder_id      UUID,               -- FK added after stakeholders table exists
     product_area_id     UUID,               -- FK added after product_areas table exists
-    body_encrypted      BYTEA,
-    data_key_ref        TEXT,
+    body_encrypted      BYTEA,               -- nulled by the retention job once the key is destroyed (see role grant below)
+    data_key_ref        TEXT NOT NULL,       -- permanent reference; never cleared (see crypto-shredding note above)
     structured_payload  JSONB NOT NULL DEFAULT '{}',
     supersedes_event_id UUID REFERENCES events(id),
     thread_key          TEXT,
@@ -109,15 +159,14 @@ CREATE TABLE events (
 
 ALTER TABLE raw_envelopes  ADD CONSTRAINT fk_raw_envelopes_event  FOREIGN KEY (ledger_event_id) REFERENCES events(id);
 
--- Append-only enforcement: revoke UPDATE/DELETE from the application role.
--- REVOKE UPDATE, DELETE ON events FROM app_role;
+CREATE TYPE stitch_method AS ENUM ('participant_subject','ticket_reference','timing_heuristic','manual');
 
 CREATE TABLE event_threads (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     thread_key        TEXT NOT NULL,
     event_id          UUID NOT NULL REFERENCES events(id),
     stitch_confidence NUMERIC(3,2) NOT NULL,
-    stitch_method     TEXT NOT NULL
+    stitch_method     stitch_method NOT NULL
 );
 
 CREATE TYPE response_pair_state AS ENUM ('open','resolved','open_overdue');
@@ -132,16 +181,53 @@ CREATE TABLE response_pairs (
     profile_version_id       UUID           -- FK added after client_profile_versions table exists
 );
 
+CREATE TYPE rollup_subject_type AS ENUM ('stakeholder','product_area','account');
+
 CREATE TABLE rollups (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    subject_type  TEXT NOT NULL,
+    subject_type  rollup_subject_type NOT NULL,
     subject_id    UUID,
     metric        TEXT NOT NULL,
     window_start  TIMESTAMPTZ NOT NULL,
     window_end    TIMESTAMPTZ NOT NULL,
     value         NUMERIC NOT NULL,
-    is_baseline   BOOLEAN NOT NULL DEFAULT false,
+    is_baseline   BOOLEAN NOT NULL DEFAULT false,   -- set FROM baseline_confirmations on every replay; see below
     computed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Replay-vs-human-confirmation fix: rollups is a PROJECTION — it gets
+-- TRUNCATEd and rebuilt from events on every replay (data-base/01, principle
+-- 3). If is_baseline lived only on the rollup row, a human's baseline
+-- confirmation would be silently lost the next time replay runs. It doesn't:
+-- the confirmation is stored durably here instead, and the replay job sets
+-- rollups.is_baseline = true for any window that matches a confirmed row.
+CREATE TABLE baseline_confirmations (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject_type      rollup_subject_type NOT NULL,
+    subject_id        UUID NOT NULL,
+    metric            TEXT NOT NULL,
+    window_start      TIMESTAMPTZ NOT NULL,
+    window_end        TIMESTAMPTZ NOT NULL,
+    confirmed_by_user_id UUID NOT NULL REFERENCES users(id),
+    confirmed_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (subject_type, subject_id, metric, window_start, window_end)
+);
+
+-- Audit trail for replay itself (previously nonexistent — every replay was
+-- invisible after the fact). One row per replay job run.
+CREATE TYPE replay_trigger AS ENUM ('profile_edit','weight_edit','manual');
+CREATE TYPE replay_status AS ENUM ('running','succeeded','failed');
+
+CREATE TABLE replay_runs (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trigger                replay_trigger NOT NULL,
+    triggered_by_user_id   UUID REFERENCES users(id),    -- NULL for automated triggers
+    started_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at            TIMESTAMPTZ,
+    projections_rebuilt    TEXT[] NOT NULL DEFAULT '{event_threads,response_pairs,rollups}',
+    events_replayed_count  INTEGER,
+    status                 replay_status NOT NULL DEFAULT 'running',
+    error                  TEXT
 );
 
 -- ============================================================
@@ -162,7 +248,7 @@ CREATE TABLE client_profile_versions (
     languages              TEXT[] NOT NULL DEFAULT '{}',
     communication_norms   TEXT,
     exclusions            TEXT[] NOT NULL DEFAULT '{}',
-    authored_by           TEXT NOT NULL,
+    authored_by_user_id   UUID NOT NULL REFERENCES users(id),
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     is_current             BOOLEAN NOT NULL DEFAULT false
 );
@@ -252,11 +338,13 @@ CREATE TABLE findings (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TYPE cluster_method AS ENUM ('embedding_similarity','shared_entity','manual');
+
 CREATE TABLE issues (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    label         TEXT NOT NULL,
-    cluster_method TEXT NOT NULL,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    label          TEXT NOT NULL,
+    cluster_method cluster_method NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE finding_issue_map (
@@ -270,9 +358,13 @@ CREATE TYPE validation_check AS ENUM (
     'schema_invalid','cited_event_missing','insufficient_evidence','confidence_below_floor'
 );
 
+-- UNIQUE(finding_id): a finding is quarantined at most once — it is never
+-- re-submitted for another validation attempt (REQ-M5A-03: never repaired,
+-- never retried). This also makes the ERD's FINDINGS ||--o| QUARANTINE
+-- (one-to-zero-or-one) cardinality actually true in the schema, not just the diagram.
 CREATE TABLE quarantine (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    finding_id    UUID NOT NULL REFERENCES findings(id),
+    finding_id    UUID NOT NULL UNIQUE REFERENCES findings(id),
     failed_check  validation_check NOT NULL,
     detail        TEXT,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -324,7 +416,7 @@ CREATE TABLE score_contributions (
     confidence                  NUMERIC(4,3) NOT NULL,
     magnitude                   NUMERIC(4,3) NOT NULL,
     recency                     NUMERIC(4,3) NOT NULL,
-    damping                     NUMERIC(4,3) NOT NULL CHECK (damping <= 1.000),
+    damping                     NUMERIC(4,3) NOT NULL CHECK (damping BETWEEN 0 AND 1.000),
     rank_within_issue_factor    NUMERIC(4,3) NOT NULL DEFAULT 1.000,
     points_contributed          NUMERIC(8,3) NOT NULL,
     is_positive                 BOOLEAN NOT NULL DEFAULT false
@@ -345,18 +437,19 @@ CREATE TABLE band_history (
 CREATE TYPE verdict_type AS ENUM ('correct','false_alarm','resolved');
 
 CREATE TABLE feedback_verdicts (
-    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    finding_id         UUID REFERENCES findings(id),
-    issue_id           UUID REFERENCES issues(id),
-    verdict            verdict_type NOT NULL,
-    submitted_by       TEXT NOT NULL,
-    pattern_signature  TEXT NOT NULL,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    finding_id            UUID REFERENCES findings(id),
+    issue_id              UUID REFERENCES issues(id),
+    verdict               verdict_type NOT NULL,
+    submitted_by_user_id  UUID NOT NULL REFERENCES users(id),
+    pattern_signature     TEXT NOT NULL,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT verdict_has_a_target CHECK (finding_id IS NOT NULL OR issue_id IS NOT NULL)
 );
 
 CREATE TABLE damping_weights (
     pattern_signature   TEXT PRIMARY KEY,
-    weight               NUMERIC(4,3) NOT NULL DEFAULT 1.000 CHECK (weight <= 1.000),
+    weight               NUMERIC(4,3) NOT NULL DEFAULT 1.000 CHECK (weight BETWEEN 0 AND 1.000),
     false_alarm_count    INTEGER NOT NULL DEFAULT 0,
     resolved_count        INTEGER NOT NULL DEFAULT 0,
     correct_count          INTEGER NOT NULL DEFAULT 0,
@@ -373,7 +466,7 @@ CREATE TABLE playbook_actions (
     applies_to_finding_type  TEXT NOT NULL,
     default_owner_role       TEXT NOT NULL,
     default_sla_days         INTEGER NOT NULL,
-    signed_off_by            TEXT,
+    signed_off_by_user_id    UUID REFERENCES users(id),
     is_active                BOOLEAN NOT NULL DEFAULT true
 );
 
@@ -388,14 +481,16 @@ CREATE TABLE narrator_outputs (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TYPE declined_reason AS ENUM ('prediction','colleague_judgment','source_not_connected','unclear');
+
 CREATE TABLE ask_queries (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     question_text       TEXT NOT NULL,
     matched_intent      TEXT,
     rendered_component  TEXT,
-    declined_reason     TEXT,
+    declined_reason     declined_reason,
     response_time_ms    INTEGER,
-    asked_by            TEXT NOT NULL,
+    asked_by_user_id    UUID NOT NULL REFERENCES users(id),
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -405,9 +500,10 @@ CREATE TABLE draft_messages (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     issue_id             UUID NOT NULL REFERENCES issues(id),
     stakeholder_id       UUID NOT NULL REFERENCES stakeholders(id),
+    requested_by_user_id UUID NOT NULL REFERENCES users(id),
     draft_text           TEXT NOT NULL,
     tone_variant         tone_variant NOT NULL,
-    evidence_event_ids   UUID[] NOT NULL,
+    evidence_event_ids   UUID[] NOT NULL CHECK (array_length(evidence_event_ids, 1) >= 1),
     checks_passed        BOOLEAN NOT NULL,
     logged_manually_at   TIMESTAMPTZ,
     copied_at            TIMESTAMPTZ,
@@ -427,8 +523,140 @@ CREATE TABLE notifications (
     sent_at             TIMESTAMPTZ,
     suppressed_reason   TEXT
 );
+
+-- ============================================================
+-- Indexes (performance)
+-- Beyond the unique indexes implied by UNIQUE/PK constraints above.
+-- ============================================================
+-- Explicitly required (consistency review, section B #14):
+CREATE INDEX idx_events_occurred_at              ON events(occurred_at);
+CREATE INDEX idx_events_recorded_at               ON events(recorded_at);
+CREATE INDEX idx_findings_status                  ON findings(status);
+CREATE INDEX idx_score_contributions_score_run_id ON score_contributions(score_run_id);
+CREATE INDEX idx_findings_cited_event_ids         ON findings USING GIN (cited_event_ids);
+
+-- Also recommended — same justification (hot FK columns on tables read by
+-- the dashboard/ask-agent on every request), added while touching this file:
+CREATE INDEX idx_response_pairs_client_event_id ON response_pairs(client_event_id);
+CREATE INDEX idx_score_runs_computed_at         ON score_runs(computed_at);
+CREATE INDEX idx_draft_messages_issue_id        ON draft_messages(issue_id);
+
+-- ============================================================
+-- Roles and grants (real, not a comment)
+-- "Append-only except status columns": most Tier 1/3 tables get zero UPDATE/
+-- DELETE. findings is the one exception — its status/state columns are
+-- genuinely mutable (pending_validation -> validated/quarantined; open ->
+-- resolved/open_overdue) — so it gets a column-level grant instead of a
+-- blanket one. A separate, narrowly-scoped shredder_role is the ONLY role
+-- allowed to touch events.body_encrypted, and only that one column.
+-- ============================================================
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_role') THEN
+        CREATE ROLE app_role LOGIN PASSWORD :'app_role_password';
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'shredder_role') THEN
+        CREATE ROLE shredder_role LOGIN PASSWORD :'shredder_role_password';
+    END IF;
+END $$;
+
+GRANT USAGE ON SCHEMA public TO app_role, shredder_role;
+
+-- app_role: read everything, insert-only on the append-only tables.
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_role;
+GRANT INSERT ON
+    events, raw_envelopes, findings, quarantine, validation_failures,
+    score_runs, score_contributions, band_history,
+    feedback_verdicts, damping_weights, replay_runs, baseline_confirmations,
+    narrator_outputs, ask_queries, draft_messages, notifications,
+    users, auth_tokens
+    TO app_role;
+
+REVOKE UPDATE, DELETE ON
+    events, raw_envelopes, score_runs, score_contributions, band_history,
+    feedback_verdicts, quarantine, validation_failures, replay_runs
+    FROM app_role;
+
+-- findings: append-only except its own lifecycle columns.
+REVOKE UPDATE, DELETE ON findings FROM app_role;
+GRANT UPDATE (status, state) ON findings TO app_role;
+
+-- damping_weights, users, auth_tokens: genuinely mutable rows (running
+-- tallies, login state, revocation) — normal UPDATE rights, never DELETE
+-- on the audit-relevant ones.
+GRANT UPDATE ON damping_weights, users, auth_tokens TO app_role;
+
+-- shredder_role: the retention job's only privilege, anywhere.
+GRANT UPDATE (body_encrypted) ON events TO shredder_role;
+
+-- ============================================================
+-- Trigger: defense in depth on the single most important table.
+-- Grants above are the primary control; this trigger is a second,
+-- independent guard so a role misconfiguration doesn't silently
+-- reopen the append-only guarantee on `events`.
+-- ============================================================
+CREATE OR REPLACE FUNCTION reject_update_delete() RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'UPDATE' AND NEW.body_encrypted IS NULL AND OLD.body_encrypted IS NOT NULL THEN
+        -- the one permitted transition: retention job clearing body_encrypted
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'events is append-only: % is not permitted (event id %)', TG_OP, OLD.id;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER events_append_only
+    BEFORE UPDATE OR DELETE ON events
+    FOR EACH ROW EXECUTE FUNCTION reject_update_delete();
+
+-- ============================================================
+-- Hash chain verification job
+-- Run on a schedule (e.g. nightly) or on demand; returns one row per broken
+-- link found, empty result set means the chain is intact end to end.
+-- ============================================================
+CREATE OR REPLACE FUNCTION verify_hash_chain() RETURNS TABLE(broken_at_event_id UUID, reason TEXT) AS $$
+DECLARE
+    rec RECORD;
+    prev_hash TEXT := repeat('0', 64);
+    computed TEXT;
+BEGIN
+    FOR rec IN SELECT * FROM events ORDER BY occurred_at, id LOOP
+        IF rec.prev_event_hash != prev_hash THEN
+            broken_at_event_id := rec.id;
+            reason := 'prev_event_hash does not match the prior event''s event_hash';
+            RETURN NEXT;
+        END IF;
+        computed := encode(digest(
+            rec.id::text || '|' || rec.envelope_id::text || '|' || rec.event_type::text || '|' ||
+            rec.occurred_at::text || '|' || rec.recorded_at::text || '|' ||
+            coalesce(rec.stakeholder_id::text, '') || '|' || coalesce(rec.product_area_id::text, '') || '|' ||
+            rec.structured_payload::text || '|' || coalesce(rec.supersedes_event_id::text, '') || '|' ||
+            coalesce(rec.thread_key, '') || '|' || rec.prev_event_hash,
+            'sha256'), 'hex');
+        IF computed != rec.event_hash THEN
+            broken_at_event_id := rec.id;
+            reason := 'event_hash does not match the recomputed hash';
+            RETURN NEXT;
+        END IF;
+        prev_hash := rec.event_hash;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 ```
 
 ## Deployment note
 
-This DDL is written for a **single client deployment's schema**. When provisioning a new deployment, run this script against a fresh, dedicated Postgres schema/database (per `architecture/03-technology-stack.md` isolation model) — never add a `client_id` column and share tables across clients.
+This DDL is written for a **single client deployment's schema**. When provisioning a new deployment, run this script against a fresh, dedicated Postgres schema/database (per `architecture/03-technology-stack.md` isolation model) — never add a `client_id` column and share tables across clients. `app_role_password` and `shredder_role_password` are `psql` variables — pass them via `-v` at deploy time, never hardcode them in this file.
+
+## What changed in this revision (v1.1)
+
+| Gap | Fix |
+|---|---|
+| No indexes beyond PK/UNIQUE | Added the 5 required (`events.occurred_at`/`recorded_at`, `findings.status`, `score_contributions.score_run_id`, GIN on `findings.cited_event_ids`) + 3 more on the same justification |
+| Append-only was a commented-out `REVOKE` | Real `CREATE ROLE`/`GRANT`/`REVOKE` block, plus a `BEFORE UPDATE OR DELETE` trigger on `events` as a second, independent guard |
+| Hash chain algorithm unspecified | Documented (SHA-256, canonical field order, genesis value) and given a runnable `verify_hash_chain()` function |
+| `rollups.is_baseline` lost on replay | Moved the durable confirmation to a new `baseline_confirmations` table; added `replay_runs` as a replay audit trail |
+| `data_key_ref` NOT NULL vs. "set NULL to delete" | Reconciled: `data_key_ref` is permanent, `body_encrypted` is the column that gets nulled, by a narrowly-scoped `shredder_role` only |
+| No `users` table | Added `users` + `auth_tokens`; rewired `submitted_by`, `asked_by`, `authored_by`, `signed_off_by` from free text to real FKs |
+| 4 enums left as `TEXT` | `stitch_method`, `subject_type` (→ `rollup_subject_type`), `cluster_method`, `declined_reason` are now real Postgres `ENUM` types |
+| Missing `CHECK`s | `draft_messages.evidence_event_ids` non-empty, `feedback_verdicts` has at least one target, `damping_weights.weight`/`score_contributions.damping` both have a `>= 0` floor |
+| `quarantine.finding_id` had no `UNIQUE` | Added — makes the ERD's 1:0..1 cardinality actually true in the schema |

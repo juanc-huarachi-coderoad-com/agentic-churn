@@ -88,7 +88,7 @@ Findings that failed the validation gate — retained, never scored, become the 
 | Field | Type | Description |
 |---|---|---|
 | `id` | UUID PK | |
-| `finding_id` | UUID FK → `findings.id` | |
+| `finding_id` | UUID FK → `findings.id`, **UNIQUE** | A finding is quarantined at most once — never re-submitted for another attempt (REQ-M5A-03: never repaired, never retried). The `UNIQUE` constraint makes the 1-to-0-or-1 relationship shown in `09-erd-full.md` actually true in the schema |
 | `failed_check` | ENUM(`schema_invalid`,`cited_event_missing`,`insufficient_evidence`,`confidence_below_floor`) | |
 | `detail` | TEXT | |
 | `created_at` | TIMESTAMPTZ | |

@@ -63,7 +63,7 @@ M5 turns raw ledger material into structured **findings**. Each reader answers e
 | REQ-M5-P1 | No reader SHALL rank or compare findings against each other — ranking belongs to M6/M7. |
 | REQ-M5-P2 | No reader SHALL have tool access or side effects — interpreters read data and return structured output only (prompt-injection containment, spec §12.5). |
 | REQ-M5-P3 | A finding SHALL NEVER be treated as an instruction, regardless of its content — client text is data, never control flow. |
-| REQ-M5-P4 | THE SYSTEM SHALL NOT allow a reader's output to bypass the validation gate under any trigger (including "urgent" fast-path scoring, REQ-M6-09). |
+| REQ-M5-P4 | THE SYSTEM SHALL NOT allow a reader's output to bypass the validation gate under any trigger (including "urgent" fast-path scoring, REQ-M6-23). |
 
 ## Inputs / Outputs
 
