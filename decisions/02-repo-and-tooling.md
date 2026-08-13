@@ -6,27 +6,41 @@
 | **Status** | Approved for Phase 1 build start |
 | **Date** | 2026-08-11 |
 | **Depends on** | `architecture/03-technology-stack.md` (the stack itself); this document is *how the stack sits in the repo*, not what the stack is |
+| **Refined by** | `architecture/09-clean-architecture-and-patterns.md` — the layout below now reflects that document's three-ring layering (Domain / Application / Adapters, package-by-module) |
 
 Everything described here — the monorepo layout, CI pipeline, migrations — is exactly what build order **Phase 1: Project Foundation** (`base/Churn-Sentiment-Agent-Product-Specification.md` §16, v1.2) delivers. This document is that phase's detail; §16 is the one-line summary.
 
 ## Monorepo layout
 
-One repository, one Docker Compose stack per deployment (`architecture/03-technology-stack.md`), structured by tier:
+One repository, one Docker Compose stack per deployment (`architecture/03-technology-stack.md`), structured by module (M1–M10, the vocabulary every other document in this repo already uses) with the same three rings inside each module — Domain (pure business rules), Application (use cases + ports), Adapters (everything that touches a framework, database, or SDK). Full rationale: `architecture/09-clean-architecture-and-patterns.md`.
 
 ```
 /
 ├── backend/
 │   ├── app/
-│   │   ├── ingestion/        # M1 — collectors, absence collector
-│   │   ├── ledger/           # M2 — event ledger, projections, replay
-│   │   ├── context/          # M3, M4 — client profile, feedback memory
-│   │   ├── readers/          # M5, M5a — interpreters, validation gate
-│   │   ├── scoring/          # M6 — scoring engine (zero LLM imports, CI-enforced)
-│   │   ├── narrator/         # M7
-│   │   ├── experience/       # M8, M9, M10 — dashboard read API, ask agent, draft composer
-│   │   ├── auth/             # requirements/14-authentication.md
-│   │   └── worker.py         # APScheduler heartbeat + LISTEN/NOTIFY consumer
-│   ├── migrations/           # Alembic
+│   │   ├── ingestion/              # M1
+│   │   │   ├── application/        # CollectorPort, EventRepositoryPort, IdentityResolver
+│   │   │   └── adapters/           # GmailCollector, ZendeskCollector, WarehouseCollector,
+│   │   │                           #   SlackCollector, AbsenceCollector, SqlAlchemyEventRepository
+│   │   ├── readers/                 # M5, M5a
+│   │   │   ├── application/        # Reader subclasses (all 8), ValidationGate, RunReadersUseCase,
+│   │   │   │                       #   LLMPort, EmbeddingPort
+│   │   │   └── adapters/           # AnthropicLLMAdapter, OpenAIEmbeddingAdapter
+│   │   ├── context/                 # M3, M4
+│   │   │   ├── domain/             # ClientProfile, Stakeholder, ProductArea, DampingWeight
+│   │   │   ├── application/        # ClientProfileRepositoryPort, DampingCalculator caller
+│   │   │   └── adapters/           # YAML parser (MVP), SqlAlchemy repository
+│   │   ├── scoring/                 # M6 — the module the "zero LLM imports" rule originated in
+│   │   │   ├── domain/             # ScoringCalculator, BandClassifier, DampingCalculator,
+│   │   │   │                       #   AgeingCalculator, IssueGrouper — zero I/O, zero ports
+│   │   │   ├── application/        # FindingRepositoryPort, ScoreRunRepositoryPort,
+│   │   │   │                       #   RecomputeScoreUseCase
+│   │   │   └── adapters/           # SqlAlchemyFindingRepository, SqlAlchemyScoreRunRepository
+│   │   ├── narrator/                # M7
+│   │   ├── experience/              # M8, M9, M10 — dashboard read API, ask agent, draft composer
+│   │   ├── auth/                    # requirements/14-authentication.md
+│   │   └── worker.py                # APScheduler heartbeat + LISTEN/NOTIFY consumer
+│   ├── migrations/                  # Alembic
 │   └── tests/
 ├── frontend/
 │   └── src/
@@ -39,21 +53,24 @@ One repository, one Docker Compose stack per deployment (`architecture/03-techno
 ├── demo/                      # demo/01-live-demo-runbook.md and friends
 ├── tests/                     # cross-cutting: golden-replay fixtures, integration tests
 ├── workflows/                 # CI pipeline definition (workflows/ci.yml)
+├── .importlinter               # layer-boundary contracts, see §CI enforcement below
 ├── docker-compose.yml
 ├── AGENTS.md
 └── .env.example
 ```
 
+Not every module needs all three rings on day one — `narrator/` and `experience/` are thin enough in the MVP that Application and Adapters may be the only two that exist until there's genuine domain logic to isolate. Adding a `domain/` folder before there's a pure business rule to put in it would be exactly the premature abstraction `architecture/09-clean-architecture-and-patterns.md` §YAGNI warns against.
+
 ### Module → package mapping
 
 | Module | Package | Notes |
 |---|---|---|
-| M1 Signal collectors | `backend/app/ingestion/collectors/{gmail,zendesk,warehouse,slack,csat,calendar,salesforce}.py` | One file per source, all implementing the shared `Collector` protocol (`architecture/02-component-catalog.md`) |
-| M2 Event ledger | `backend/app/ledger/` | `events.py` (append-only writes), `projections.py`, `replay.py`, `hash_chain.py` |
-| M3 Client profile | `backend/app/context/profile.py` | YAML parse + validate (MVP) / API write (Post-MVP) |
-| M4 Feedback memory | `backend/app/context/feedback.py` | Implements the damping formula from `requirements/13-scoring-calibration-appendix.md` REQ-M6-CAL-03 |
-| M5/M5a Readers + gate | `backend/app/readers/{commitment,usage,recurrence,absence,relationship,tone,intent,meeting}.py`, `backend/app/readers/gate.py` | Deterministic and LLM readers live side by side but never import each other |
-| M6 Scoring engine | `backend/app/scoring/engine.py` | **CI-checked (see below) to have zero imports of `app.llm` or any Anthropic/OpenAI client** |
+| M1 Signal collectors | `backend/app/ingestion/adapters/{gmail,zendesk,warehouse,slack}_collector.py` | One adapter per source, all implementing `Collector`'s template method (`architecture/08-class-diagrams.md`) |
+| M2 Event ledger | `backend/app/ingestion/application/event_repository_port.py` + `backend/app/ingestion/adapters/sqlalchemy_event_repository.py` | Projections/replay logic (`events.py`, `projections.py`, `replay.py`, `hash_chain.py`) sit in `ingestion/application/` — they're pure orchestration over the port, not adapter-specific |
+| M3 Client profile | `backend/app/context/adapters/yaml_profile_loader.py` | YAML parse + validate (MVP) / API write (Post-MVP) |
+| M4 Feedback memory | `backend/app/context/domain/damping_calculator.py` | Implements the damping formula from `requirements/13-scoring-calibration-appendix.md` REQ-M6-CAL-03 — pure function, no I/O |
+| M5/M5a Readers + gate | `backend/app/readers/application/{commitment,usage,recurrence,absence,relationship,tone,intent,meeting}_reader.py`, `.../validation_gate.py` | Deterministic and LLM readers live side by side but never import each other; only three import `LLMPort` |
+| M6 Scoring engine | `backend/app/scoring/domain/scoring_calculator.py` | **`import-linter`-checked (see below) to have zero imports outside `app.scoring.domain`** |
 | M7 Narrator | `backend/app/narrator/` | |
 | M8/M9/M10 | `backend/app/experience/{dashboard,ask,drafts}.py` | Thin read/orchestration layer behind `architecture/07-api-spec.md` |
 | Auth | `backend/app/auth/` | `requirements/14-authentication.md` |
@@ -94,27 +111,48 @@ Changing either value is treated exactly like a prompt version change (`architec
 
 The warehouse source (`requirements/01-signal-collectors.md`) is read via a generic **SQLAlchemy read-only connection string**, not a bespoke SDK — product usage telemetry lives in a client's own analytics warehouse (Snowflake, BigQuery, Postgres, Redshift are all SQLAlchemy-dialect-supported), and the collector only ever needs to run one parameterized query per sync (`SELECT metric, value, window_start, window_end FROM <client-provided view>`). This keeps M1's warehouse adapter a single, source-agnostic implementation instead of one per warehouse vendor.
 
-## CI enforcement of the "no LLM in scoring" boundary
+## CI enforcement of the layer boundary (generalizes the "no LLM in scoring" rule)
 
-Referenced in `architecture/03-technology-stack.md` but not previously specified as a concrete check. Implemented as a CI step in `workflows/ci.yml`:
+This started as a single bespoke AST-walking script scoped to `app.scoring`. `architecture/09-clean-architecture-and-patterns.md` generalizes it: every module's Domain and Application rings get the same guarantee, declaratively, via **`import-linter`** — one `.importlinter` config file at the repo root instead of a hand-rolled script per module:
 
-```bash
-# Fails the build if app.scoring imports anything LLM-related
-python -c "
-import ast, sys, pathlib
-forbidden = {'anthropic', 'openai', 'app.llm'}
-for f in pathlib.Path('backend/app/scoring').rglob('*.py'):
-    tree = ast.parse(f.read_text())
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            names = [n.name for n in node.names] if isinstance(node, ast.Import) else [node.module]
-            if any(n and any(n.startswith(f) for f in forbidden) for n in names):
-                print(f'FORBIDDEN IMPORT in {f}: {names}'); sys.exit(1)
-"
+```ini
+# .importlinter
+[importlinter]
+root_package = app
+
+[importlinter:contract:scoring-domain-purity]
+name = Scoring domain never imports adapters or AI SDKs
+type = forbidden
+source_modules =
+    app.scoring.domain
+forbidden_modules =
+    anthropic
+    openai
+    sqlalchemy
+    fastapi
+    app.scoring.adapters
+
+[importlinter:contract:readers-application-purity]
+name = Reader application layer depends on ports, never concrete AI SDKs
+type = forbidden
+source_modules =
+    app.readers.application
+forbidden_modules =
+    anthropic
+    openai
+    app.readers.adapters
+
+[importlinter:contract:global-dependency-rule]
+name = No module's domain or application package imports its own adapters package
+type = layers
+layers =
+    app.*.adapters
+    app.*.application
+    app.*.domain
 ```
 
-This is the mechanical enforcement behind REQ-M6-P1 and the engineering acceptance criterion "no model call exists anywhere in the scoring engine" (spec §14.3) — a code review can miss an import; a CI step can't.
+`workflows/ci.yml` runs `lint-imports` as its own job, in place of the old bespoke script. This is the mechanical enforcement behind REQ-M6-P1 and the engineering acceptance criterion "no model call exists anywhere in the scoring engine" (spec §14.3) — now extended to every module, not just scoring — because a code review can miss an import, and a hand-rolled script only checks the one module someone remembered to write it for.
 
 ## Traceability
 
-`architecture/03-technology-stack.md`, `architecture/04-ai-safety-and-model-usage.md`, `data-base/10-ddl-appendix.md`, `requirements/13-scoring-calibration-appendix.md`, `tests/strategy.md`.
+`architecture/09-clean-architecture-and-patterns.md` (the layering and SOLID/patterns rationale this enforcement implements), `architecture/03-technology-stack.md`, `architecture/04-ai-safety-and-model-usage.md`, `architecture/08-class-diagrams.md`, `data-base/10-ddl-appendix.md`, `requirements/13-scoring-calibration-appendix.md`, `tests/strategy.md`.

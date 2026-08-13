@@ -1,11 +1,12 @@
 # workflows/ci.yml
 #
 # CI pipeline referenced throughout this documentation set
-# (architecture/03-technology-stack.md, decisions/02-repo-and-tooling.md,
-# tests/strategy.md). Written as a GitHub Actions workflow; copy or symlink
-# into .github/workflows/ci.yml in the actual repository to activate it —
-# kept here, in the project's own workflows/ folder, so it stays versioned
-# alongside the documentation that specifies what it must do.
+# (architecture/03-technology-stack.md, architecture/09-clean-architecture-and-patterns.md,
+# decisions/02-repo-and-tooling.md, tests/strategy.md). Written as a GitHub
+# Actions workflow; copy or symlink into .github/workflows/ci.yml in the
+# actual repository to activate it — kept here, in the project's own
+# workflows/ folder, so it stays versioned alongside the documentation that
+# specifies what it must do.
 #
 # Every step below traces to a specific engineering acceptance criterion
 # in base/Churn-Sentiment-Agent-Product-Specification.md §14.3.
@@ -46,7 +47,7 @@ jobs:
         run: pnpm run typecheck
         working-directory: frontend
 
-  static-no-llm-in-scoring:
+  layer-boundaries:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     steps:
@@ -55,24 +56,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Enforces REQ-M6-P1 / product principle P2 mechanically, not by
-      # convention. Full script documented in decisions/02-repo-and-tooling.md.
-      - name: Assert app.scoring has no reachable LLM import
-        run: |
-          python -c "
-          import ast, sys, pathlib
-          forbidden = {'anthropic', 'openai', 'app.llm'}
-          bad = False
-          for f in pathlib.Path('backend/app/scoring').rglob('*.py'):
-              tree = ast.parse(f.read_text())
-              for node in ast.walk(tree):
-                  if isinstance(node, (ast.Import, ast.ImportFrom)):
-                      names = [n.name for n in node.names] if isinstance(node, ast.Import) else [node.module]
-                      if any(n and any(n.startswith(fb) for fb in forbidden) for n in names):
-                          print(f'FORBIDDEN IMPORT in {f}: {names}')
-                          bad = True
-          sys.exit(1 if bad else 0)
-          "
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - name: Install deps (includes import-linter)
+        run: uv sync
+        working-directory: backend
+      # Enforces the Dependency Rule from every .importlinter contract —
+      # generalizes the old scoring-only check to every module's Domain and
+      # Application rings at once. Contracts documented in
+      # decisions/02-repo-and-tooling.md §CI enforcement of the layer boundary;
+      # rationale in architecture/09-clean-architecture-and-patterns.md.
+      - name: Check layer boundaries (import-linter)
+        run: uv run lint-imports
+        working-directory: .
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -136,7 +132,7 @@ jobs:
         run: uv sync
         working-directory: backend
       # The single test category the spec treats as non-negotiable
-      # (spec §16, Phase 2 checkpoint; tests/strategy.md §Golden-replay tests).
+      # (spec §16, Phase 4 checkpoint; tests/strategy.md §Golden-replay tests).
       # A failure here blocks merge — no override.
       - name: Run fixture through pipeline, snapshot, truncate, replay, diff
         run: uv run pytest tests/golden_replay/ -v --strict
@@ -146,6 +142,6 @@ jobs:
 
   required-checks:
     runs-on: ubuntu-latest
-    needs: [static-no-llm-in-scoring, unit-tests, golden-replay]
+    needs: [layer-boundaries, unit-tests, golden-replay]
     steps:
       - run: echo "All required checks passed."

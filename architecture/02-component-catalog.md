@@ -2,6 +2,8 @@
 
 Detailed responsibility, interface, and technology mapping for every component in the architecture diagram (`01-architecture-overview.md`). Each entry mirrors the discipline of spec §9.2: **owns / must never**.
 
+**Implementing Collectors (M1), Readers (M5), or the `Finding` data model?** `architecture/08-class-diagrams.md` goes one level deeper than this file — actual classes, interfaces, and exactly which ones hold an `LLMPort` dependency and which never do. For the layering (Domain/Application/Adapters), SOLID mapping, and design patterns those classes follow, see `architecture/09-clean-architecture-and-patterns.md`.
+
 ---
 
 ## Tier 1 · Ingestion
