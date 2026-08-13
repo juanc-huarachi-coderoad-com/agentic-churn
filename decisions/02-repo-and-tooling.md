@@ -7,6 +7,8 @@
 | **Date** | 2026-08-11 |
 | **Depends on** | `architecture/03-technology-stack.md` (the stack itself); this document is *how the stack sits in the repo*, not what the stack is |
 
+Everything described here — the monorepo layout, CI pipeline, migrations — is exactly what build order **Phase 1: Project Foundation** (`base/Churn-Sentiment-Agent-Product-Specification.md` §16, v1.2) delivers. This document is that phase's detail; §16 is the one-line summary.
+
 ## Monorepo layout
 
 One repository, one Docker Compose stack per deployment (`architecture/03-technology-stack.md`), structured by tier:

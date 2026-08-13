@@ -59,4 +59,4 @@ Every person who opens the dashboard, asks a question, or requests a draft is a 
 
 ## Traceability
 
-New in spec v1.1 (not present in the original product specification — added per explicit build-start request). Backs `data-base/12-users-and-auth.md`, `architecture/07-api-spec.md` §Authentication, `decisions/00-open-questions-resolved.md` Q8.
+New in spec v1.1 (not present in the original product specification — added per explicit build-start request). Backs `data-base/12-users-and-auth.md`, `architecture/07-api-spec.md` §Authentication, `decisions/00-open-questions-resolved.md` Q8. Built in build order **Phase 2: Vertical Slice MVP — Login + Dashboard** (spec §16, v1.2) — the real login flow this module specifies is exactly what that phase proves works end to end, before any of the domain logic in Phases 3–10 exists.

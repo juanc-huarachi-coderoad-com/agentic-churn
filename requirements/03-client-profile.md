@@ -48,4 +48,4 @@ The lens that converts a signal into a severity. Structured, versioned, human-au
 
 ## Traceability
 
-Spec (v1.1) §7 M3, §6.2 (profile schema example), §9.2 (component responsibilities), §17 Q2 / §17.1 (who authors the profile — resolved: CS lead edits the YAML file directly in the MVP; profile editor UI Post-MVP).
+Spec (v1.2) §7 M3, §6.2 (profile schema example), §9.2 (component responsibilities), §17 Q2 / §17.1 (who authors the profile — resolved: CS lead edits the YAML file directly in the MVP; profile editor UI Post-MVP).

@@ -50,4 +50,4 @@ Turn calculated facts into sentences a human wants to read. Receives findings al
 
 ## Traceability
 
-Spec (v1.1) §7 M7, §12.1 (narrator patterns), §12.5 (model safety / structured output / versioned prompts), §17 Q7 / §17.1 (playbook sign-off owner — resolved: Marta, CS lead, 3–5 actions in the MVP).
+Spec (v1.2) §7 M7, §12.1 (narrator patterns), §12.5 (model safety / structured output / versioned prompts), §17 Q7 / §17.1 (playbook sign-off owner — resolved: Marta, CS lead, 3–5 actions in the MVP).

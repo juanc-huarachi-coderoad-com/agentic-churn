@@ -14,7 +14,7 @@ How this system's own engineering acceptance criteria (spec §14.3, `requirement
 
 ## Golden-replay tests
 
-The single most load-bearing test category — it's the mechanical proof behind REQ-NFR-09/28 and the spec's own Phase 2 checkpoint ("if the score cannot be explained and defended with hand-written findings, no amount of AI will fix it," spec §16).
+The single most load-bearing test category — it's the mechanical proof behind REQ-NFR-09/28 and the spec's own Phase 4 checkpoint ("if the score cannot be explained and defended with hand-written findings, no amount of AI will fix it," spec §16 — Phase 4 is "Scoring engine with hand-written findings" in the v1.2 build order).
 
 **Fixture:** `demo/fixtures/meridian-week.json` (the same fixture the demo's contingency path uses, `demo/03-environment-and-fixtures-checklist.md`) fed through `SimulatedCollector` into a fresh database.
 
@@ -51,12 +51,12 @@ This harness never "fixes" a quarantined finding (REQ-M5A-03 forbids that struct
 
 ## What's explicitly out of scope for automated testing
 
-- **Draft quality** (is the generated message actually good) — inherently subjective; handled by the Phase 1 success metric "≥ 40% of drafts sent after light editing" (spec §14.2), measured in production, not asserted in CI.
+- **Draft quality** (is the generated message actually good) — inherently subjective; handled by the MVP success metric "≥ 40% of drafts sent after light editing" (spec §14.2), measured in production, not asserted in CI.
 - **Narrator prose quality** — same reasoning; the *mechanical* fact-check (REQ-M7-06) is fully tested (every fact in output must exist in input), but "is this a good sentence" is not a CI assertion.
 
 ## CI integration
 
-All of the above (except the reader eval harness, which runs on its own schedule, not per-commit) runs on every pull request via `workflows/ci.yml`. A golden-replay failure or a monotonicity counter-example blocks merge — these are the two categories the spec treats as non-negotiable (spec §16 Phase 2 checkpoint), so CI treats them the same way.
+All of the above (except the reader eval harness, which runs on its own schedule, not per-commit) runs on every pull request via `workflows/ci.yml`. A golden-replay failure or a monotonicity counter-example blocks merge — these are the two categories the spec treats as non-negotiable (spec §16 Phase 4 checkpoint), so CI treats them the same way.
 
 ## Traceability
 

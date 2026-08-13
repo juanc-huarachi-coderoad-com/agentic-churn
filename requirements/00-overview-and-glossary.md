@@ -4,7 +4,7 @@
 |---|---|
 | **Document** | Requirements overview (spec-driven development root document) |
 | **Version** | 1.0 |
-| **Source of truth** | `base/Churn-Sentiment-Agent-Product-Specification.md` v1.1 |
+| **Source of truth** | `base/Churn-Sentiment-Agent-Product-Specification.md` v1.2 |
 | **Status** | Ready for technical review |
 
 > **Phasing note:** every requirement below describes the full product. It does not describe what gets *built first*. For the Phase 1 ("first solution") vs. Phase 2 boundary — which sources, which readers, which UI conveniences are deferred — see `decisions/01-mvp-scope-and-phasing.md`. For the eight build-start decisions this implies (spec §17), see `decisions/00-open-questions-resolved.md`.

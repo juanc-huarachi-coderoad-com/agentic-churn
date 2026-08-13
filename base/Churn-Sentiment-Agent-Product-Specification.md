@@ -1,17 +1,19 @@
 # Churn Prediction & Sentiment Agent
-## Product Specification — v1.1
+## Product Specification — v1.2
 
 | | |
 |---|---|
 | **Document** | Product Specification (pre-build) |
-| **Version** | 1.1 — MVP scope amendment |
-| **Date** | 10 August 2026 (v1.0 was 7 August 2026) |
+| **Version** | 1.2 — Build order restructured |
+| **Date** | 13 August 2026 (v1.1 was 10 August 2026; v1.0 was 7 August 2026) |
 | **Original brief** | CS Studio — Churn Prediction & Sentiment Agent |
 | **Status** | Approved — MVP scope locked, ready for build |
 | **Purpose** | Define what we are building and why, before any code is written |
-| **Companion documents** | `decisions/00-open-questions-resolved.md` (§17 resolutions), `decisions/01-mvp-scope-and-phasing.md` (full MVP rationale), `requirements/`, `architecture/`, `sequences/`, `data-base/`, `examples/` |
+| **Companion documents** | `decisions/00-open-questions-resolved.md` (§17 resolutions), `decisions/01-mvp-scope-and-phasing.md` (full MVP rationale), `decisions/02-repo-and-tooling.md` (§16 Phase 1 detail), `requirements/`, `architecture/`, `sequences/`, `data-base/`, `examples/` |
 
-> **v1.1 amendment note.** Everything in v1.0 is still the product — nothing described below has been cut. What's new in v1.1 is an explicit **MVP boundary**: which of these sources, readers, and conveniences ship in the first buildable release versus a fast-following second one. MVP items are marked inline; unmarked items are MVP by default (most of the product is). See the new §3.4 for the full picture, and don't confuse this with the **build order** in §16, which is a different axis — the sequence in which modules get *built*, not which data sources feed them once built.
+> **v1.1 amendment note.** Everything in v1.0 is still the product — nothing described below has been cut. What's new in v1.1 is an explicit **MVP boundary**: which of these sources, readers, and conveniences ship in the first buildable release versus a fast-following second one. MVP items are marked inline; unmarked items are MVP by default (most of the product is). See §3.4 for the full picture, and don't confuse this with the **build order** in §16, which is a different axis — the sequence in which modules get *built*, not which data sources feed them once built.
+>
+> **v1.2 amendment note.** §16's build order now opens with two phases that didn't exist before — **Project Foundation** (repo, CI, database, deployable skeleton) and a **Vertical Slice MVP: Login + Dashboard** (auth and the full stack proven end to end on seeded data) — and closes with a new **Production Hardening** phase. The eight phases in between are unchanged in content, only renumbered (each shifts by +2). A new **Category** column classifies every phase against the same tiers used in §9's architecture diagram. §17's "Needed by" column is updated to match the new numbers; nothing about *what* is being decided changed, only which phase number it's cited against.
 
 ---
 
@@ -877,20 +879,25 @@ A strong demo makes three things clear:
 
 Each phase leaves a working system. Nothing is ever half-wired.
 
-**This is a different axis from the MVP scope in §3.4.** The eight phases below are the *sequence in which modules get built* — all eight target the MVP's three sources (Gmail, Zendesk, warehouse) first. Once phase 8 is complete, the system is fully built and MVP-ready; connecting the Post-MVP sources (Slack, CSAT, Calendar) afterward is additive — it does not restart or reorder this build sequence.
+**This is a different axis from the MVP scope in §3.4.** The eleven phases below are the *sequence in which modules get built* — all eleven target the MVP's three sources (Gmail, Zendesk, warehouse) first. Once phase 11 is complete, the system is fully built and MVP-ready; connecting the Post-MVP sources (Slack, CSAT, Calendar) afterward is additive — it does not restart or reorder this build sequence.
 
-| Phase | Deliverable | Why this order |
-|---|---|---|
-| **1** | Event ledger + client profile | Unglamorous and foundational. Auditability cannot be added later |
-| **2** | Scoring engine with hand-written findings | Proves the number before any AI exists |
-| **3** | Deterministic interpreters (commitment, usage, recurrence, absence) | Real findings, no model risk |
-| **4** | Dashboard with the evidence trace | The moment it stops being a script and becomes a product |
-| **5** | Model interpreters (tone, intent) + validation gate | Adds judgment, safely fenced |
-| **6** | Narrator + ask agent | The explanation layer |
-| **7** | Draft composer | The closer |
-| **8** | Feedback memory | Only once 1–7 are solid |
+**Category** groups each phase by which part of the architecture it belongs to — the same tiers as §9's diagram, plus two bookends (Foundation, Hardening) that sit outside the four-tier model because they're about the system as a whole, not one tier of it.
 
-**Phase 2 is the checkpoint.** If the score cannot be explained and defended with hand-written findings, no amount of AI will fix it.
+| Phase | Category | Deliverable | Why this order |
+|---|---|---|---|
+| **1** | Foundation | Repo scaffold, CI pipeline, Docker Compose stack, database provisioned from the schema | Nothing else can be built, tested, or demoed without a running database and a CI gate — and the "no model call in scoring" static check needs to exist before the first line of scoring code is written, not bolted on afterward |
+| **2** | Dashboard (shell) | Vertical-slice walking skeleton: real login issuing a real token, a dashboard screen rendering against seeded data through the real API, deployed end to end | Proves the full stack — auth, API contract, frontend build, deployment — works before any real business logic exists, so an integration problem here is never confused with a scoring-logic problem later |
+| **3** | Ingestion / Context | Event ledger + client profile | Unglamorous and foundational. Auditability cannot be added later |
+| **4** | Score engine | Scoring engine with hand-written findings | Proves the number before any AI exists |
+| **5** | Findings | Deterministic interpreters (commitment, usage, recurrence, absence) | Real findings, no model risk |
+| **6** | Dashboard | Dashboard with the evidence trace | The moment it stops being a script and becomes a product |
+| **7** | Findings | Model interpreters (tone, intent) + validation gate | Adds judgment, safely fenced |
+| **8** | Agent | Narrator + ask agent | The explanation layer |
+| **9** | Agent | Draft composer | The closer |
+| **10** | Learning | Feedback memory | Only once 1–9 are solid |
+| **11** | Hardening | Automated retention/crypto-shredding job, role-based access control on top of authentication, observability, Post-MVP sources (Slack, CSAT, Calendar), weight-elicitation workshop, profile editor UI | Everything before this phase is what's required to reach a defensible, demoable MVP; spending effort on production-grade hardening before the core evidence-to-score pipeline is proven would mean fixing the wrong risk first |
+
+**Phase 4 is the checkpoint.** If the score cannot be explained and defended with hand-written findings, no amount of AI will fix it.
 
 ---
 
@@ -900,14 +907,16 @@ Decisions needed before build starts.
 
 | # | Question | Owner | Needed by |
 |---|---|---|---|
-| 1 | Which source systems for the first deployment? | Product + client | Phase 1 |
-| 2 | Who authors and maintains the client profile? | CS lead | Phase 1 |
-| 3 | Are meeting transcripts in scope, and is consent documented? | Legal | Phase 3 |
-| 4 | Base weights — who runs the elicitation workshop with CS leads? | Product | Phase 2 |
-| 5 | Retention period for message bodies? | Legal + client | Phase 1 |
-| 6 | Where do notifications land — email, Slack, or in-app? | CS lead | Phase 4 |
-| 7 | Who signs off the playbook of standard actions? | CS lead | Phase 6 |
-| 8 | Do we display the score to the account executive, or only to CS? | Product | Phase 4 |
+| 1 | Which source systems for the first deployment? | Product + client | Phase 3 |
+| 2 | Who authors and maintains the client profile? | CS lead | Phase 3 |
+| 3 | Are meeting transcripts in scope, and is consent documented? | Legal | Phase 5 |
+| 4 | Base weights — who runs the elicitation workshop with CS leads? | Product | Phase 4 |
+| 5 | Retention period for message bodies? | Legal + client | Phase 3 |
+| 6 | Where do notifications land — email, Slack, or in-app? | CS lead | Phase 6 |
+| 7 | Who signs off the playbook of standard actions? | CS lead | Phase 8 |
+| 8 | Do we display the score to the account executive, or only to CS? | Product | Phase 6 |
+
+*(Renumbered in this table only to match §16's v1.1 build order, which now opens with Project Foundation and a Vertical Slice MVP phase before the phase numbers below — these are the same eight decisions as §17.1, just cited against the updated phase count.)*
 
 ## 17.1 Resolutions (v1.1)
 
@@ -943,4 +952,4 @@ Pin this where the team can see it.
 
 ---
 
-*End of document — v1.1*
+*End of document — v1.2*

@@ -13,7 +13,7 @@ Conventions for anyone — human or AI — working in this repository. If you're
 | What's in the first buildable release vs. deferred | `decisions/01-mvp-scope-and-phasing.md` |
 | Sequence/flow diagrams | `sequences/` |
 
-**`base/Churn-Sentiment-Agent-Product-Specification.md` is the original product brief (v1.1).** Everything else in this repo derives from it. If a requirement and the base spec ever seem to disagree, that's a bug to fix, not a judgment call to make silently — flag it.
+**`base/Churn-Sentiment-Agent-Product-Specification.md` is the original product brief (v1.2).** Everything else in this repo derives from it. If a requirement and the base spec ever seem to disagree, that's a bug to fix, not a judgment call to make silently — flag it.
 
 ## Non-negotiable rules (product principles P1–P7)
 
