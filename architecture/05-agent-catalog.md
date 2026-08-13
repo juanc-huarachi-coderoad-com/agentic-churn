@@ -124,9 +124,19 @@ flowchart TB
         Checks -->|pass| Display["Shown to human"]
         Checks -->|fail| Blocked["Never displayed"]
     end
+
+    subgraph Learn["Learning loop - human-driven, no LLM, no agent (M4)"]
+        Verdict["Human clicks a verdict\n(correct / false_alarm / resolved)"] --> Memory["Feedback memory\ndeterministic code"]
+        Memory --> Damping[("damping_weights\nupdated")]
+    end
+
+    Dash -.->|"any card can carry\na verdict control"| Verdict
+    Component -.->|"any card can carry\na verdict control"| Verdict
+    Display -.->|"any card can carry\na verdict control"| Verdict
+    Damping -.->|"read on the next\nmatching finding"| Score
 ```
 
-Every arrow into an LLM box is application code deciding to call it, not one agent deciding to call another.
+Every arrow into an LLM box is application code deciding to call it, not one agent deciding to call another. The learning loop is the clearest case of this: a verdict click never talks to a model at all — it's a stored numeric weight (`architecture/02-component-catalog.md` §Feedback memory), read back in on a *future* scoring run, never rewriting a past one (`requirements/06-scoring-engine.md` REQ-M6-20).
 
 ## Traceability
 

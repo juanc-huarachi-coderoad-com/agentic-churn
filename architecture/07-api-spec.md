@@ -63,7 +63,9 @@ Warehouse telemetry and CSAT are poll-only sources (no inbound webhook) per `dec
 
 Webhook routes are authenticated differently from the routes above: each source's own signature/secret scheme (e.g. Gmail's pub/sub token, Zendesk's webhook signing secret), verified before the payload is trusted — never a user bearer token, since no human is on the other end of a webhook call.
 
-## Minimal OpenAPI skeleton
+## OpenAPI contract
+
+Not a sketch — every path below has a real `requestBody`/`parameters` and a real `responses` block pointing at a schema in `components.schemas`, so client and server code can actually be generated from this file rather than from the prose tables above. The prose tables stay as the human-readable summary; this YAML is the machine-readable source of truth for shapes.
 
 ```yaml
 openapi: 3.0.3
@@ -72,29 +74,357 @@ info:
   version: 1.1.0
 security:
   - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      security: []
+      summary: Exchange username/password for a bearer token (REQ-AUTH-01)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401':
+          description: Generic failure — never reveals whether the username exists (REQ-AUTH-08)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/logout:
+    post:
+      summary: Revoke the presented token (REQ-AUTH-06)
+      responses:
+        '204': { description: Token revoked }
+  /health:
+    get:
+      security: []
+      summary: Liveness/readiness check, no client data (REQ-AUTH-P1)
+      responses:
+        '200': { description: OK }
+  /api/dashboard:
+    get:
+      summary: Precomputed dashboard state (REQ-M8-01)
+      responses:
+        '200':
+          description: Full dashboard payload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardResponse' }
+  /api/evidence/{score_contribution_id}:
+    get:
+      summary: Evidence trace panel for one contribution bar (spec §11.4)
+      parameters:
+        - name: score_contribution_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Evidence trace detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceTraceResponse' }
+        '404': { description: Not found, content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
+  /api/coverage:
+    get:
+      summary: System health screen — sources, coverage, quarantine
+      responses:
+        '200':
+          description: Coverage and quarantine state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverageResponse' }
+  /api/ask:
+    post:
+      summary: Ask-agent question, answered by looking up already-computed data (REQ-M9-03)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200':
+          description: Either a rendered component or a marked fallback (REQ-M9-04)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AskComponentResponse'
+                  - $ref: '#/components/schemas/AskFallbackResponse'
+  /api/drafts:
+    post:
+      summary: Generate a draft (REQ-M10-01). No corresponding /send route exists anywhere in this spec.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DraftRequest' }
+      responses:
+        '200':
+          description: Generated draft, all pre-display checks passed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DraftResponse' }
+        '422':
+          description: REQ-M10-07 pre-display checks failed — no partial draft is ever returned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /api/drafts/{id}/copy:
+    post:
+      summary: Stamp copied_at (REQ-M10-08)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Stamped }
+  /api/drafts/{id}/log-as-sent:
+    post:
+      summary: Stamp logged_manually_at — an internal flag only, never a write to any external system (REQ-M10-08, REQ-NFR-18)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Stamped }
+  /api/feedback:
+    post:
+      summary: Record a verdict (REQ-M4-01)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeedbackRequest' }
+      responses:
+        '204': { description: Verdict recorded, damping_weights updated }
+  /api/profile:
+    get:
+      summary: Current client profile, read-only
+      responses:
+        '200':
+          description: Current profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileResponse' }
+  /api/profile/reload:
+    post:
+      summary: MVP-only — validate the edited YAML file, create a new client_profile_versions row, trigger full replay
+      responses:
+        '200':
+          description: New profile version accepted and replay triggered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProfileResponse' }
+        '422':
+          description: Schema validation failed (REQ-M3-07) — rejected before it can affect scoring
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
-paths:
-  /auth/login:
-    post:
-      security: []
-      summary: Exchange username/password for a bearer token
-  /health:
-    get:
-      security: []
-      summary: Liveness/readiness check, no client data
-  /api/dashboard:
-    get:
-      summary: Precomputed dashboard state (REQ-M8-01)
-  /api/ask:
-    post:
-      summary: Ask-agent question, answered by looking up already-computed data (REQ-M9-03)
-  /api/drafts:
-    post:
-      summary: Generate a draft (REQ-M10-01). No corresponding /send route exists anywhere in this spec.
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [detail]
+      properties:
+        detail: { type: string }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+
+    LoginResponse:
+      type: object
+      required: [token, expires_at]
+      properties:
+        token: { type: string, description: "Raw bearer token — shown once, never stored server-side in reversible form (REQ-AUTH-03)" }
+        expires_at: { type: string, format: date-time }
+
+    ClientHeader:
+      type: object
+      properties:
+        client_name: { type: string }
+        band: { $ref: '#/components/schemas/Band' }
+        days_to_renewal: { type: integer }
+
+    Band:
+      type: string
+      enum: [healthy, watch, at_risk]
+
+    ScoreBlock:
+      type: object
+      properties:
+        score: { type: number, format: float, minimum: 0, maximum: 100 }
+        band: { $ref: '#/components/schemas/Band' }
+        trend: { type: array, items: { type: number } }
+
+    ContributionBar:
+      type: object
+      properties:
+        score_contribution_id: { type: string, format: uuid }
+        label: { type: string }
+        points: { type: number, format: float }
+        is_positive: { type: boolean }
+
+    PulseEvent:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid }
+        occurred_at: { type: string, format: date-time }
+        severity: { type: string, enum: [info, watch, at_risk] }
+        quoted_text: { type: string, nullable: true }
+
+    StakeholderCard:
+      type: object
+      properties:
+        stakeholder_id: { type: string, format: uuid }
+        name: { type: string }
+        role: { type: string }
+        tone_trajectory: { type: string, enum: [stable, deteriorating, improving, unknown] }
+        last_seen_at: { type: string, format: date-time, nullable: true }
+        status: { type: string, enum: [active, quiet, unresolved_identity] }
+
+    CoverageLine:
+      type: object
+      properties:
+        sources_read: { type: integer }
+        sources_expected: { type: integer }
+        complete_to: { type: string, format: date-time }
+        status: { type: string, enum: [ok, degraded, disconnected] }
+
+    DashboardResponse:
+      type: object
+      properties:
+        client_header: { $ref: '#/components/schemas/ClientHeader' }
+        score_block: { $ref: '#/components/schemas/ScoreBlock' }
+        contribution_bars: { type: array, items: { $ref: '#/components/schemas/ContributionBar' } }
+        pulse_timeline: { type: array, items: { $ref: '#/components/schemas/PulseEvent' } }
+        stakeholder_cards: { type: array, items: { $ref: '#/components/schemas/StakeholderCard' } }
+        coverage_line: { $ref: '#/components/schemas/CoverageLine' }
+
+    EvidenceTraceResponse:
+      type: object
+      properties:
+        finding_id: { type: string, format: uuid }
+        finding_type: { type: string }
+        points: { type: number, format: float }
+        baseline_value: { type: string }
+        current_value: { type: string }
+        what_changed: { type: array, items: { type: string } }
+        quoted_messages: { type: array, items: { type: object, properties: { event_id: { type: string, format: uuid }, text: { type: string }, occurred_at: { type: string, format: date-time } } } }
+        arithmetic_explanation: { type: string, description: "The maths in plain sentences, spec §11.4" }
+
+    CoverageResponse:
+      type: object
+      properties:
+        sources:
+          type: array
+          items:
+            type: object
+            properties:
+              source_type: { type: string }
+              status: { type: string, enum: [connected, degraded, disconnected] }
+              last_successful_sync_at: { type: string, format: date-time, nullable: true }
+        quarantine:
+          type: array
+          items:
+            type: object
+            properties:
+              finding_id: { type: string, format: uuid }
+              failed_check: { type: string, enum: [schema_invalid, cited_event_missing, insufficient_evidence, confidence_below_floor] }
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string }
+
+    AskComponentResponse:
+      type: object
+      required: [intent, component, component_props]
+      properties:
+        intent: { type: string }
+        component: { type: string, enum: [delta_breakdown, baseline_comparison, stakeholder_cards, ranked_issues, action_checklist, commitments_status, filtered_timeline] }
+        component_props: { type: object }
+
+    AskFallbackResponse:
+      type: object
+      required: [fallback_text, sources]
+      properties:
+        fallback_text: { type: string }
+        sources: { type: array, items: { type: string, format: uuid } }
+        declined_reason: { type: string, enum: [prediction, colleague_judgment, source_not_connected, unclear], nullable: true }
+
+    DraftRequest:
+      type: object
+      required: [issue_id, stakeholder_id, tone_variant]
+      properties:
+        issue_id: { type: string, format: uuid }
+        stakeholder_id: { type: string, format: uuid }
+        tone_variant: { type: string, enum: [direct, formal, brief] }
+
+    DraftResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        draft_text: { type: string }
+        tone_variant: { type: string, enum: [direct, formal, brief] }
+        evidence_event_ids: { type: array, items: { type: string, format: uuid }, minItems: 1 }
+        checks_passed: { type: boolean }
+
+    FeedbackRequest:
+      type: object
+      required: [verdict]
+      description: "At least one of finding_id/issue_id is required (data-base/10-ddl-appendix.md CHECK verdict_has_a_target)"
+      properties:
+        finding_id: { type: string, format: uuid, nullable: true }
+        issue_id: { type: string, format: uuid, nullable: true }
+        verdict: { type: string, enum: [correct, false_alarm, resolved] }
+
+    ProfileResponse:
+      type: object
+      properties:
+        version_number: { type: integer }
+        client_name: { type: string }
+        renewal_date: { type: string, format: date }
+        contract_value_band: { type: string, enum: [strategic, standard, smb] }
+        stakeholders:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              role: { type: string }
+              influence: { type: string, enum: [sponsor, daily_user, unknown] }
+              signs_renewal: { type: boolean }
+        product_areas:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              criticality: { type: string, enum: [critical, standard, peripheral] }
+        commitments:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [first_response, recurring_sync, milestone] }
+              threshold_business_hours: { type: number, nullable: true }
 ```
 
 ## Non-functional constraints
