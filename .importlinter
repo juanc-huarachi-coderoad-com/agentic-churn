@@ -1,0 +1,50 @@
+# Layer-boundary contracts — decisions/02-repo-and-tooling.md §CI enforcement of the
+# layer boundary; generalizes the single bespoke "no LLM in scoring" AST script
+# (architecture/09-clean-architecture-and-patterns.md §Enforcement) to every module.
+[importlinter]
+root_package = app
+include_external_packages = True
+
+[importlinter:contract:scoring-domain-purity]
+name = Scoring domain never imports adapters or AI SDKs
+type = forbidden
+source_modules =
+    app.scoring.domain
+forbidden_modules =
+    anthropic
+    openai
+    sqlalchemy
+    fastapi
+    app.scoring.adapters
+
+[importlinter:contract:readers-application-purity]
+name = Reader application layer depends on ports, never concrete AI SDKs
+type = forbidden
+source_modules =
+    app.readers.application
+forbidden_modules =
+    anthropic
+    openai
+    app.readers.adapters
+
+[importlinter:contract:global-dependency-rule]
+name = No module's domain or application package imports its own adapters package
+type = layers
+# import-linter's "layers" contract doesn't support a glob wildcard in `layers` itself
+# (decisions/02-repo-and-tooling.md's `app.*.adapters` sketch is illustrative, not literal
+# tool syntax) — `containers` is the documented mechanism for repeating one layer check
+# across every module's package. A layer missing under a given container (e.g. `domain`
+# for narrator/experience, which don't have one yet per that same document) is allowed by
+# wrapping it in parentheses — import-linter's syntax for an optional layer.
+layers =
+    adapters
+    application
+    (domain)
+containers =
+    app.ingestion
+    app.readers
+    app.context
+    app.scoring
+    app.narrator
+    app.experience
+    app.auth

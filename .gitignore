@@ -25,6 +25,13 @@ build/
 *.egg-info/
 .pytest_cache/
 .coverage
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+coverage/
+playwright-report/
+test-results/
+frontend/.vite/
 
 # Logs
 npm-debug.log*

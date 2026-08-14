@@ -1,0 +1,51 @@
+[project]
+name = "agentic-churn-backend"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.19.1",
+    "apscheduler>=3.11.3",
+    "asyncpg>=0.31.0",
+    "fastapi>=0.141.1",
+    "pydantic-settings>=2.15.0",
+    "sqlalchemy[asyncio]>=2.0.52",
+    "uvicorn>=0.52.3",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "hypothesis>=6.165.5",
+    "import-linter>=2.13",
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.3",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# migrations/versions/ embeds data-base/10-ddl-appendix.md's DDL verbatim (module
+# docstring, migrations/versions/0001_initial_schema.py) — reflowing those lines to fit
+# line-length would break the "verbatim" guarantee, so generated/imported migration
+# content is excluded from style linting the same way mypy already excludes it.
+extend-exclude = ["migrations/versions/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["sqlalchemy.ext.mypy.plugin"]
+exclude = ["migrations/"]
+
+[[tool.mypy.overrides]]
+module = "apscheduler.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

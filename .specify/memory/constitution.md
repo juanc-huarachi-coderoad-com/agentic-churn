@@ -237,6 +237,42 @@ shared code only for genuinely reusable logic.
   error/empty states considered, API contracts respected, reviewed — before a frontend
   feature counts as complete.
 
+## Full-Stack Engineering 
+
+### 1. Global Engineering Philosophy
+*   **Specification-Driven Development (SDD):** Code MUST NOT be written without a defining specification. Implementation MUST NOT contradict the spec. 
+*   **YAGNI (You Aren't Gonna Need It):** Abstraction MUST NOT be introduced prematurely. Build for today's specifications, not tomorrow's hypothetical features.
+*   **SOLID Principles:** All code, frontend and backend, MUST adhere to Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, and Dependency Inversion principles.
+*   **Definition of Done:** A feature is complete ONLY when requirements are met, tests pass, linters pass, types are strictly checked, security is validated, and documentation (or ADRs) are updated.
+
+### 2. Frontend Architecture
+*   **Feature-Oriented Structure:** Code MUST be organized around business capabilities (features), not technical layers (e.g., do not group all hooks or all APIs together globally).
+*   **Separation of Concerns:** UI presentation, UI behavior, server state, client state, and API communication MUST remain distinct. Business logic MUST NOT be embedded directly in UI rendering components.
+*   **State Management:** Server state MUST be managed via a dedicated tool (e.g., TanStack Query). Global client state (e.g., Zustand) MUST be used sparingly. State SHOULD live as close to its component as possible.
+*   **UI & Styling:** The application MUST use Tailwind CSS and a defined component system (e.g., shadcn/ui). Reusability SHOULD be preferred over duplication.
+*   **Forms & Validation:** All forms MUST use a management solution (e.g., React Hook Form). User input MUST be validated using a schema library (e.g., Zod) before being processed or sent to the backend.
+*   **Accessibility:** All interactive elements MUST be keyboard accessible and adhere to WCAG guidelines. Color MUST NOT be the only indicator of state.
+
+### 3. Backend Clean Architecture
+*   **Strict Layering:** The backend MUST follow Clean Architecture. The Dependency Rule MUST point inward: Infrastructure depends on Application, Application depends on Domain. The Domain MUST NOT depend on anything.
+*   **Domain Layer:** Core business rules, entities, and interfaces MUST reside here. This layer MUST NOT contain any framework-specific code, database references, or HTTP knowledge.
+*   **Application Layer (Use Cases):** This layer orchestrates business logic. It MUST use Dependency Injection to interact with external systems via interfaces defined in the Domain.
+*   **Infrastructure & Adapters:** Database queries, external API clients, and file system operations MUST be isolated here. Implementations MUST use the Repository Pattern to abstract data persistence.
+*   **Design Patterns:** Use behavioral and structural patterns (Strategy, Factory, Observer) to solve specific architectural problems, but avoid over-engineering simple CRUD operations.
+*   **API Design:** RESTful or GraphQL endpoints MUST expose predictable, standardized request/response contracts. Technical stack errors or stack traces MUST NOT be exposed to the client.
+
+### 4. Comprehensive Testing Strategy
+*   **Test-Driven Culture:** Tests MUST validate behavior, business rules, and acceptance criteria rather than implementation details.
+*   **Unit Testing:** Business logic, Domain entities, and Application Use Cases MUST have near-100% unit test coverage. External dependencies MUST be mocked at the interface level.
+*   **Integration Testing:** The boundaries between the application and infrastructure (e.g., database repositories, external API clients) MUST be validated with integration tests using test databases or environment containers.
+*   **Frontend Testing:** UI features MUST be tested hierarchically. Use Unit tests for hooks/utils, Component tests for rendering logic, and E2E tests for business-critical user workflows.
+*   **Test Data:** Tests MUST run in isolation. State MUST NOT leak between test cases. Test data MUST be explicitly arranged and torn down for each suite.
+
+### 5. Security & Quality Gates
+*   **Zero Trust Validation:** The backend MUST NEVER trust frontend validation. All incoming payloads MUST be re-validated at the Application boundary.
+*   **Observability:** Errors MUST be logged consistently. The application MUST provide actionable error normalization without exposing secrets.
+*   **Code Quality:** TypeScript MUST be strictly enforced across the stack. The use of `any` is strictly prohibited. CI/CD pipelines MUST gate PRs on passing type checks, linters, and test suites.
+
 ## Technology and Data Standards
 
 **Adopted stack** (`architecture/03-technology-stack.md`): Python 3.12 + FastAPI backend;
