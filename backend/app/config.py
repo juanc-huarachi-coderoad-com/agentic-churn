@@ -20,5 +20,13 @@ class Settings(BaseSettings):
     app_role_password: str = "app_role_dev_password"
     shredder_role_password: str = "shredder_role_dev_password"
 
+    # The frontend's origin, for CORS (specs/002-dashboard-shell T004) — `api` and `web`
+    # are served on different ports (docker-compose.yml), so the browser enforces CORS
+    # on every request from the dashboard to the API.
+    web_origin: str = "http://localhost:5173"
+
+    # Bearer token lifetime — requirements/14-authentication.md's default (12 hours).
+    token_lifetime_hours: int = 12
+
 
 settings = Settings()

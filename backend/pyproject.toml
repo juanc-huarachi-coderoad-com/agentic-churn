@@ -6,9 +6,11 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.19.1",
     "apscheduler>=3.11.3",
+    "argon2-cffi>=25.1.0",
     "asyncpg>=0.31.0",
     "fastapi>=0.141.1",
     "pydantic-settings>=2.15.0",
+    "slowapi>=0.1.10",
     "sqlalchemy[asyncio]>=2.0.52",
     "uvicorn>=0.52.3",
 ]
@@ -36,6 +38,11 @@ extend-exclude = ["migrations/versions/"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+# FastAPI's dependency-injection pattern requires Depends(...)/Query(...)/etc. as
+# argument defaults — B008 exists to catch real mutable-default bugs, not this.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -49,3 +56,11 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["."]
+# app.db.engine is a module-level singleton (one asyncpg connection pool) — with
+# pytest-asyncio's default function-scoped loop, each test gets a fresh event loop but
+# reuses pooled connections opened under a *different, already-closed* loop, which
+# asyncpg rejects ("another operation is in progress"). Session-scoped loop keeps one
+# loop for the whole run, matching the engine's actual lifecycle.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

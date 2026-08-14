@@ -15,11 +15,15 @@ BEGIN;
 
 -- ------------------------------------------------------------
 -- Users (requirements/14-authentication.md, data-base/12)
--- Password below is a placeholder Argon2id hash — replace before
--- any real deployment. Never commit a real hash to version control.
+-- marta's hash is a real Argon2id hash of the local/demo-only password
+-- "agentic-demo-2026" (specs/002-dashboard-shell/research.md §Decision:
+-- Regenerating the seeded demo password hash) — never treated as a secret,
+-- but still real enough to actually exercise the login flow. support's
+-- password is a placeholder still, since no feature yet needs to log in as
+-- that user — replace before any real deployment either way.
 -- ------------------------------------------------------------
 INSERT INTO users (id, username, password_hash, display_name, role, is_active) VALUES
-    ('00000000-0000-0000-0000-000000000001', 'marta',   '$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_DEMO_ONLY', 'Marta',   'cs_lead', true),
+    ('00000000-0000-0000-0000-000000000001', 'marta',   '$argon2id$v=19$m=65536,t=3,p=4$F5VLyj2y64Fc1s7L96wYhQ$w78e3NIpjyF+HIRpXjSrFY8CgrENRySWW4JzLwNZ1AM', 'Marta',   'cs_lead', true),
     ('00000000-0000-0000-0000-000000000002', 'support', '$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_DEMO_ONLY', 'Support Lead', 'support_lead', true);
 
 -- ------------------------------------------------------------

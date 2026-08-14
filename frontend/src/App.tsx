@@ -1,11 +1,24 @@
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { LoginPage } from './auth/login-page'
+import { ProtectedRoute } from './auth/protected-route'
+import { DashboardPage } from './dashboard/dashboard-page'
+
 function App() {
   return (
-    <main className="flex min-h-svh items-center justify-center">
-      <p className="text-sm text-neutral-500">
-        Project Foundation — dashboard, ask, and draft-composer UI land in later build-order phases
-        (see decisions/02-repo-and-tooling.md).
-      </p>
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
 

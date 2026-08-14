@@ -19,9 +19,11 @@ and lists which rules are non-negotiable. In short:
 | Project principles and governance | `.specify/memory/constitution.md` |
 | The build order and current feature status | `specs/001-project-foundation/` (this repo's first spec-kit feature; see `AGENTS.md` and the constitution for how later features are structured) |
 
-This repository currently contains **Project Foundation** — build-order Phase 1
-(`base/...` §16): repo scaffold, CI pipeline, Docker Compose stack, and the database
-schema. No product feature (M1–M10) is implemented yet; that starts in Phase 2 onward.
+This repository currently contains **Project Foundation** (build-order Phase 1 — repo
+scaffold, CI pipeline, Docker Compose stack, database schema) and **Dashboard Shell**
+(Phase 2 — full authentication and a dashboard shell proving the stack works end to
+end). No product feature (M1–M10) is implemented yet; that starts in Phase 3 onward. See
+`specs/ROADMAP.md` for the full feature-by-feature status.
 
 ## Quickstart
 
@@ -57,6 +59,15 @@ docker compose exec api python scripts/seed.py
 docker compose exec db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   -c "SELECT count(*) FROM finding_type_config;"   # non-zero once seeded
 ```
+
+### Login
+
+Once seeded, log in at `http://localhost:${WEB_PORT:-5173}` with username `marta`,
+password `agentic-demo-2026` — a local/demo-only credential, never treated as a secret
+(`specs/002-dashboard-shell/research.md` §Decision: Regenerating the seeded demo
+password hash). You'll land on a dashboard shell showing the seeded client's name and
+an honest "still learning" state — see `specs/002-dashboard-shell/quickstart.md` for the
+full auth flow (token issuance, revocation, rate limiting) exercised via `curl`.
 
 ### Persistence
 
