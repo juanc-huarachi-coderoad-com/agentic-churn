@@ -72,7 +72,8 @@ Not every module needs all three rings on day one — `narrator/` and `experienc
 | M5/M5a Readers + gate | `backend/app/readers/application/{commitment,usage,recurrence,absence,relationship,tone,intent,meeting}_reader.py`, `.../validation_gate.py` | Deterministic and LLM readers live side by side but never import each other; only three import `LLMPort` |
 | M6 Scoring engine | `backend/app/scoring/domain/scoring_calculator.py` | **`import-linter`-checked (see below) to have zero imports outside `app.scoring.domain`** |
 | M7 Narrator | `backend/app/narrator/` | |
-| M8/M9/M10 | `backend/app/experience/{dashboard,ask,drafts}.py` | Thin read/orchestration layer behind `architecture/07-api-spec.md` |
+| M8, M10 | `backend/app/experience/adapters/{dashboard,draft_composer}.py` | Thin read/orchestration layer behind `architecture/07-api-spec.md`; `draft_composer.py` is a plain `LLMPort` call, no orchestration framework |
+| M9 Ask agent | `backend/app/experience/adapters/ask_agent_graph.py` | **The one module that depends on `langgraph` (+ `langchain-anthropic` or equivalent) — `decisions/03-langgraph-for-ask-agent.md`.** `import-linter` still forbids every other module's `application`/`domain` layer from importing `langgraph`; only this file may |
 | Auth | `backend/app/auth/` | `requirements/14-authentication.md` |
 
 ## Package managers
@@ -153,6 +154,8 @@ layers =
 
 `workflows/ci.yml` runs `lint-imports` as its own job, in place of the old bespoke script. This is the mechanical enforcement behind REQ-M6-P1 and the engineering acceptance criterion "no model call exists anywhere in the scoring engine" (spec §14.3) — now extended to every module, not just scoring — because a code review can miss an import, and a hand-rolled script only checks the one module someone remembered to write it for.
 
+The same `global-dependency-rule` contract already covers `langgraph` without a new entry: it's an adapter-only dependency (`experience/adapters/ask_agent_graph.py`), and the layers contract already forbids any module's `application`/`domain` package — including `experience`'s own — from importing its `adapters` package. No module besides that one file can reach `langgraph`, enforced the same way `anthropic`/`openai` are kept out of `scoring`/`readers`.
+
 ## Traceability
 
-`architecture/09-clean-architecture-and-patterns.md` (the layering and SOLID/patterns rationale this enforcement implements), `architecture/03-technology-stack.md`, `architecture/04-ai-safety-and-model-usage.md`, `architecture/08-class-diagrams.md`, `data-base/10-ddl-appendix.md`, `requirements/13-scoring-calibration-appendix.md`, `tests/strategy.md`.
+`architecture/09-clean-architecture-and-patterns.md` (the layering and SOLID/patterns rationale this enforcement implements), `architecture/03-technology-stack.md`, `architecture/04-ai-safety-and-model-usage.md`, `architecture/08-class-diagrams.md`, `decisions/03-langgraph-for-ask-agent.md`, `data-base/10-ddl-appendix.md`, `requirements/13-scoring-calibration-appendix.md`, `tests/strategy.md`.

@@ -1,6 +1,44 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.1.0 → 1.2.0
+
+Rationale for 1.2.0 (MINOR): one technology addition to the adopted stack (LangGraph,
+scoped to Ask-agent orchestration only), plus a clarifying sentence confirming an
+existing rule already covers it — no principle redefined, removed, or newly numbered.
+Additive, not breaking.
+
+Modified principles: none
+
+Added principles (this amendment): none — this is a scoped technology decision, not a
+new governing rule. It is fully accountable to existing P2, P3, P8, and P10, and to the
+AI-safety rule already requiring the Ask agent's tools to be read-only lookups; see
+`decisions/03-langgraph-for-ask-agent.md` for the full evaluation, including why the
+other five LLM touchpoints (Tone, Intent, Meeting readers; Narrator; Draft composer)
+are explicitly *not* in scope and keep the plain `LLMPort` design unchanged.
+
+Added sections (this amendment):
+  - "Technology and Data Standards" gained a one-line entry naming LangGraph, scoped to
+    Ask-agent (M9) orchestration only.
+  - "Development Workflow & Quality Gates" → AI safety rules gained a one-clause
+    clarification that the Ask agent's LangGraph tool registry is the same closed,
+    read-only set rule 2 already requires, not an expansion of it.
+
+Templates requiring updates:
+  - .specify/templates/plan-template.md, spec-template.md, tasks-template.md
+    ✅ compatible — same reasoning as the 1.1.0 amendment: generic structure, no
+    principle-specific language to reconcile. No edit made.
+  - .claude/skills/speckit-*.md ⚠ pending, same standing note as 1.1.0 — no known
+    conflict, full pass still deferred to the next amendment that touches them.
+
+Follow-up TODOs:
+  - Roadmap feature 008 (`narrator-and-ask-agent`, not yet specified) should cite
+    `decisions/03-langgraph-for-ask-agent.md` in its `/speckit-plan` Technical Context
+    when that feature is eventually specified, rather than re-deciding this mid-feature
+    — tracked in `specs/ROADMAP.md`.
+
+--- prior report (v1.0.0 → v1.1.0) ---
+
 Version change: 1.0.0 → 1.1.0
 
 Rationale for 1.1.0 (MINOR): one new principle added (P11, frontend engineering
@@ -289,6 +327,14 @@ infrastructure; pytest + `hypothesis` for testing; GitHub Actions for CI.
 React Hook Form + Zod for forms and validation (P11). A frontend technology swap (state
 library, UI framework, auth approach) requires an ADR, not a silent change.
 
+**Ask-agent orchestration:** LangGraph, scoped to the Ask agent (M9) only — the one
+component among the six LLM touchpoints (Tone, Intent, Meeting readers; Narrator; Ask
+agent; Draft composer) that genuinely branches and calls tools, rather than making a
+single structured-output call. Full evaluation and scope boundary:
+`decisions/03-langgraph-for-ask-agent.md`. The other five keep the plain `LLMPort`
+design (`architecture/08-class-diagrams.md`) unchanged — no tools parameter exists on
+that interface, by design.
+
 **Schema discipline** (verbatim, `AGENTS.md`): Schema changes go through
 `data-base/10-ddl-appendix.md` first, then get reflected in the matching prose file
 (`02`–`09`, `12`) and an Alembic migration (`decisions/02-repo-and-tooling.md`). Don't let
@@ -319,8 +365,11 @@ every LLM call — Tone, Intent, Meeting readers; Narrator; Ask agent; Draft com
 2. **Prompt injection defense is architectural, not prompt-level** — client text is
    untrusted data, never instructions. Interpreters have zero tools and zero side effects;
    output is validated against closed enumerations; a finding can never become an
-   instruction; the Ask agent's tools are read-only lookups only; the Draft composer has no
-   send-capable dependency reachable at all.
+   instruction; the Ask agent's tools are read-only lookups only (its LangGraph tool
+   registry, `decisions/03-langgraph-for-ask-agent.md`, only ever wraps `get_*`/`query_*`
+   repository-port methods — this is the same closed set the rule already required, not
+   an expansion of it); the Draft composer has no send-capable dependency reachable at
+   all.
 3. **Confidence is first-class** — `confidence` and `magnitude` are separate fields, never
    conflated; abstention is a valid, expected output, never a low-confidence guess.
 4. **No new facts, mechanically checked** — every number, name, date, and claim in
@@ -401,4 +450,4 @@ facing companion to this constitution — read it before touching code; where it
 mechanical enforcement detail (a `CHECK` constraint, a CI script, a foreign-key rule), that
 detail is binding, not illustrative.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-13
+**Version**: 1.2.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-14

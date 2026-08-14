@@ -10,7 +10,7 @@ It's neither extreme. None of these six components plans multi-step tasks autono
 |---|---|---|---|
 | Tone / Intent / Meeting readers | **No — zero tools** (REQ-M5-P2) | No — single structured-extraction call | **Not agentic.** Deliberately: prompt-injection containment requires zero tools and zero side effects here. Call it "an LLM classifier," not "an agent." |
 | Narrator | No tools | No — single generation call over pre-ranked input | **Not agentic**, same reasoning — it's a templated-but-flexible writer, not a decision-maker. |
-| **Ask agent** | **Yes — read-only lookup tools** (query ledger, query findings, query score_runs) | **Yes** — classifies intent, decides which tool(s) to call, decides which UI component to populate | **The genuinely agentic one.** A small, tightly-scoped ReAct-style loop: reason about the question → choose a tool → read the result → choose a rendering. |
+| **Ask agent** | **Yes — read-only lookup tools** (query ledger, query findings, query score_runs) | **Yes** — classifies intent, decides which tool(s) to call, decides which UI component to populate | **The genuinely agentic one.** A small, tightly-scoped ReAct-style loop: reason about the question → choose a tool → read the result → choose a rendering. Literally built as one — a compiled LangGraph `StateGraph`, the only orchestration library anywhere in this system (`decisions/03-langgraph-for-ask-agent.md`). |
 | Draft composer | No tools (reads pre-fetched evidence + profile, doesn't fetch anything itself) | Some — synthesizes multiple inputs (evidence, communication norms, thread history) into one coherent artifact, then runs itself through checks | **Borderline.** More reasoning than the readers, no tool-use, so it's an agentic *writer* rather than an agentic *actor*. |
 
 If a judge asks "is this agentic," the accurate answer is: **the system has one real agent (the Ask agent) and five narrowly-scoped LLM functions around it — and that ratio is a deliberate design choice, not a limitation.** Every place the spec could have made something "more agentic" by giving it tools or autonomy (the readers, the narrator, the composer) is exactly where product principle P3 ("each component refuses to do the next one's job") and the prompt-injection containment model (`architecture/04-ai-safety-and-model-usage.md`) require it not to be.
@@ -73,10 +73,11 @@ If a judge asks "is this agentic," the accurate answer is: **the system has one 
 |---|---|
 | **Role** | Answer a typed question by classifying its intent, looking up already-computed data, and rendering a UI component. |
 | **Model** | Sonnet-class |
+| **Orchestration** | **LangGraph** — a compiled `StateGraph` (`classify_intent` → branch → tool-calling loop / decline / fallback / handoff → `render_component`), the only one of the six LLM touchpoints built this way. Full design: `decisions/03-langgraph-for-ask-agent.md`. |
 | **Inputs** | User question text |
 | **Outputs** | `{intent, component, component_props}` or `{fallback_text, sources}` |
-| **Tools permitted** | **Read-only lookup tools only**: query ledger, query findings, query `score_runs`. No write tool exists in this agent's toolset, structurally — see `architecture/04-ai-safety-and-model-usage.md`. |
-| **Decision logic** | Closed intent menu (REQ-M9-02); declines predictions and colleague judgments outright, without a tool call (REQ-M9-05/06) — the fastest, cheapest path in the whole system, since declining needs no lookup. |
+| **Tools permitted** | **Read-only lookup tools only**, registered via `AskAgentToolkit`: query ledger, query findings, query `score_runs` — thin wrappers around the same repository ports M1–M6 already use. No write tool exists in this agent's toolset, structurally — see `architecture/04-ai-safety-and-model-usage.md`. |
+| **Decision logic** | Closed intent menu (REQ-M9-02); declines predictions and colleague judgments outright, without a tool call (REQ-M9-05/06) — the fastest, cheapest path through the graph, since declining needs no lookup. |
 | **Failure mode** | See `architecture/06-error-handling.md` §What if the intent classifier fails. |
 
 ### Draft composer
@@ -111,7 +112,7 @@ flowchart TB
         Nar --> Dash["Dashboard\n(plain read)"]
     end
 
-    subgraph Ask["Ask loop - the one real agent"]
+    subgraph Ask["Ask loop - the one real agent, a compiled LangGraph StateGraph"]
         Question["Typed question"] --> AskAgent["Ask agent\nintent -> tool call -> component"]
         AskAgent -.->|"read-only lookup"| Ledger
         AskAgent -.->|"read-only lookup"| Score

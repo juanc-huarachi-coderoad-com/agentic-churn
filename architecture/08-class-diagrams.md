@@ -273,6 +273,82 @@ Notice `ScoringEngine` itself has **no** dependency on `FindingRepositoryPort` �
 
 ---
 
+## 4. Ask agent (M9) — the one component that gets a graph
+
+Not a fourth pipeline stage — a fourth *concern*. Everything above answers "how does a signal become a score"; this answers "how does a question become an answer," and it's the only one of the four where the answer involves LangGraph (`decisions/03-langgraph-for-ask-agent.md`).
+
+```mermaid
+classDiagram
+    class AskAgentPort {
+        <<port>>
+        +answer(question: str, user: User, session_id: Optional~UUID~) AskAgentResult
+    }
+    class LangGraphAskAgent {
+        <<adapter>>
+        -graph: CompiledStateGraph
+        -checkpointer: Optional~BaseCheckpointSaver~
+        +answer(question, user, session_id) AskAgentResult
+    }
+    class AskAgentState {
+        <<TypedDict>>
+        +question: str
+        +intent: Optional~str~
+        +tool_results: dict[]
+        +component: Optional~str~
+        +component_props: Optional~dict~
+        +fallback_text: Optional~str~
+        +declined_reason: Optional~str~
+    }
+    class AskAgentToolkit {
+        <<adapter>>
+        -event_repo: EventRepositoryPort
+        -finding_repo: FindingRepositoryPort
+        -score_run_repo: ScoreRunRepositoryPort
+        +build_tools() Tool[]
+    }
+    class QueryLedgerTool {
+        <<adapter, read-only>>
+        +run(args: dict) dict
+    }
+    class QueryFindingsTool {
+        <<adapter, read-only>>
+        +run(args: dict) dict
+    }
+    class QueryScoreRunsTool {
+        <<adapter, read-only>>
+        +run(args: dict) dict
+    }
+    class EventRepositoryPort {
+        <<port, defined in diagram 1>>
+    }
+    class FindingRepositoryPort {
+        <<port, defined in diagram 3>>
+    }
+    class ScoreRunRepositoryPort {
+        <<port>>
+    }
+
+    LangGraphAskAgent ..|> AskAgentPort : implements
+    LangGraphAskAgent --> AskAgentState : runs the graph over
+    LangGraphAskAgent --> AskAgentToolkit : builds its tool registry from
+    AskAgentToolkit --> QueryLedgerTool : registers
+    AskAgentToolkit --> QueryFindingsTool : registers
+    AskAgentToolkit --> QueryScoreRunsTool : registers
+    QueryLedgerTool --> EventRepositoryPort : wraps a read method on
+    QueryFindingsTool --> FindingRepositoryPort : wraps a read method on
+    QueryScoreRunsTool --> ScoreRunRepositoryPort : wraps a read method on
+```
+
+### How AI interacts with this layer: through a graph, bounded to three reads
+
+`LangGraphAskAgent` is the only `<<adapter>>` class anywhere in this document that wraps an orchestration *framework* rather than a single SDK call — everything upstream of it (`AskAgentState`'s `classify_intent` step) still goes through the same `LLMPort` every reader uses. What's new here is the tool-calling loop, and it's deliberately narrow:
+
+- **`AskAgentToolkit` builds its tool registry from ports this diagram doesn't invent.** `EventRepositoryPort` and `FindingRepositoryPort` are the exact same interfaces from diagrams 1 and 3 — `ScoreRunRepositoryPort` is their sibling for `score_runs`. No new data-access code exists for M9; three thin wrapper classes (`QueryLedgerTool`, `QueryFindingsTool`, `QueryScoreRunsTool`) adapt existing read methods into LangGraph tool-callables.
+- **Every wrapper is `<<read-only>>` by construction, not by convention.** Each one calls a `get_*`/`query_*` method on its port — `FindingRepositoryPort.save()` and `.quarantine()` are never referenced anywhere in this diagram, so there's no method to accidentally expose as a tool.
+- **`AskAgentPort` is the seam.** Application-layer code (a future `AnswerQuestionUseCase`, following the same shape as `RecomputeScoreUseCase`) depends on `AskAgentPort`, never on `LangGraphAskAgent` directly — the same Dependency Inversion every other port in this document already demonstrates.
+
+---
+
 ## Summary — where the AI boundary actually sits, class by class
 
 | Class | Ring | Holds `LLMPort`? | Holds `EmbeddingPort`? | Notes |
@@ -289,9 +365,11 @@ Notice `ScoringEngine` itself has **no** dependency on `FindingRepositoryPort` �
 | `FindingRepositoryPort` / `SqlAlchemyFindingRepository` | Application (port) / Adapters (adapter) | No | No | Repository pattern |
 | `ScoringEngine` | **Domain** | No | No | REQ-M6-P1 — pure function, zero I/O, zero ports; enforced by `import-linter` (`architecture/09-clean-architecture-and-patterns.md` §Enforcement) |
 | `RecomputeScoreUseCase` | Application | No | No | Orchestrates the port + the pure domain engine |
+| `AskAgentPort` / `LangGraphAskAgent` | Application (port) / Adapters (adapter) | **Yes** (via `LLMPort` internally) | No | The *only* class in this document wrapping an orchestration framework, not a single SDK call — see diagram 4 |
+| `AskAgentToolkit`, `QueryLedgerTool`, `QueryFindingsTool`, `QueryScoreRunsTool` | Adapters | No | No | Read-only wrappers around existing repository ports — no new data-access code for M9 |
 
-Two classes in the entire ingestion-through-findings pipeline import an AI SDK — `AnthropicLLMAdapter` and `OpenAIEmbeddingAdapter`. Everything that *uses* AI (`ToneReader`, `IntentReader`, `MeetingReader`, `RecurrenceReader`) does so through a port it doesn't own the implementation of. That's the number worth remembering when explaining this architecture to someone new to it — not "AI reads everything," but "AI reads exactly the three things that need judgment, through an interface narrow enough to fit in one line, and nothing it produces is ever trusted again without a validation step in between."
+Two classes in the entire ingestion-through-findings pipeline import an AI SDK directly — `AnthropicLLMAdapter` and `OpenAIEmbeddingAdapter`. A third, `LangGraphAskAgent`, orchestrates calls *through* `LLMPort` rather than importing an SDK itself. Everything that *uses* AI (`ToneReader`, `IntentReader`, `MeetingReader`, `RecurrenceReader`, and now the Ask agent) does so through a port or a closed tool registry it doesn't own the implementation of. That's the number worth remembering when explaining this architecture to someone new to it — not "AI reads everything," but "AI reads exactly the things that need judgment, through interfaces narrow enough to fit in one line, and nothing it produces is ever trusted again without a validation step in between."
 
 ## Traceability
 
-`architecture/09-clean-architecture-and-patterns.md` (the ring/layer model these stereotypes implement, SOLID mapping, design patterns catalog), `architecture/02-component-catalog.md` (component-level responsibilities these classes implement), `architecture/04-ai-safety-and-model-usage.md` (why the LLM boundary is drawn here), `architecture/05-agent-catalog.md` (the same boundary, at the orchestration level rather than the class level), `requirements/01-signal-collectors.md`, `requirements/05-interpreters-readers.md`, `data-base/05-schema-reasoning.md` (the `Finding`/`Issue`/`Quarantine` schema these classes map onto), `decisions/02-repo-and-tooling.md` (module → package mapping).
+`architecture/09-clean-architecture-and-patterns.md` (the ring/layer model these stereotypes implement, SOLID mapping, design patterns catalog), `architecture/02-component-catalog.md` (component-level responsibilities these classes implement), `architecture/04-ai-safety-and-model-usage.md` (why the LLM boundary is drawn here), `architecture/05-agent-catalog.md` (the same boundary, at the orchestration level rather than the class level), `decisions/03-langgraph-for-ask-agent.md` (why diagram 4 is the one place a graph library appears, and why the other three aren't), `requirements/01-signal-collectors.md`, `requirements/05-interpreters-readers.md`, `requirements/09-ask-agent.md`, `data-base/05-schema-reasoning.md` (the `Finding`/`Issue`/`Quarantine` schema these classes map onto), `decisions/02-repo-and-tooling.md` (module → package mapping).

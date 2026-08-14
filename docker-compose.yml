@@ -19,6 +19,14 @@ services:
       # image's build context (backend/), needed by scripts/seed.py (FR-003). Not baked
       # into the image so editing seed data doesn't require a rebuild.
       - ./data-base:/data-base:ro
+      # Read-only: the Fernet key file for message-body encryption (specs/003-
+      # ingestion-and-context, REQ-M1-P4) — never baked into the image, generated
+      # once on the host per quickstart.md and mounted in.
+      - ./secrets:/app/secrets:ro
+      # Read-only: the collector fixture and the CS lead's hand-edited client profile
+      # YAML — both live outside the image's build context so editing either doesn't
+      # require a rebuild (specs/003-ingestion-and-context).
+      - ./demo:/app/demo:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -33,6 +41,9 @@ services:
     build: ./backend
     env_file: .env
     command: python -m app.worker
+    volumes:
+      - ./secrets:/app/secrets:ro
+      - ./demo:/app/demo:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

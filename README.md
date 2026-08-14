@@ -20,9 +20,10 @@ and lists which rules are non-negotiable. In short:
 | The build order and current feature status | `specs/001-project-foundation/` (this repo's first spec-kit feature; see `AGENTS.md` and the constitution for how later features are structured) |
 
 This repository currently contains **Project Foundation** (build-order Phase 1 — repo
-scaffold, CI pipeline, Docker Compose stack, database schema) and **Dashboard Shell**
+scaffold, CI pipeline, Docker Compose stack, database schema), **Dashboard Shell**
 (Phase 2 — full authentication and a dashboard shell proving the stack works end to
-end). No product feature (M1–M10) is implemented yet; that starts in Phase 3 onward. See
+end), and **Ingestion and Context** (Phase 3 — the event ledger, client profile, and
+signal collectors: the first modules with real business logic). See
 `specs/ROADMAP.md` for the full feature-by-feature status.
 
 ## Quickstart
@@ -85,3 +86,20 @@ docker compose down -v   # drops the db_data volume — full reprovision on next
 
 See `specs/001-project-foundation/quickstart.md` for the full validation walkthrough,
 including the CI-gate and test-harness checks (User Stories 2 and 3).
+
+## Ingestion and Context (Phase 3)
+
+One extra one-time setup step beyond the base quickstart above: a local encryption key
+for message-body encryption (REQ-M1-P4 — never optional, never deferred).
+
+```bash
+mkdir -p secrets
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secrets/data.key
+docker compose up --build -d   # picks up the new ./secrets and ./demo mounts
+```
+
+The CS lead's hand-authored client profile lives at `demo/client-profile.yaml`; the
+signal-collector fixture lives at `demo/fixtures/meridian-week.json`. See
+`specs/003-ingestion-and-context/quickstart.md` for the full validation walkthrough —
+profile versioning, hash-chain/business-hours arithmetic, `SimulatedCollector` runs
+(idempotency, identity resolution, redaction), and absence detection.

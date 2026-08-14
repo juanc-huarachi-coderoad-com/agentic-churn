@@ -51,4 +51,4 @@ The question box. Answers by building UI components, not paragraphs. Looks facts
 
 ## Traceability
 
-Spec §7 M9, §12.2 (question→component table, decline list), §9.3 (the "ask loop"), §9.4 (latency target).
+Spec §7 M9, §12.2 (question→component table, decline list), §9.3 (the "ask loop"), §9.4 (latency target). **Implementation:** `decisions/03-langgraph-for-ask-agent.md` — LangGraph fulfills every REQ-M9-ID above; none are renumbered or changed by that choice, it's an implementation decision, not a new requirement.

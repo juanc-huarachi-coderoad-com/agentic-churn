@@ -1,0 +1,51 @@
+# The CS lead edits this file directly (decisions/00-open-questions-resolved.md Q2) —
+# POST /api/profile/reload re-reads it and creates a new client_profile_versions row.
+# Mirrors data-base/11-seed-data.sql's seeded Meridian profile (spec §6.2's format).
+client: Meridian Logistics
+renewal_date: 2026-11-08
+contract_value_band: strategic
+
+business_goals:
+  - reduce delivery disputes by 30% this year
+
+stakeholders:
+  - id: stk_ana
+    name: Ana Reyes
+    role: CTO
+    influence: sponsor
+    signs_renewal: true
+    identifiers: [ana.reyes@meridian.com]
+  - id: stk_diego
+    name: Diego Marín
+    role: Dev lead
+    influence: daily_user
+    identifiers: [diego@meridian.com]
+
+product_areas:
+  - key: tracking_api
+    criticality: critical
+  - key: reporting
+    criticality: standard
+
+commitments:
+  - type: first_response
+    priority: P1
+    threshold_business_hours: 4
+  - type: recurring_sync
+    cadence: weekly
+
+communication:
+  working_hours: 08:00-18:00
+  timezone: America/Bogota
+  languages: [es, en]
+  norms: >
+    Direct communicators. Brevity is habitual, not hostile.
+    Formality rises when senior people are present.
+
+exclusions:
+  - legal_threads
+  - commercial_negotiation
+
+history:
+  - date: 2026-03-02
+    event: major outage on tracking_api, improvement plan agreed with Ana

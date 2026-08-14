@@ -8,8 +8,16 @@ from app.auth.adapters.sqlalchemy_repository import SqlAlchemyTokenRepository
 from app.auth.application.dependencies import provide_token_repository
 from app.auth.application.ports import TokenRepositoryPort
 from app.config import settings
+from app.context.adapters.profile_router import router as profile_router
 from app.db import engine, get_session
 from app.experience.adapters.dashboard_router import router as dashboard_router
+from app.ingestion.adapters.encryption import FernetEncryption
+
+# Module-level, like `engine` above — a missing/invalid encryption key file MUST fail
+# app startup, never fall back to storing plaintext (REQ-M1-P4, spec.md Edge Cases).
+# Importing app.main at all (uvicorn, or any test importing `from app.main import app`)
+# is exactly the "app startup" moment this needs to guard.
+encryption = FernetEncryption(settings.encryption_key_path)
 
 app = FastAPI(title="Agentic Churn API")
 
@@ -40,6 +48,7 @@ app.dependency_overrides[provide_token_repository] = _provide_token_repository
 
 app.include_router(auth_router)
 app.include_router(dashboard_router)
+app.include_router(profile_router)
 
 
 @app.get("/health")

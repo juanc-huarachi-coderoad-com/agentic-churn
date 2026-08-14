@@ -90,6 +90,10 @@ Naming these is as important as naming the patterns above, because "we could add
 | **CQRS (separate read/write models)** | The read side is already just "query the tables the write side populates" (`architecture/07-api-spec.md`'s dashboard routes are plain reads of `score_runs`/`narrator_outputs`). A second, separately-maintained read model would be solving a scaling problem this system — 50k–200k events/year per deployment — doesn't have |
 | **Generic multi-tenancy abstraction (tenant_id columns, row-level scoping library)** | One deployment per client is a permanent product constraint (spec §3.2), not a temporary MVP simplification waiting to be generalized — building toward multi-tenancy here would be designing for a requirement the product explicitly and deliberately doesn't have |
 
+### One thing this table doesn't reject: LangGraph for the Ask agent
+
+Every row above shares a pattern: the thing being abstracted is small, fixed, and not genuinely extensible (eight readers, four checks, a broker that isn't running, a tenancy model the product structurally excludes). The Ask agent (M9) doesn't fit that shape — eight *different* intents each triggering a *different* lookup and a *different* rendered component, an explicit decline branch, an explicit fallback branch, and a named "Ask thread" screen in the spec that implies conversational continuity is a real near-term expectation, not a hypothetical one. `decisions/03-langgraph-for-ask-agent.md` adopts LangGraph there — and nowhere else; the other five LLM touchpoints keep the plain `LLMPort` shape this document already established. The same YAGNI reasoning that rejects a pattern for a small fixed thing is what justifies a graph library for a genuinely branching one — it isn't an exception to this section, it's what this section's own logic implies once applied honestly to a component that doesn't match the other five rows.
+
 ## Enforcement — generalizing the one check that already exists
 
 `decisions/02-repo-and-tooling.md` already has a bespoke AST-walking CI script that fails the build if `backend/app/scoring/` imports an LLM client. That script is the right idea, scoped to one module. The general version: **`import-linter`**, a purpose-built tool for exactly this — declaring layer contracts in a config file and failing CI if any import violates them, across every module at once, without hand-rolled AST code per module.
@@ -163,15 +167,24 @@ backend/app/
 │       ├── gmail_collector.py
 │       ├── zendesk_collector.py
 │       └── warehouse_collector.py
-└── ... (context/, narrator/, experience/, auth/ — same three-ring shape)
+├── experience/                      # M8, M9, M10
+│   ├── application/
+│   │   ├── ports.py                # AskAgentPort, DraftComposerPort, DashboardReadPort
+│   │   └── use_cases.py            # AnswerQuestionUseCase, GenerateDraftUseCase
+│   └── adapters/
+│       ├── ask_agent_graph.py      # LangGraphAskAgent, AskAgentState, AskAgentToolkit
+│       │                            #   (the only module with an orchestration-framework
+│       │                            #   import — decisions/03-langgraph-for-ask-agent.md)
+│       └── draft_composer.py       # plain LLMPort call, no graph — see architecture/08
+└── ... (context/, narrator/, auth/ — same three-ring shape)
 ```
 
 Entities that genuinely span modules (`Finding` is produced by `readers`, scored by `scoring`, and read by `experience`) are **defined once**, in the module that owns their lifecycle (`scoring.domain`, since `ScoringEngine` is what changes a `Finding`'s `state`), and imported by the others — never redefined per module. This is a deliberate exception to "package by module," made explicitly rather than left to drift.
 
 ## What this changes about `architecture/08-class-diagrams.md`
 
-That document's three diagrams are updated alongside this one to make the ring each class belongs to explicit — `LLMClient` becomes `LLMPort` (an interface) implemented by `AnthropicLLMAdapter` (an adapter class), and similarly for `EmbeddingClient`/`FindingRepository`. The behavioral content of those diagrams — which classes never touch AI, which touch it narrowly — is unchanged; only the port/adapter split is new.
+That document's diagrams are updated alongside this one to make the ring each class belongs to explicit — `LLMClient` becomes `LLMPort` (an interface) implemented by `AnthropicLLMAdapter` (an adapter class), and similarly for `EmbeddingClient`/`FindingRepository`. The behavioral content of those diagrams — which classes never touch AI, which touch it narrowly — is unchanged; only the port/adapter split is new. A fourth diagram was added for the Ask agent (M9) — the one class in the whole document that wraps an orchestration framework instead of a single SDK call; see `decisions/03-langgraph-for-ask-agent.md`.
 
 ## Traceability
 
-`architecture/08-class-diagrams.md`, `architecture/02-component-catalog.md`, `architecture/04-ai-safety-and-model-usage.md`, `decisions/02-repo-and-tooling.md`, `tests/strategy.md`, `requirements/06-scoring-engine.md` REQ-M6-P1, `requirements/13-scoring-calibration-appendix.md`.
+`architecture/08-class-diagrams.md`, `architecture/02-component-catalog.md`, `architecture/04-ai-safety-and-model-usage.md`, `decisions/02-repo-and-tooling.md`, `decisions/03-langgraph-for-ask-agent.md`, `tests/strategy.md`, `requirements/06-scoring-engine.md` REQ-M6-P1, `requirements/13-scoring-calibration-appendix.md`.

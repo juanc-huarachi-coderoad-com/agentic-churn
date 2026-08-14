@@ -31,12 +31,12 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 |---|---|---|---|---|---|
 | 001 | [`project-foundation`](001-project-foundation/) | 1 · Foundation | ✅ **Complete** — all 33 tasks implemented and verified against real Docker/Postgres | `requirements/11-non-functional-requirements.md` (CI/determinism criteria) | `architecture/03-technology-stack.md`, `architecture/09-clean-architecture-and-patterns.md`, all of `data-base/` |
 | 002 | [`dashboard-shell`](002-dashboard-shell/) | 2 · Vertical slice (login + dashboard) | ✅ **Complete** — all 29 tasks implemented and verified end to end, including a real browser against the containerized production build | `requirements/14-authentication.md`, `requirements/08-health-dashboard.md` (shell only) | `architecture/07-api-spec.md`, `data-base/12-users-and-auth.md` |
-| 003 | `ingestion-and-context` | 3 · Ledger + profile | ⬜ Not started — **next up** | `requirements/01-signal-collectors.md`, `02-event-ledger.md`, `03-client-profile.md` | `architecture/01`, `02-component-catalog.md`; `data-base/02,03,04` |
-| 004 | `score-engine` | 4 · Scoring engine (checkpoint phase) | ⬜ Not started | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
+| 003 | [`ingestion-and-context`](003-ingestion-and-context/) | 3 · Ledger + profile | ✅ **Complete** — all 44 tasks implemented and verified against real Docker/Postgres, including a genuine RunCollectorUseCase bug (see Log) | `requirements/01-signal-collectors.md`, `02-event-ledger.md`, `03-client-profile.md` | `architecture/01`, `02-component-catalog.md`; `data-base/02,03,04` |
+| 004 | `score-engine` | 4 · Scoring engine (checkpoint phase) | ⬜ Not started — **next up** | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
 | 005 | `deterministic-findings` | 5 · Findings (no AI) | ⬜ Not started | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence) | `data-base/05-schema-reasoning.md` |
 | 006 | `dashboard-evidence-trace` | 6 · Full dashboard | ⬜ Not started | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
 | 007 | `model-findings` | 7 · Tone/Intent + validation gate | ⬜ Not started | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
-| 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02` |
+| 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | `draft-composer` | 9 · The closer | ⬜ Not started | `requirements/10-draft-composer.md` | `sequences/04` |
 | 010 | `feedback-memory` | 10 · Learning loop | ⬜ Not started | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
 | 011 | `production-hardening` | 11 · Hardening | ⬜ Not started | remaining NFRs, `decisions/01-mvp-scope-and-phasing.md` | — |
@@ -84,3 +84,28 @@ Repeat for each row above, in order:
   production build — screenshotted login → "Meridian Logistics" / "Still learning — 0
   of 6 signal types available." Login-to-dashboard round trip: 0.61s (SC-001 threshold
   5s).
+- **2026-08-14** — LangGraph adopted, scoped to the Ask agent (M9) only —
+  `decisions/03-langgraph-for-ask-agent.md`. The other five LLM touchpoints (Tone,
+  Intent, Meeting readers; Narrator; Draft composer) keep the plain `LLMPort` design
+  unchanged. `.specify/memory/constitution.md` amended to v1.2.0 (Technology and Data
+  Standards + an AI-safety clarification). Decided ahead of feature 008 so its future
+  `/speckit-plan` has an authoritative decision to cite.
+- **2026-08-14** — Feature 003 (`ingestion-and-context`) specified, planned, tasked,
+  analyzed (7 remediations applied — a CRITICAL finding that `ReplayUseCase` was
+  referenced but never actually built as a task, plus fixture/coverage gaps), and
+  implemented. All 44 tasks complete. Verified against the real, fully containerized
+  stack: `scripts/run_collector.py` against the Meridian fixture (6 events, 0 broken
+  hash-chain links, ticket #398 = 2.0h resolved / #456 = open_overdue matching the
+  worked example, `legal_threads` redaction, identity resolution), the full profile
+  lifecycle via `curl` (version 3→4, `is_current` flip, 422 rejection of a corrupted
+  profile with no new version created, replay history), a real encryption-key-missing
+  startup failure and recovery, and 35 backend pytest cases (up from 10 after feature
+  002) across three consecutive runs against the same accumulating database. One real
+  bug found and fixed during verification, not by inspection: `RunCollectorUseCase`
+  originally grouped envelopes by source and processed each group to completion,
+  silently breaking the hash chain's required global occurred_at-ordered append
+  sequence whenever two sources' items interleaved chronologically (e.g. a day-4 Gmail
+  message appended before a day-1 Zendesk ticket) — caught by running the full
+  ledger's `verify_hash_chain()` for real, three times in a row, not by a single
+  green test run. `specs/003-ingestion-and-context/research.md` documents the fix and
+  the underlying "insertion order must match occurred_at order" invariant it protects.

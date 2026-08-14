@@ -105,11 +105,22 @@ jobs:
 
       # golden-replay / decimal-reconciliation / monotonicity placeholders (T028) —
       # tests/strategy.md's harness scaffold; real content lands build-order Phase 4/5.
-      - name: Backend — migrate then run the test harness
+      # tests/unit/ is real from specs/002-dashboard-shell (auth) and specs/003-
+      # ingestion-and-context (ledger/profile/collectors) onward — it needs seed data
+      # (identity_map/client_profile_versions rows several tests depend on) and an
+      # encryption key (REQ-M1-P4: the app fails to start without one), both set up
+      # here relative to `backend/` — CLIENT_PROFILE_PATH also needs a repo-relative
+      # override since the default in .env.example assumes Docker's /app-rooted mounts.
+      - name: Backend — migrate, seed, then run the test harness
         working-directory: backend
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/agentic_churn
+          ENCRYPTION_KEY_PATH: ./secrets/data.key
+          CLIENT_PROFILE_PATH: ../demo/client-profile.yaml
         run: |
           uv sync --locked
+          mkdir -p secrets
+          python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" > secrets/data.key
           uv run alembic upgrade head
-          uv run pytest tests/golden_replay/ tests/scoring/ -v
+          uv run python scripts/seed.py
+          uv run pytest tests/golden_replay/ tests/scoring/ tests/unit/ -v

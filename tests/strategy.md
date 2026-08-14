@@ -49,6 +49,14 @@ The `quarantine` table (`data-base/05-schema-reasoning.md`) is explicitly design
 
 This harness never "fixes" a quarantined finding (REQ-M5A-03 forbids that structurally) — it only ever informs a human decision to adjust `finding_type_config` or a prompt, which then goes through the normal versioned-prompt/full-replay path (`architecture/04-ai-safety-and-model-usage.md` Rule 5).
 
+## Ask agent (LangGraph) tests
+
+Same principle as everywhere else in this document — ports enable fakes, so branching logic gets tested without a real database or a real LLM call. `decisions/03-langgraph-for-ask-agent.md`'s compiled graph is invoked directly with a fixed `AskAgentState` and fake implementations of `EventRepositoryPort`/`FindingRepositoryPort`/`ScoreRunRepositoryPort` injected into `AskAgentToolkit`:
+
+1. **Branch coverage** — one test per intent in `REQ-M9-02` (8 intents), plus the decline path (`REQ-M9-05`/`06`) and the fallback path (`REQ-M9-04`), asserting the graph reaches the expected terminal node and renders the expected component — no real tool execution, no real model call, since `LLMPort` and the toolkit are both fakes here.
+2. **Read-only enforcement** — a test asserting `AskAgentToolkit.build_tools()` never returns a tool bound to a write method (`save`, `quarantine`, `append`) on any injected port — the mechanical check behind "the Ask agent's tools are read-only lookups only" (`.specify/memory/constitution.md`), run against the actual registered tool list, not just read by inspection.
+3. **Latency budget** — an integration test (real `AnthropicLLMAdapter`, real Postgres, not fakes) asserting end-to-end response time stays under 3s (`REQ-M9-08`), run separately from the branch-coverage unit tests above since it needs the real network round trip the unit tests deliberately avoid.
+
 ## What's explicitly out of scope for automated testing
 
 - **Draft quality** (is the generated message actually good) — inherently subjective; handled by the MVP success metric "≥ 40% of drafts sent after light editing" (spec §14.2), measured in production, not asserted in CI.
@@ -60,4 +68,4 @@ All of the above (except the reader eval harness, which runs on its own schedule
 
 ## Traceability
 
-`base/Churn-Sentiment-Agent-Product-Specification.md` §14.3, `requirements/11-non-functional-requirements.md` REQ-NFR-27…33, `requirements/05-interpreters-readers.md` REQ-M5A-04, `requirements/06-scoring-engine.md` REQ-M6-P1…P4, `decisions/02-repo-and-tooling.md`, `workflows/ci.yml`.
+`base/Churn-Sentiment-Agent-Product-Specification.md` §14.3, `requirements/11-non-functional-requirements.md` REQ-NFR-27…33, `requirements/05-interpreters-readers.md` REQ-M5A-04, `requirements/06-scoring-engine.md` REQ-M6-P1…P4, `requirements/09-ask-agent.md` REQ-M9-02…08, `decisions/02-repo-and-tooling.md`, `decisions/03-langgraph-for-ask-agent.md`, `workflows/ci.yml`.

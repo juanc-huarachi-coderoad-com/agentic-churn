@@ -19,6 +19,10 @@ env/
 .env.local
 .env.*.local
 
+# Encryption key material (specs/003-ingestion-and-context) — never committed.
+secrets/
+backend/secrets/
+
 # Build outputs
 dist/
 build/
