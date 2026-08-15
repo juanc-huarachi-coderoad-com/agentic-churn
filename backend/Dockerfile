@@ -10,6 +10,13 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# hdbscan (Recurrence reader, feature 005) is a C-extension package built from
+# source on install — python:3.12-slim has no compiler or libc headers by
+# default; build-essential brings both (gcc alone isn't enough, missing
+# stdlib.h).
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first, so a code-only change doesn't invalidate this layer.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project --no-dev
