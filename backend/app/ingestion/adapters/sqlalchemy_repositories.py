@@ -34,6 +34,7 @@ from app.ingestion.application.ports import (
     ProductAreaRecord,
     RecurringCommitment,
     ResponsePairRow,
+    RollupRow,
     StakeholderIdentity,
 )
 from app.ingestion.domain.business_hours import WorkingCalendar
@@ -198,6 +199,30 @@ class SqlAlchemyEventRepository(EventRepositoryPort):
                     "elapsed": p.business_hours_elapsed,
                     "state": p.state,
                     "profile_version_id": p.profile_version_id,
+                },
+            )
+        await self._session.commit()
+
+    async def truncate_rollups(self) -> None:
+        await self._session.execute(text("TRUNCATE rollups"))
+        await self._session.commit()
+
+    async def bulk_insert_rollups(self, rows: list[RollupRow]) -> None:
+        for r in rows:
+            await self._session.execute(
+                text(
+                    "INSERT INTO rollups (subject_type, subject_id, metric, "
+                    "window_start, window_end, value) "
+                    "VALUES ((:subject_type)::rollup_subject_type, :subject_id, "
+                    ":metric, :window_start, :window_end, :value)"
+                ),
+                {
+                    "subject_type": r.subject_type,
+                    "subject_id": r.subject_id,
+                    "metric": r.metric,
+                    "window_start": r.window_start,
+                    "window_end": r.window_end,
+                    "value": r.value,
                 },
             )
         await self._session.commit()

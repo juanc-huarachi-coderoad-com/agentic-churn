@@ -22,6 +22,7 @@ from app.ingestion.application.ports import (
     EventThreadRow,
     NewEvent,
     ResponsePairRow,
+    RollupRow,
 )
 from app.ingestion.domain.business_hours import WorkingCalendar, compute_business_hours_elapsed
 from app.ingestion.domain.envelope import Envelope
@@ -518,3 +519,43 @@ class DetectAbsenceUseCase:
             appended.append(event_id)
 
         return appended
+
+
+# ---------------------------------------------------------------------------
+# ComputeRollupsUseCase (REQ-M2-06) — feature 005's first real implementation;
+# deferred since feature 003 specifically because no reader consumed a baseline
+# yet (specs/003-ingestion-and-context/spec.md's documented boundary)
+# ---------------------------------------------------------------------------
+
+_ROLLUP_SAMPLE_WINDOW_DAYS = 7
+
+
+class ComputeRollupsUseCase:
+    """Truncates and rebuilds `rollups` from `events` alone (the same "projection,
+    rebuildable from events" shape `event_threads`/`response_pairs` already have,
+    `data-base/01-database-overview.md`'s Principle 3) — one row per
+    `usage_measurement` event, scoped to exactly what the Usage reader consumes
+    (`spec.md`'s Assumptions), not a general analytics engine. `rollups.value` is
+    each event's own `value_delta_pct` reading (`research.md`'s Decision — the
+    real event schema carries a delta, not a separate absolute value)."""
+
+    def __init__(self, events: EventRepositoryPort) -> None:
+        self._events = events
+
+    async def execute(self) -> int:
+        all_events = await self._events.list_all_ordered()
+        rows = [
+            RollupRow(
+                subject_type="product_area",
+                subject_id=record.product_area_id,
+                metric=record.structured_payload.get("metric", "unknown"),
+                window_start=record.occurred_at - timedelta(days=_ROLLUP_SAMPLE_WINDOW_DAYS),
+                window_end=record.occurred_at,
+                value=float(record.structured_payload.get("value_delta_pct", 0)),
+            )
+            for record in all_events
+            if record.event_type == "usage_measurement"
+        ]
+        await self._events.truncate_rollups()
+        await self._events.bulk_insert_rollups(rows)
+        return len(rows)

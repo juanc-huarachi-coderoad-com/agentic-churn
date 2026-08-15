@@ -46,5 +46,10 @@ class Settings(BaseSettings):
     # differently in the container than it does when run locally from `backend/`.
     collector_fixture_path: str = "./demo/fixtures/meridian-week.json"
 
+    # Recurrence reader's embedding provider (specs/005-deterministic-findings,
+    # architecture/03-technology-stack.md) — no safe default; an empty value fails
+    # honestly at the adapter (spec.md's Edge Cases), never a silent skip.
+    openai_api_key: str = ""
+
 
 settings = Settings()

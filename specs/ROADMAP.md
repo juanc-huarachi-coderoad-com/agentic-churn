@@ -33,8 +33,8 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 002 | [`dashboard-shell`](002-dashboard-shell/) | 2 · Vertical slice (login + dashboard) | ✅ **Complete** — all 29 tasks implemented and verified end to end, including a real browser against the containerized production build | `requirements/14-authentication.md`, `requirements/08-health-dashboard.md` (shell only) | `architecture/07-api-spec.md`, `data-base/12-users-and-auth.md` |
 | 003 | [`ingestion-and-context`](003-ingestion-and-context/) | 3 · Ledger + profile | ✅ **Complete** — all 44 tasks implemented and verified against real Docker/Postgres, including a genuine RunCollectorUseCase bug (see Log) | `requirements/01-signal-collectors.md`, `02-event-ledger.md`, `03-client-profile.md` | `architecture/01`, `02-component-catalog.md`; `data-base/02,03,04` |
 | 004 | [`score-engine`](004-score-engine/) | 4 · Scoring engine (checkpoint phase) | ✅ **Complete** — all 29 tasks implemented and verified against real Docker/Postgres, including three genuine bugs found and fixed (see Log) | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
-| 005 | `deterministic-findings` | 5 · Findings (no AI) | ⬜ Not started — **next up** | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence) | `data-base/05-schema-reasoning.md` |
-| 006 | `dashboard-evidence-trace` | 6 · Full dashboard | ⬜ Not started | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
+| 005 | [`deterministic-findings`](005-deterministic-findings/) | 5 · Findings (no AI) | ✅ **Complete** — all 37 tasks implemented and verified against real Docker/Postgres, including one genuine defensive-coding gap found during verification, not blocking (see Log) | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence/Relationship — REQ-M5-11's Relationship reader isn't assigned to any phase in `base/...md` §16's table despite being deterministic and paired with Absence throughout; grouped here with its fellow non-LLM readers rather than left dangling or bundled with the LLM readers in feature 007) | `data-base/05-schema-reasoning.md` |
+| 006 | `dashboard-evidence-trace` | 6 · Full dashboard | ⬜ Not started — **next up** | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
 | 007 | `model-findings` | 7 · Tone/Intent + validation gate | ⬜ Not started | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
 | 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | `draft-composer` | 9 · The closer | ⬜ Not started | `requirements/10-draft-composer.md` | `sequences/04` |
@@ -140,3 +140,29 @@ Repeat for each row above, in order:
   `rank_within_issue_factor` to 2 decimals before multiplying for display, which
   doesn't match a full-precision implementation's output (`score = 85.63`, not the
   originally-published `85.64`) — corrected in `data-model.md` and `quickstart.md`.
+- **2026-08-15** — Feature 005 (`deterministic-findings`) verified complete. All 37
+  tasks implemented: five readers (Commitment, Usage, Recurrence, Absence,
+  Relationship), `RunReadersUseCase` with per-reader failure isolation (FR-014a), and
+  the long-deferred `rollups` computation (REQ-M2-06, unpopulated since feature 001).
+  Independently verified against the real, already-running containerized stack, not
+  just read: `lint-imports --config ../.importlinter` passes clean (3/3 contracts
+  kept — confirms T035's no-AI-SDK-in-domain claim mechanically, not by inspection);
+  28/28 pure-domain reader unit tests pass (Commitment, Usage, Absence, Relationship,
+  Recurrence, purity check); 102/104 of the full backend suite
+  (`golden_replay`/`readers`/`scoring`/`unit`, 104 tests total) pass against the live
+  database. One genuine finding during verification, not blocking:
+  `SqlAlchemyCandidateCorpusRepository.list_candidates()`
+  (`backend/app/readers/adapters/sqlalchemy_repository.py`) assumes every
+  `ticket_state_change` `created`/`reopened` event's `structured_payload` has a
+  `title` key and raises `KeyError` if not — exercisable right now by two stray
+  malformed rows already present in the shared dev database (`ticket_number` 518959
+  and 500488, not part of the Meridian fixture, pre-existing this verification pass —
+  consistent with leftover synthetic data from earlier property-based test runs
+  against the same shared database, not a defect this feature introduced).
+  `RunReadersUseCase`'s per-reader isolation (FR-014a) already contains the failure to
+  Recurrence alone, exactly as designed, but the two failing rows are proof the
+  assumption itself has no defensive fallback. Worth a `.get("title", ...)` hardening
+  pass before feature 007 builds on top of this repository — not yet documented in
+  `specs/005-deterministic-findings/research.md`, flagged here rather than silently
+  patched, matching this roadmap's own standard for genuine findings (features
+  003/004, above).

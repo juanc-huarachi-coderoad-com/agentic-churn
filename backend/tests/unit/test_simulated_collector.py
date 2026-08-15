@@ -89,12 +89,12 @@ async def test_run_twice_is_idempotent(tmp_path):
     suffix = uuid.uuid4().hex[:8]
 
     first = await _run(tmp_path, suffix)
-    assert first.envelopes_emitted == 6
+    assert first.envelopes_emitted == 14
     assert first.duplicates_skipped == 0
 
     second = await _run(tmp_path, suffix)
     assert second.envelopes_emitted == 0
-    assert second.duplicates_skipped == 6
+    assert second.duplicates_skipped == 14
 
 
 async def test_identity_resolution_matches_ana_and_leaves_zendesk_unresolved(tmp_path):
@@ -152,5 +152,7 @@ async def test_source_failure_produces_honest_coverage_report(tmp_path):
     assert report.sources_read < report.sources_expected
     assert report.gap_reason is not None
     assert "zendesk" in report.gap_reason
-    # gmail (2 items) + warehouse (1 item) succeed; zendesk (3 items) skipped entirely.
-    assert result.envelopes_emitted == 3
+    # gmail (3 items) + warehouse (6 items) succeed; zendesk (5 items) skipped entirely
+    # (specs/005-deterministic-findings grew the fixture's zendesk/warehouse/gmail
+    # counts beyond feature 003's original 2/1/2 split).
+    assert result.envelopes_emitted == 9

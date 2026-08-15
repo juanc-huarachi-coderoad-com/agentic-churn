@@ -71,6 +71,22 @@ class ResponsePairRow:
     profile_version_id: UUID | None
 
 
+@dataclass(frozen=True)
+class RollupRow:
+    """One computed rollup sample (REQ-M2-06) — `ComputeRollupsUseCase`'s output,
+    one row per source event, not a pre-aggregated summary. `research.md`'s
+    Decision: `rollups.value` is a `usage_measurement` event's own
+    `value_delta_pct` reading, not a separate absolute value the event schema
+    doesn't carry."""
+
+    subject_type: str
+    subject_id: UUID | None
+    metric: str
+    window_start: datetime
+    window_end: datetime
+    value: float
+
+
 class EventRepositoryPort(ABC):
     @abstractmethod
     async def append(self, event: NewEvent, *, data_key_ref: str) -> UUID:
@@ -97,6 +113,16 @@ class EventRepositoryPort(ABC):
     async def bulk_rebuild_projections(
         self, threads: list[EventThreadRow], pairs: list[ResponsePairRow]
     ) -> None: ...
+
+    @abstractmethod
+    async def truncate_rollups(self) -> None:
+        """TRUNCATEs `rollups` (REQ-M2-06) — a projection, rebuilt from `events`
+        alone (`data-base/01-database-overview.md`'s Principle 3), the same
+        shape `event_threads`/`response_pairs` already have."""
+        ...
+
+    @abstractmethod
+    async def bulk_insert_rollups(self, rows: list[RollupRow]) -> None: ...
 
     @abstractmethod
     async def record_replay_run(

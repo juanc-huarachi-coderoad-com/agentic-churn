@@ -23,10 +23,13 @@ This repository currently contains **Project Foundation** (build-order Phase 1 �
 scaffold, CI pipeline, Docker Compose stack, database schema), **Dashboard Shell**
 (Phase 2 — full authentication and a dashboard shell proving the stack works end to
 end), **Ingestion and Context** (Phase 3 — the event ledger, client profile, and
-signal collectors: the first modules with real business logic), and **Score Engine**
+signal collectors: the first modules with real business logic), **Score Engine**
 (Phase 4 — "the checkpoint": per-finding weighting, issue-relative ranking, band
 classification with hysteresis, all proven against a hand-authored fixture before any
-reader module exists). See `specs/ROADMAP.md` for the full feature-by-feature status.
+reader module exists), and **Deterministic Findings** (Phase 5 — the five non-LLM
+readers: Commitment, Usage, Recurrence, Absence, Relationship — the first features
+to write real, non-fixture `findings` rows). See `specs/ROADMAP.md` for the full
+feature-by-feature status.
 
 ## Quickstart
 
@@ -126,3 +129,29 @@ Three real recomputation triggers are wired: `manual` (the script above),
 (fires automatically after a profile edit via `SubmitProfileUseCase`). See
 `specs/004-score-engine/quickstart.md` for the full validation walkthrough, including
 the exact worked-example numbers and the source-degraded freeze path.
+
+## Deterministic Findings (Phase 5)
+
+Real findings, no model call: Commitment, Usage, Recurrence, Absence, and
+Relationship each read the real ledger and emit `Finding`s deterministically —
+`ValidationGate`/Tone/Intent/Meeting (M5a/the LLM-based readers) are feature 007's
+scope, not this one. One new environment prerequisite — Recurrence's embedding
+provider:
+
+```bash
+echo "OPENAI_API_KEY=sk-..." >> .env
+docker compose up --build -d   # picks up the new env var
+```
+
+```bash
+docker compose exec api python scripts/run_collector.py --source simulated
+docker compose exec api python scripts/run_readers.py
+```
+
+**Expected**: a per-reader summary — findings persisted, or (if `OPENAI_API_KEY` is
+missing/invalid) Recurrence's own isolated failure message, while the other four
+readers' counts are unaffected (FR-014a). Every finding persists at
+`status = pending_validation`; re-running over an unchanged ledger adds nothing
+(the REQ-M5-15 cache). See `specs/005-deterministic-findings/quickstart.md` for the
+full validation walkthrough, including the exact worked-example table and the
+failure-isolation and cache checks.
