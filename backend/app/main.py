@@ -10,7 +10,9 @@ from app.auth.application.ports import TokenRepositoryPort
 from app.config import settings
 from app.context.adapters.profile_router import router as profile_router
 from app.db import engine, get_session
+from app.experience.adapters.coverage_router import router as coverage_router
 from app.experience.adapters.dashboard_router import router as dashboard_router
+from app.experience.adapters.evidence_router import router as evidence_router
 from app.ingestion.adapters.encryption import FernetEncryption
 
 # Module-level, like `engine` above — a missing/invalid encryption key file MUST fail
@@ -48,6 +50,8 @@ app.dependency_overrides[provide_token_repository] = _provide_token_repository
 
 app.include_router(auth_router)
 app.include_router(dashboard_router)
+app.include_router(evidence_router)
+app.include_router(coverage_router)
 app.include_router(profile_router)
 
 

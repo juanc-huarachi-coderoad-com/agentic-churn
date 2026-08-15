@@ -34,8 +34,8 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 003 | [`ingestion-and-context`](003-ingestion-and-context/) | 3 · Ledger + profile | ✅ **Complete** — all 44 tasks implemented and verified against real Docker/Postgres, including a genuine RunCollectorUseCase bug (see Log) | `requirements/01-signal-collectors.md`, `02-event-ledger.md`, `03-client-profile.md` | `architecture/01`, `02-component-catalog.md`; `data-base/02,03,04` |
 | 004 | [`score-engine`](004-score-engine/) | 4 · Scoring engine (checkpoint phase) | ✅ **Complete** — all 29 tasks implemented and verified against real Docker/Postgres, including three genuine bugs found and fixed (see Log) | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
 | 005 | [`deterministic-findings`](005-deterministic-findings/) | 5 · Findings (no AI) | ✅ **Complete** — all 37 tasks implemented and verified against real Docker/Postgres, including one genuine defensive-coding gap found during verification, not blocking (see Log) | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence/Relationship — REQ-M5-11's Relationship reader isn't assigned to any phase in `base/...md` §16's table despite being deterministic and paired with Absence throughout; grouped here with its fellow non-LLM readers rather than left dangling or bundled with the LLM readers in feature 007) | `data-base/05-schema-reasoning.md` |
-| 006 | `dashboard-evidence-trace` | 6 · Full dashboard | ⬜ Not started — **next up** | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
-| 007 | `model-findings` | 7 · Tone/Intent + validation gate | ⬜ Not started | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
+| 006 | [`dashboard-evidence-trace`](006-dashboard-evidence-trace/) | 6 · Full dashboard | ✅ **Complete** — all 52 tasks implemented and verified against real Docker/Postgres, including two `/speckit-analyze` remediations applied before implementation and one genuine Docker build gap found during verification, not blocking (see Log) | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
+| 007 | `model-findings` | 7 · Tone/Intent + validation gate | ⬜ Not started — **next up** | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
 | 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | `draft-composer` | 9 · The closer | ⬜ Not started | `requirements/10-draft-composer.md` | `sequences/04` |
 | 010 | `feedback-memory` | 10 · Learning loop | ⬜ Not started | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
@@ -166,3 +166,40 @@ Repeat for each row above, in order:
   `specs/005-deterministic-findings/research.md`, flagged here rather than silently
   patched, matching this roadmap's own standard for genuine findings (features
   003/004, above).
+- **2026-08-15** — Feature 006 (`dashboard-evidence-trace`) specified, planned,
+  tasked, analyzed (2 remediations applied before implementation — CV1: the
+  evidence dispatch table had no fallback for `finding_type`s outside feature 005's
+  five readers, a real crash risk against this deployment's own seeded demo data
+  [`escalation_language`/`tone_deterioration`/`csat_deviation`]; CV2:
+  `ClientHeader.days_to_renewal` had no documented data source), and implemented.
+  All 52 tasks complete: `GET /api/dashboard` now returns the full
+  `DashboardResponse` (score block, contribution bars, pulse timeline, stakeholder
+  cards, coverage line, all seven `state` values with `base/...md` §11.5's exact
+  copy) in place of feature 002's permanent shell; `GET /api/evidence/{id}` (this
+  feature's namesake) reproduces `data-model.md`'s worked example exactly,
+  including the generic fallback; `GET /api/coverage` backs a new system health
+  screen. Verified against the real, freshly reset and fully re-ingested/scored
+  Meridian database (fixture collection, all five feature 005 readers,
+  `seed_score_fixture.py`'s nine-finding worked example, `compute_score.py`) via
+  direct `curl` calls reproducing every contract example verbatim, 20 pure
+  domain-service tests (state precedence, evidence dispatch, arithmetic
+  formatting), 14 real-DB route tests, 15 frontend Vitest tests, and the full
+  backend suite (134/137 passing, 2 expected skips). One test-ordering artifact,
+  not a regression: `tests/readers/test_run_readers_use_case.py`'s "every finding
+  is `pending_validation`" assertion fails once `seed_score_fixture.py` (feature
+  004's demo script, which inserts `validated` rows directly) has also run against
+  the same database — the two scripts were never designed to coexist in one
+  ledger, and this verification pass is the first to run both in sequence. Two
+  additional genuine findings, neither blocking: (1) `PulseEvent` and
+  `StakeholderCard` both needed an additive field beyond
+  `architecture/07-api-spec.md`'s originally-drafted schemas
+  (`score_contribution_id`, and a nullable `stakeholder_id` for an unresolved-
+  identity card) to actually satisfy FR-007/spec.md's own acceptance scenarios —
+  documented inline in `ports.py`, not yet reflected back into the architecture
+  doc itself; (2) `docker compose build api` fails (`hdbscan` needs a C compiler
+  the builder stage's image lacks `gcc` for) — pre-existing since feature 005
+  added `hdbscan`, not caused by this feature, but it blocked a full containerized
+  Playwright E2E run this pass, so verification relied on a local uvicorn process
+  against the real database instead. Worth a Dockerfile fix (add `gcc`/`build-
+  essential` to the builder stage) before any feature next needs a containerized
+  E2E run.

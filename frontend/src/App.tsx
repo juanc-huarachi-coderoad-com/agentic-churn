@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { LoginPage } from './auth/login-page'
 import { ProtectedRoute } from './auth/protected-route'
+import { CoveragePage } from './coverage/coverage-page'
 import { DashboardPage } from './dashboard/dashboard-page'
 
 function App() {
@@ -13,6 +14,14 @@ function App() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/coverage"
+          element={
+            <ProtectedRoute>
+              <CoveragePage />
             </ProtectedRoute>
           }
         />
