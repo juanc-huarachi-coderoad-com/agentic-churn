@@ -22,9 +22,11 @@ and lists which rules are non-negotiable. In short:
 This repository currently contains **Project Foundation** (build-order Phase 1 — repo
 scaffold, CI pipeline, Docker Compose stack, database schema), **Dashboard Shell**
 (Phase 2 — full authentication and a dashboard shell proving the stack works end to
-end), and **Ingestion and Context** (Phase 3 — the event ledger, client profile, and
-signal collectors: the first modules with real business logic). See
-`specs/ROADMAP.md` for the full feature-by-feature status.
+end), **Ingestion and Context** (Phase 3 — the event ledger, client profile, and
+signal collectors: the first modules with real business logic), and **Score Engine**
+(Phase 4 — "the checkpoint": per-finding weighting, issue-relative ranking, band
+classification with hysteresis, all proven against a hand-authored fixture before any
+reader module exists). See `specs/ROADMAP.md` for the full feature-by-feature status.
 
 ## Quickstart
 
@@ -103,3 +105,24 @@ signal-collector fixture lives at `demo/fixtures/meridian-week.json`. See
 `specs/003-ingestion-and-context/quickstart.md` for the full validation walkthrough —
 profile versioning, hash-chain/business-hours arithmetic, `SimulatedCollector` runs
 (idempotency, identity resolution, redaction), and absence detection.
+
+## Score Engine (Phase 4)
+
+Findings are still hand-authored/fixture-seeded here — no reader module exists yet
+(that's build-order Phase 5). This feature proves `score_runs`/`score_contributions`/
+`band_history` computation for real: per-finding weighting, issue-relative ranking with
+diminishing rank weight, recency by lifecycle state, the positive-signal cap, the
+saturating points→score conversion, and band classification with hysteresis and
+2-consecutive-run stickiness.
+
+```bash
+docker compose exec api python scripts/run_collector.py --source simulated
+docker compose exec api python scripts/seed_score_fixture.py
+docker compose exec api python scripts/compute_score.py   # run twice to settle the band
+```
+
+Three real recomputation triggers are wired: `manual` (the script above),
+`hourly_heartbeat` (`app/worker.py`'s APScheduler job), and `profile_edit_replay`
+(fires automatically after a profile edit via `SubmitProfileUseCase`). See
+`specs/004-score-engine/quickstart.md` for the full validation walkthrough, including
+the exact worked-example numbers and the source-degraded freeze path.

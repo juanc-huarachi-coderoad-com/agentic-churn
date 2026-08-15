@@ -43,9 +43,19 @@ async def _build_fixture(tmp_path: Path, suffix: str, session) -> Path:
     floor = await ledger_floor(session)
     earliest = min(datetime.fromisoformat(item["occurred_at"]) for item in items)
     offset = floor - earliest + timedelta(seconds=1)
+    # ticket_number offset, not just source_native_id's suffix: _rebuild_projections
+    # (app/ingestion/application/use_cases.py) keys its open_pairs tracking by
+    # ticket_number across the WHOLE ledger's history, not by source_native_id — a
+    # uuid-suffixed native_id alone still lets this test's ticket #456 shadow (or be
+    # shadowed by) any other real or synthetic ticket #456 elsewhere in the ledger.
+    # 100000+ stays well clear of the demo fixture's own real ticket numbers (398,
+    # 456).
+    ticket_offset = int(suffix, 16) % 900000 + 100000
     for item in items:
         item["source_native_id"] = f"{item['source_native_id']}-{suffix}"
         item["occurred_at"] = (datetime.fromisoformat(item["occurred_at"]) + offset).isoformat()
+        if "ticket_number" in item:
+            item["ticket_number"] += ticket_offset
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(json.dumps(items))
     return fixture_path

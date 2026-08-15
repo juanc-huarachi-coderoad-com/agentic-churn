@@ -1,0 +1,109 @@
+{
+  "_comment": "Hand-authored proof fixture (specs/004-score-engine) reproducing examples/01-end-to-end-walkthrough.md §9's worked example, corrected for a rank-order inconsistency in that document found during /speckit-analyze (see research.md). Static shape only — cited_event_ids are resolved at seed time by scripts/seed_score_fixture.py against real ledger rows, never hardcoded here. 'citation' names which real event this finding points at: an 'mvp_event' native_id already produced by scripts/run_collector.py, 'absence_event' (the real event DetectAbsenceUseCase produces), or 'synthetic_csat_event' — CSAT is a Post-MVP source with no live collector yet, so the seed script inserts one synthetic survey_response event for this citation via the real, hash-chained AppendEventUseCase (not a bypass).",
+  "issues": [
+    { "id": "iss-A", "label": "Issue A — tracking_api reliability", "cluster_method": "shared_entity" },
+    { "id": "iss-B", "label": "Issue B — Ana & Diego disengaging", "cluster_method": "embedding_similarity" }
+  ],
+  "findings": [
+    {
+      "id": "fnd-1",
+      "reader_type": "commitment",
+      "finding_type": "broken_response_promise",
+      "magnitude": 1.00,
+      "confidence": 1.00,
+      "citation": { "type": "mvp_event", "native_id": "zendesk-456-reopened" },
+      "stakeholder": null,
+      "product_area": "tracking_api",
+      "issue": "iss-A"
+    },
+    {
+      "id": "fnd-2",
+      "reader_type": "recurrence",
+      "finding_type": "recurring_issue",
+      "magnitude": 0.60,
+      "confidence": 0.75,
+      "citation": { "type": "mvp_event", "native_id": "zendesk-456-reopened" },
+      "stakeholder": null,
+      "product_area": "tracking_api",
+      "issue": "iss-A"
+    },
+    {
+      "id": "fnd-3",
+      "reader_type": "usage",
+      "finding_type": "usage_deviation",
+      "magnitude": 0.55,
+      "confidence": 0.90,
+      "citation": { "type": "mvp_event", "native_id": "usage-tracking_api-w34" },
+      "stakeholder": null,
+      "product_area": "tracking_api",
+      "issue": "iss-A"
+    },
+    {
+      "id": "fnd-4",
+      "reader_type": "absence",
+      "finding_type": "contact_absence",
+      "magnitude": 0.70,
+      "confidence": 0.85,
+      "citation": { "type": "absence_event" },
+      "stakeholder": "diego@meridian.com",
+      "product_area": null,
+      "issue": "iss-B"
+    },
+    {
+      "id": "fnd-5",
+      "reader_type": "relationship",
+      "finding_type": "relationship_change",
+      "magnitude": 0.40,
+      "confidence": 0.70,
+      "citation": { "type": "absence_event" },
+      "stakeholder": "diego@meridian.com",
+      "product_area": null,
+      "issue": "iss-B"
+    },
+    {
+      "id": "fnd-6",
+      "reader_type": "tone",
+      "finding_type": "tone_deterioration",
+      "magnitude": 0.60,
+      "confidence": 0.80,
+      "citation": { "type": "mvp_event", "native_id": "gmail-msg-8831" },
+      "stakeholder": "ana.reyes@meridian.com",
+      "product_area": null,
+      "issue": "iss-B"
+    },
+    {
+      "id": "fnd-7",
+      "reader_type": "intent",
+      "finding_type": "escalation_language",
+      "magnitude": 0.50,
+      "confidence": 0.85,
+      "citation": { "type": "mvp_event", "native_id": "gmail-msg-8831" },
+      "stakeholder": "ana.reyes@meridian.com",
+      "product_area": null,
+      "issue": "iss-B"
+    },
+    {
+      "id": "fnd-8",
+      "reader_type": "usage",
+      "finding_type": "csat_deviation",
+      "magnitude": 0.50,
+      "confidence": 0.95,
+      "citation": { "type": "synthetic_csat_event", "score": 6, "previous_score": 9 },
+      "stakeholder": "ana.reyes@meridian.com",
+      "product_area": null,
+      "issue": "iss-B"
+    },
+    {
+      "id": "fnd-9",
+      "reader_type": "commitment",
+      "finding_type": "commitment_met",
+      "magnitude": 0.40,
+      "confidence": 1.00,
+      "citation": { "type": "mvp_event", "native_id": "zendesk-398-resolved" },
+      "stakeholder": null,
+      "product_area": "reporting",
+      "issue": null,
+      "is_positive": true
+    }
+  ]
+}

@@ -32,8 +32,8 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 001 | [`project-foundation`](001-project-foundation/) | 1 · Foundation | ✅ **Complete** — all 33 tasks implemented and verified against real Docker/Postgres | `requirements/11-non-functional-requirements.md` (CI/determinism criteria) | `architecture/03-technology-stack.md`, `architecture/09-clean-architecture-and-patterns.md`, all of `data-base/` |
 | 002 | [`dashboard-shell`](002-dashboard-shell/) | 2 · Vertical slice (login + dashboard) | ✅ **Complete** — all 29 tasks implemented and verified end to end, including a real browser against the containerized production build | `requirements/14-authentication.md`, `requirements/08-health-dashboard.md` (shell only) | `architecture/07-api-spec.md`, `data-base/12-users-and-auth.md` |
 | 003 | [`ingestion-and-context`](003-ingestion-and-context/) | 3 · Ledger + profile | ✅ **Complete** — all 44 tasks implemented and verified against real Docker/Postgres, including a genuine RunCollectorUseCase bug (see Log) | `requirements/01-signal-collectors.md`, `02-event-ledger.md`, `03-client-profile.md` | `architecture/01`, `02-component-catalog.md`; `data-base/02,03,04` |
-| 004 | `score-engine` | 4 · Scoring engine (checkpoint phase) | ⬜ Not started — **next up** | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
-| 005 | `deterministic-findings` | 5 · Findings (no AI) | ⬜ Not started | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence) | `data-base/05-schema-reasoning.md` |
+| 004 | [`score-engine`](004-score-engine/) | 4 · Scoring engine (checkpoint phase) | ✅ **Complete** — all 29 tasks implemented and verified against real Docker/Postgres, including three genuine bugs found and fixed (see Log) | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
+| 005 | `deterministic-findings` | 5 · Findings (no AI) | ⬜ Not started — **next up** | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence) | `data-base/05-schema-reasoning.md` |
 | 006 | `dashboard-evidence-trace` | 6 · Full dashboard | ⬜ Not started | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
 | 007 | `model-findings` | 7 · Tone/Intent + validation gate | ⬜ Not started | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
 | 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
@@ -109,3 +109,34 @@ Repeat for each row above, in order:
   ledger's `verify_hash_chain()` for real, three times in a row, not by a single
   green test run. `specs/003-ingestion-and-context/research.md` documents the fix and
   the underlying "insertion order must match occurred_at order" invariant it protects.
+- **2026-08-14** — Feature 004 (`score-engine`) specified, planned, tasked, analyzed (6
+  remediations applied — a CRITICAL finding that `examples/01-end-to-end-walkthrough.md`
+  §9.2's published Issue A rank order contradicts its own stated ranking rule), and
+  implemented. All 29 tasks complete. Verified against the real, fully containerized
+  stack via `scripts/seed_score_fixture.py` + `scripts/compute_score.py`, all three real
+  recomputation triggers exercised live (`manual`, a forced `hourly_heartbeat` via the
+  worker, `profile_edit_replay` via a real `/api/profile/reload` call), and the
+  source-degraded freeze path against a real `coverage_reports` row — plus 71 backend
+  pytest cases (up from 44 after feature 003, including `test_worked_example.py`'s
+  full-precision reproduction of the worked example and two previously-skipped
+  property-based placeholders, `test_reconciliation.py`/`test_monotonicity.py`, now
+  real). Four genuine bugs found and fixed during verification, not by inspection: (1)
+  the same `:param::type` SQLAlchemy bind-tokenizer corruption bug from feature 003,
+  recurring in `resolve_lifecycle`'s `ANY(:cited_ids::uuid[])` clause; (2)
+  `points_to_score` returning exactly `100.0` for extreme inputs when
+  `e^(-total_points/33)` underflows to `0.0` in float64, violating REQ-M6-16 and
+  `score_runs.score`'s DB `CHECK`; (3) `seed_score_fixture.py`'s synthetic CSAT event
+  insert wasn't idempotent (unlike its sibling MVP-event resolver), and separately its
+  `FIXTURE_PATH` constant walked up one directory too many, working by accident on a
+  host checkout but breaking inside the container's mount layout; (4) a Clean
+  Architecture violation (`app.scoring.domain.services` importing from
+  `app.scoring.application.ports`), caught by `lint-imports`, fixed by relocating
+  `FindingLifecycle` to `domain/entities.py`. Also caught, as a side effect of writing
+  a real integration test: `tests/unit/test_simulated_collector.py` reused
+  `ticket_number = 456` across test runs without uniquifying it (only `source_
+  native_id` was suffixed), corrupting the shared, ticket-number-keyed
+  `response_pairs` projection for any other ticket-456-dependent test — fixed by
+  offsetting `ticket_number` too. `data-model.md`'s worked-example table pre-rounds
+  `rank_within_issue_factor` to 2 decimals before multiplying for display, which
+  doesn't match a full-precision implementation's output (`score = 85.63`, not the
+  originally-published `85.64`) — corrected in `data-model.md` and `quickstart.md`.

@@ -20,6 +20,14 @@ from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyEventRepository,
 )
 from app.ingestion.application.use_cases import ReplayUseCase
+from app.scoring.adapters.sqlalchemy_repository import (
+    SqlAlchemyClientProfileMultipliers,
+    SqlAlchemyCoverageCheck,
+    SqlAlchemyDampingRepository,
+    SqlAlchemyFindingRepository,
+    SqlAlchemyScoreRunRepository,
+)
+from app.scoring.application.use_cases import RecomputeScoreUseCase
 
 router = APIRouter()
 
@@ -86,6 +94,16 @@ def _build_replay_use_case(session: AsyncSession) -> ReplayUseCase:
     )
 
 
+def _build_recompute_score_use_case(session: AsyncSession) -> RecomputeScoreUseCase:
+    return RecomputeScoreUseCase(
+        findings=SqlAlchemyFindingRepository(session),
+        score_runs=SqlAlchemyScoreRunRepository(session),
+        profile=SqlAlchemyClientProfileMultipliers(session),
+        damping=SqlAlchemyDampingRepository(session),
+        coverage=SqlAlchemyCoverageCheck(session),
+    )
+
+
 @router.post("/api/profile/reload", response_model=ProfileResponse)
 async def reload_profile(
     current_user: CurrentUser = Depends(get_current_user),
@@ -106,6 +124,7 @@ async def reload_profile(
     use_case = SubmitProfileUseCase(
         repository=SqlAlchemyClientProfileRepository(session),
         replay=_build_replay_use_case(session),
+        recompute_score=_build_recompute_score_use_case(session),
     )
     summary = await use_case.execute(profile, authored_by_user_id=current_user.user_id)
     return _to_response(summary)
