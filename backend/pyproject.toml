@@ -12,6 +12,7 @@ dependencies = [
     "cryptography>=44.0.0",
     "fastapi>=0.141.1",
     "hdbscan>=0.8.40",
+    "langgraph>=1.2.11",
     "openai>=1.109.1",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.2",

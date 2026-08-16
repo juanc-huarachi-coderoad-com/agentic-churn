@@ -80,6 +80,12 @@ class ContributionRecord:
     recency: float
     damping: float
     rank_within_issue_factor: float
+    issue_id: UUID | None = None
+    """Added for the Ask agent's "write to X about this" handoff
+    (specs/008-narrator-and-ask-agent) — `component_props.issue_id`. An
+    additive field, ignored by every existing consumer (contribution_bars
+    never renders it) — `score_contributions.issue_id` already exists in
+    the schema, this is the first read path to surface it."""
 
 
 @dataclass(frozen=True)
@@ -102,3 +108,34 @@ class UsageComparisonRecord:
     metric: str
     historical_mean: float
     latest_value: float
+
+
+# ---------------------------------------------------------------------------
+# Ask agent (M9) — specs/008-narrator-and-ask-agent
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CommitmentStatusRecord:
+    """One `response_pairs` row — what "what did we promise them?" reads,
+    distinct from `CommitmentComparisonRecord` above (that one compares a
+    single cited event's own elapsed/threshold; this one lists every open
+    or recently-resolved promise for the timeline view)."""
+
+    event_id: UUID
+    occurred_at: datetime
+    quoted_text: str | None
+    state: str
+    business_hours_elapsed: float | None
+    threshold_business_hours: float | None
+
+
+@dataclass(frozen=True)
+class NarratorSummaryRecord:
+    """`narrator_outputs`' headline/reasons/actions for one score run —
+    the same row `DashboardResponse.narrator` renders (`contracts/
+    dashboard.md`) and "what should we do?" reads its `actions` from."""
+
+    headline: str
+    reasons: tuple[dict[str, object], ...]
+    actions: tuple[dict[str, object], ...]

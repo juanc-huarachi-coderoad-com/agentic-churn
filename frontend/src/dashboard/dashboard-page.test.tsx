@@ -56,6 +56,7 @@ const BASE_RESPONSE: DashboardResponse = {
     },
   ],
   coverage_line: { sources_read: 3, sources_expected: 3, complete_to: null, status: 'ok' },
+  narrator: null,
 }
 
 describe('DashboardPage', () => {
@@ -127,9 +128,7 @@ describe('DashboardPage', () => {
     ],
     ['learning', 'Still learning — 3 of 6 signal types available.'],
   ])('renders the %s state banner with its exact required copy', async (state, message) => {
-    vi.mocked(apiFetch).mockResolvedValue(
-      jsonResponse({ ...BASE_RESPONSE, state, message }),
-    )
+    vi.mocked(apiFetch).mockResolvedValue(jsonResponse({ ...BASE_RESPONSE, state, message }))
     renderDashboard()
 
     expect(await screen.findByText(message)).toBeInTheDocument()
@@ -159,9 +158,7 @@ describe('DashboardPage', () => {
     await userEvent.click(bar)
 
     await waitFor(() => {
-      expect(
-        screen.getByText('responds within 4 promised business hours'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('responds within 4 promised business hours')).toBeInTheDocument()
     })
   })
 })

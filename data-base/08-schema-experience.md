@@ -64,7 +64,7 @@ Log of every Ask agent interaction — also the dataset for measuring the ~90% i
 | `question_text` | TEXT | |
 | `matched_intent` | TEXT NULL | One of the closed enum values from REQ-M9-02, or NULL/`fallback` |
 | `rendered_component` | TEXT NULL | Which UI component was built |
-| `declined_reason` | ENUM(`prediction`,`colleague_judgment`,`source_not_connected`,`unclear`) NULL | REQ-M9-05/06/07 |
+| `declined_reason` | ENUM(`prediction`,`colleague_judgment`,`source_not_connected`,`unclear`,`insufficient_history`) NULL | REQ-M9-05/06/07; `insufficient_history` added by specs/008-narrator-and-ask-agent (Clarifications, 2026-08-15) — distinct from `source_not_connected`: the source is connected, the specific stakeholder just lacks enough confirmed-baseline history |
 | `response_time_ms` | INTEGER | Must stay < 3000 (REQ-M9-08) |
 | `asked_by_user_id` | UUID FK → `users.id` | A real identity, not free text — see `data-base/12-users-and-auth.md` |
 | `created_at` | TIMESTAMPTZ | |

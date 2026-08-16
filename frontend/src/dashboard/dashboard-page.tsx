@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { apiFetch } from '../auth/api-client'
+import { AskBar } from '../ask/ask-bar'
 import { EvidencePanel } from '../evidence/evidence-panel'
 import { ContributionBars } from './contribution-bars'
 import { CoverageLine } from './coverage-line'
+import { NarratorPanel } from './narrator-panel'
 import { PulseTimeline } from './pulse-timeline'
 import { ScoreBlock } from './score-block'
 import { StakeholderCards } from './stakeholder-cards'
@@ -46,9 +48,7 @@ export function DashboardPage() {
     // version of the full one (constitution P6).
     return (
       <main className="p-8">
-        <h1 className="text-lg font-medium text-neutral-900">
-          {data.client_header?.client_name}
-        </h1>
+        <h1 className="text-lg font-medium text-neutral-900">{data.client_header?.client_name}</h1>
         <p className="mt-6 text-sm text-neutral-500">{data.message}</p>
       </main>
     )
@@ -66,9 +66,7 @@ export function DashboardPage() {
   return (
     <main className="p-8">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-medium text-neutral-900">
-          {data.client_header?.client_name}
-        </h1>
+        <h1 className="text-lg font-medium text-neutral-900">{data.client_header?.client_name}</h1>
         {data.client_header?.days_to_renewal != null && (
           <p className="text-xs text-neutral-400">
             {data.client_header.days_to_renewal} days to renewal
@@ -93,6 +91,8 @@ export function DashboardPage() {
         </div>
       )}
 
+      {data.narrator && <NarratorPanel narrator={data.narrator} />}
+
       <ContributionBars bars={data.contribution_bars} onSelect={setSelectedContributionId} />
       <PulseTimeline events={data.pulse_timeline} onSelect={setSelectedContributionId} />
       <StakeholderCards cards={data.stakeholder_cards} />
@@ -102,6 +102,7 @@ export function DashboardPage() {
         scoreContributionId={selectedContributionId}
         onClose={() => setSelectedContributionId(null)}
       />
+      <AskBar />
     </main>
   )
 }

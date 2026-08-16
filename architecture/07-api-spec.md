@@ -315,6 +315,29 @@ components:
         pulse_timeline: { type: array, items: { $ref: '#/components/schemas/PulseEvent' } }
         stakeholder_cards: { type: array, items: { $ref: '#/components/schemas/StakeholderCard' } }
         coverage_line: { $ref: '#/components/schemas/CoverageLine' }
+        narrator: { $ref: '#/components/schemas/NarratorSummary', nullable: true, description: "specs/008-narrator-and-ask-agent — null when no narrator_outputs row exists yet for the latest score run (REQ-M8-P2 'absent, not empty')" }
+
+    NarratorSummary:
+      type: object
+      required: [headline, reasons, actions]
+      properties:
+        headline: { type: string }
+        reasons:
+          type: array
+          items:
+            type: object
+            properties:
+              text: { type: string }
+              points: { type: number, format: float }
+              evidence_event_ids: { type: array, items: { type: string, format: uuid } }
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              text: { type: string }
+              owner: { type: string }
+              due_date: { type: string, format: date }
 
     EvidenceTraceResponse:
       type: object
@@ -346,6 +369,14 @@ components:
             properties:
               finding_id: { type: string, format: uuid }
               failed_check: { type: string, enum: [schema_invalid, cited_event_missing, insufficient_evidence, confidence_below_floor] }
+        ask_intent_coverage:
+          type: object
+          nullable: true
+          description: "specs/008-narrator-and-ask-agent — null when no ask_queries rows exist yet"
+          properties:
+            total_questions: { type: integer }
+            fallback_count: { type: integer }
+            fallback_rate: { type: number, format: float }
 
     AskRequest:
       type: object
@@ -358,8 +389,8 @@ components:
       required: [intent, component, component_props]
       properties:
         intent: { type: string }
-        component: { type: string, enum: [delta_breakdown, baseline_comparison, stakeholder_cards, ranked_issues, action_checklist, commitments_status, filtered_timeline] }
-        component_props: { type: object }
+        component: { type: string, enum: [delta_breakdown, baseline_comparison, stakeholder_cards, ranked_issues, action_checklist, commitments_status, filtered_timeline, draft_handoff] }
+        component_props: { type: object, description: "For component=draft_handoff: {issue_id, stakeholder_id} — feature 009's draft composer consumes this later (specs/008-narrator-and-ask-agent, Clarifications)" }
 
     AskFallbackResponse:
       type: object
@@ -367,7 +398,7 @@ components:
       properties:
         fallback_text: { type: string }
         sources: { type: array, items: { type: string, format: uuid } }
-        declined_reason: { type: string, enum: [prediction, colleague_judgment, source_not_connected, unclear], nullable: true }
+        declined_reason: { type: string, enum: [prediction, colleague_judgment, source_not_connected, unclear, insufficient_history], nullable: true, description: "insufficient_history added by specs/008-narrator-and-ask-agent — distinct from source_not_connected" }
 
     DraftRequest:
       type: object

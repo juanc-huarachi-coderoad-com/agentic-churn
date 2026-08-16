@@ -13,6 +13,7 @@ from app.experience.application.ports import (
     CoveragePort,
     FindingReadPort,
     IdentityGapPort,
+    NarratorReadPort,
     PulseEventPort,
     ScoreReadPort,
     StakeholderReadPort,
@@ -98,6 +99,17 @@ class CoverageLineResult:
 
 
 @dataclass(frozen=True)
+class NarratorResult:
+    """specs/008-narrator-and-ask-agent — `null` on `DashboardResponse` when
+    no `narrator_outputs` row exists yet for the latest run (REQ-M8-P2's
+    "absent, not empty" discipline, `contracts/dashboard.md`)."""
+
+    headline: str
+    reasons: tuple[dict[str, object], ...]
+    actions: tuple[dict[str, object], ...]
+
+
+@dataclass(frozen=True)
 class DashboardResult:
     client_header: ClientHeaderResult | None
     state: str
@@ -107,6 +119,7 @@ class DashboardResult:
     pulse_timeline: list[PulseEventResult]
     stakeholder_cards: list[StakeholderCardResult]
     coverage_line: CoverageLineResult | None
+    narrator: NarratorResult | None = None
 
 
 class GetDashboardUseCase:
@@ -122,6 +135,7 @@ class GetDashboardUseCase:
         stakeholders: StakeholderReadPort,
         coverage: CoveragePort,
         identity_gaps: IdentityGapPort,
+        narrator: NarratorReadPort,
     ) -> None:
         self._profile = profile
         self._score = score
@@ -129,6 +143,7 @@ class GetDashboardUseCase:
         self._stakeholders = stakeholders
         self._coverage = coverage
         self._identity_gaps = identity_gaps
+        self._narrator = narrator
 
     async def execute(self) -> DashboardResult:
         profile = await self._profile.get_current()
@@ -172,7 +187,15 @@ class GetDashboardUseCase:
         score_block = None
         contribution_bars: list[ContributionBarResult] = []
         pulse_timeline: list[PulseEventResult] = []
+        narrator_result: NarratorResult | None = None
         if latest_run is not None:
+            narrator_summary = await self._narrator.get_for_score_run(latest_run.id)
+            if narrator_summary is not None:
+                narrator_result = NarratorResult(
+                    headline=narrator_summary.headline,
+                    reasons=narrator_summary.reasons,
+                    actions=narrator_summary.actions,
+                )
             contributions = await self._score.list_contributions(latest_run.id)
             trend = await self._score.trend(days=_TREND_DAYS)
             score_block = ScoreBlockResult(
@@ -275,6 +298,7 @@ class GetDashboardUseCase:
             pulse_timeline=pulse_timeline,
             stakeholder_cards=stakeholder_cards,
             coverage_line=coverage_line,
+            narrator=narrator_result,
         )
 
 
@@ -380,9 +404,21 @@ class QuarantineEntryResult:
 
 
 @dataclass(frozen=True)
+class AskIntentCoverageResult:
+    """specs/008-narrator-and-ask-agent — SC-007's own promise that the Ask
+    agent's fallback rate is visible without querying the database directly
+    (found missing during `/speckit-analyze`, E1)."""
+
+    total_questions: int
+    fallback_count: int
+    fallback_rate: float
+
+
+@dataclass(frozen=True)
 class CoverageResult:
     sources: list[SourceStatusResult]
     quarantine: list[QuarantineEntryResult]
+    ask_intent_coverage: AskIntentCoverageResult | None = None
 
 
 class GetCoverageUseCase:
@@ -392,6 +428,7 @@ class GetCoverageUseCase:
     async def execute(self) -> CoverageResult:
         sources = await self._coverage.list_sources()
         quarantine = await self._coverage.list_quarantine()
+        ask_intent_coverage = await self._coverage.ask_intent_coverage()
         return CoverageResult(
             sources=[
                 SourceStatusResult(
@@ -405,4 +442,13 @@ class GetCoverageUseCase:
                 QuarantineEntryResult(finding_id=q.finding_id, failed_check=q.failed_check)
                 for q in quarantine
             ],
+            ask_intent_coverage=(
+                AskIntentCoverageResult(
+                    total_questions=ask_intent_coverage.total_questions,
+                    fallback_count=ask_intent_coverage.fallback_count,
+                    fallback_rate=ask_intent_coverage.fallback_rate,
+                )
+                if ask_intent_coverage is not None
+                else None
+            ),
         )

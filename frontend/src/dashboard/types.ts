@@ -56,6 +56,25 @@ export interface CoverageLine {
   status: 'ok' | 'degraded' | 'disconnected'
 }
 
+// specs/008-narrator-and-ask-agent — contracts/dashboard.md.
+export interface NarratorReason {
+  text: string
+  points: number
+  evidence_event_ids: string[]
+}
+
+export interface NarratorAction {
+  text: string
+  owner: string
+  due_date: string
+}
+
+export interface NarratorSummary {
+  headline: string
+  reasons: NarratorReason[]
+  actions: NarratorAction[]
+}
+
 export interface DashboardResponse {
   client_header: ClientHeader | null
   state: DashboardStateKind
@@ -65,4 +84,5 @@ export interface DashboardResponse {
   pulse_timeline: PulseEvent[]
   stakeholder_cards: StakeholderCard[]
   coverage_line: CoverageLine | null
+  narrator: NarratorSummary | null
 }

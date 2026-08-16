@@ -11,6 +11,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.experience.application.ports import (
+    AskIntentCoverageRecord,
+    AskQueryRepositoryPort,
     ClientProfileRecord,
     ClientProfileRepositoryPort,
     CoveragePort,
@@ -18,6 +20,8 @@ from app.experience.application.ports import (
     FindingReadPort,
     FindingRecord,
     IdentityGapPort,
+    LedgerQueryPort,
+    NarratorReadPort,
     PulseEventPort,
     PulseEventRecord,
     QuarantineRecord,
@@ -31,10 +35,13 @@ from app.experience.application.ports import (
 from app.experience.domain.entities import (
     CitedEventRecord,
     CommitmentComparisonRecord,
+    CommitmentStatusRecord,
     ContributionRecord,
+    NarratorSummaryRecord,
     UsageComparisonRecord,
 )
 from app.ingestion.application.ports import EncryptionPort
+from app.readers.domain.entities import ConfirmedBaselineWindow, MessageEventInfo
 
 # source_type -> one of the six counted signal types (REQ-M8-07's own list:
 # Tickets, Email, Chat, Product usage, Surveys, Meetings). CRM/contracts is
@@ -84,13 +91,14 @@ def _row_to_contribution(row: Any) -> ContributionRecord:
         recency=float(row.recency),
         damping=float(row.damping),
         rank_within_issue_factor=float(row.rank_within_issue_factor),
+        issue_id=row.issue_id,
     )
 
 
 _CONTRIBUTION_SELECT = (
     "SELECT sc.id, sc.finding_id, f.finding_type, sc.points_contributed, sc.is_positive, "
     "sc.base, sc.influence, sc.criticality, sc.confidence, sc.magnitude, sc.recency, "
-    "sc.damping, sc.rank_within_issue_factor "
+    "sc.damping, sc.rank_within_issue_factor, sc.issue_id "
     "FROM score_contributions sc JOIN findings f ON f.id = sc.finding_id "
 )
 
@@ -210,9 +218,22 @@ class SqlAlchemyFindingReader(FindingReadPort):
         self._encryption = encryption
 
     async def get_finding(self, finding_id: UUID) -> FindingRecord | None:
+        # status = 'validated' filter added during /speckit-analyze (C1):
+        # every caller of get_finding today (GetEvidenceTraceUseCase) only
+        # ever passes a finding_id already reached through score_contributions
+        # (validated by construction — RecomputeScoreUseCase reads
+        # list_validated() only), so this filter changes nothing for that
+        # caller. It's load-bearing for the Ask agent's QueryFindingsTool
+        # (specs/008-narrator-and-ask-agent), which must never surface a
+        # quarantined finding (FR-024) — ScoreReadPort's own queries are
+        # already safe by the same construction, but this is the one path
+        # that took an arbitrary finding_id with no equivalent guarantee.
         row = (
             await self._session.execute(
-                text("SELECT id, finding_type, cited_event_ids FROM findings WHERE id = :id"),
+                text(
+                    "SELECT id, finding_type, cited_event_ids FROM findings "
+                    "WHERE id = :id AND status = 'validated'"
+                ),
                 {"id": finding_id},
             )
         ).one_or_none()
@@ -319,6 +340,41 @@ class SqlAlchemyFindingReader(FindingReadPort):
             metric=event_row.metric, historical_mean=mean, latest_value=float(latest_row.value)
         )
 
+    async def list_open_commitments(self, *, limit: int = 20) -> list[CommitmentStatusRecord]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT e.id AS event_id, e.occurred_at, e.structured_payload, "
+                    "e.body_encrypted, rp.state, rp.business_hours_elapsed, "
+                    "c.threshold_business_hours "
+                    "FROM response_pairs rp "
+                    "JOIN events e ON e.id = rp.client_event_id "
+                    "LEFT JOIN commitments c ON c.id = rp.commitment_id "
+                    "ORDER BY e.occurred_at DESC LIMIT :limit"
+                ),
+                {"limit": limit},
+            )
+        ).all()
+        return [
+            CommitmentStatusRecord(
+                event_id=r.event_id,
+                occurred_at=r.occurred_at,
+                quoted_text=_quoted_text(r.structured_payload, r.body_encrypted, self._encryption),
+                state=r.state,
+                business_hours_elapsed=(
+                    float(r.business_hours_elapsed)
+                    if r.business_hours_elapsed is not None
+                    else None
+                ),
+                threshold_business_hours=(
+                    float(r.threshold_business_hours)
+                    if r.threshold_business_hours is not None
+                    else None
+                ),
+            )
+            for r in rows
+        ]
+
 
 class SqlAlchemyCoverageReader(CoveragePort):
     def __init__(self, session: AsyncSession) -> None:
@@ -390,6 +446,20 @@ class SqlAlchemyCoverageReader(CoveragePort):
             QuarantineRecord(finding_id=r.finding_id, failed_check=r.failed_check) for r in rows
         ]
 
+    async def ask_intent_coverage(self) -> AskIntentCoverageRecord | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT count(*) AS total, "
+                    "count(*) FILTER (WHERE matched_intent IS NULL) AS fallback "
+                    "FROM ask_queries"
+                )
+            )
+        ).one()
+        if row.total == 0:
+            return None
+        return AskIntentCoverageRecord(total_questions=row.total, fallback_count=row.fallback)
+
 
 class SqlAlchemyStakeholderReader(StakeholderReadPort):
     def __init__(self, session: AsyncSession) -> None:
@@ -435,3 +505,168 @@ class SqlAlchemyIdentityGapReader(IdentityGapPort):
             )
         ).all()
         return [UnresolvedParticipantRecord(participant=r.participant, count=r.n) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Ask agent (M9) — specs/008-narrator-and-ask-agent
+# ---------------------------------------------------------------------------
+
+
+class SqlAlchemyNarratorReadRepository(NarratorReadPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_for_score_run(self, score_run_id: UUID) -> NarratorSummaryRecord | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT headline, reasons, actions FROM narrator_outputs "
+                    "WHERE score_run_id = :score_run_id"
+                ),
+                {"score_run_id": score_run_id},
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return NarratorSummaryRecord(
+            headline=row.headline, reasons=tuple(row.reasons), actions=tuple(row.actions)
+        )
+
+    async def get_latest(self) -> NarratorSummaryRecord | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT headline, reasons, actions FROM narrator_outputs "
+                    "ORDER BY created_at DESC LIMIT 1"
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return NarratorSummaryRecord(
+            headline=row.headline, reasons=tuple(row.reasons), actions=tuple(row.actions)
+        )
+
+
+class SqlAlchemyLedgerQueryRepository(LedgerQueryPort):
+    """Reuses `app.readers.adapters.SqlAlchemyConfirmedBaselineRepository`'s
+    query shape (feature 007) — implemented independently here, not
+    imported, per this codebase's established no-cross-module-adapter-import
+    convention (`research.md`'s Decision)."""
+
+    _MIN_BASELINE_SAMPLES = 5
+    """REQ-M6-CAL-04's floor, mirrored from the Tone reader — the same
+    threshold, applied here for the same reason (`research.md` Decision 4)."""
+
+    def __init__(self, session: AsyncSession, encryption: EncryptionPort) -> None:
+        self._session = session
+        self._encryption = encryption
+
+    async def baseline_vs_current(
+        self, stakeholder_id: UUID
+    ) -> tuple[ConfirmedBaselineWindow, list[MessageEventInfo]] | None:
+        confirmation = (
+            await self._session.execute(
+                text(
+                    "SELECT window_start, window_end FROM baseline_confirmations "
+                    "WHERE subject_type = 'stakeholder'::rollup_subject_type "
+                    "AND subject_id = :stakeholder_id "
+                    "ORDER BY confirmed_at DESC LIMIT 1"
+                ),
+                {"stakeholder_id": stakeholder_id},
+            )
+        ).one_or_none()
+        if confirmation is None:
+            return None
+
+        baseline_rows = (
+            await self._session.execute(
+                text(
+                    "SELECT structured_payload, body_encrypted FROM events "
+                    "WHERE stakeholder_id = :stakeholder_id "
+                    "AND event_type IN ('message'::event_type, "
+                    "'ticket_state_change'::event_type) "
+                    "AND occurred_at >= :window_start AND occurred_at <= :window_end"
+                ),
+                {
+                    "stakeholder_id": stakeholder_id,
+                    "window_start": confirmation.window_start,
+                    "window_end": confirmation.window_end,
+                },
+            )
+        ).all()
+        sample_texts = [
+            t
+            for r in baseline_rows
+            if (t := _quoted_text(r.structured_payload, r.body_encrypted, self._encryption))
+        ]
+        if len(sample_texts) < self._MIN_BASELINE_SAMPLES:
+            return None
+
+        window = ConfirmedBaselineWindow(
+            stakeholder_id=stakeholder_id,
+            window_start=confirmation.window_start,
+            window_end=confirmation.window_end,
+            sample_texts=tuple(sample_texts),
+        )
+        current = await self.timeline_for_stakeholder(stakeholder_id, limit=10)
+        return window, current
+
+    async def timeline_for_stakeholder(
+        self, stakeholder_id: UUID, *, limit: int = 20
+    ) -> list[MessageEventInfo]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT id, occurred_at, structured_payload, body_encrypted FROM events "
+                    "WHERE stakeholder_id = :stakeholder_id "
+                    "AND event_type IN ('message'::event_type, "
+                    "'ticket_state_change'::event_type) "
+                    "ORDER BY occurred_at DESC LIMIT :limit"
+                ),
+                {"stakeholder_id": stakeholder_id, "limit": limit},
+            )
+        ).all()
+        return [
+            MessageEventInfo(
+                event_id=r.id,
+                occurred_at=r.occurred_at,
+                stakeholder_id=stakeholder_id,
+                text=_quoted_text(r.structured_payload, r.body_encrypted, self._encryption) or "",
+            )
+            for r in rows
+        ]
+
+
+class SqlAlchemyAskQueryRepository(AskQueryRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def log(
+        self,
+        *,
+        question_text: str,
+        matched_intent: str | None,
+        rendered_component: str | None,
+        declined_reason: str | None,
+        response_time_ms: int,
+        asked_by_user_id: UUID,
+    ) -> None:
+        await self._session.execute(
+            text(
+                "INSERT INTO ask_queries (question_text, matched_intent, rendered_component, "
+                "declined_reason, response_time_ms, asked_by_user_id) "
+                "VALUES (:question_text, :matched_intent, :rendered_component, "
+                "CAST(:declined_reason AS declined_reason), :response_time_ms, "
+                ":asked_by_user_id)"
+            ),
+            {
+                "question_text": question_text,
+                "matched_intent": matched_intent,
+                "rendered_component": rendered_component,
+                "declined_reason": declined_reason,
+                "response_time_ms": response_time_ms,
+                "asked_by_user_id": asked_by_user_id,
+            },
+        )
+        await self._session.commit()

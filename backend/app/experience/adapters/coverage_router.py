@@ -24,6 +24,16 @@ class QuarantineEntry(BaseModel):
     failed_check: str
 
 
+class AskIntentCoverage(BaseModel):
+    """specs/008-narrator-and-ask-agent — `null` when no `ask_queries` rows
+    exist yet, closing SC-007's own promise that the Ask agent's fallback
+    rate is visible without querying the database directly."""
+
+    total_questions: int
+    fallback_count: int
+    fallback_rate: float
+
+
 class CoverageResponse(BaseModel):
     """Per `contracts/coverage.md` — `architecture/07-api-spec.md`'s
     `CoverageResponse`. `quarantine` is real (feature 007's `ValidationGate`
@@ -31,6 +41,7 @@ class CoverageResponse(BaseModel):
 
     sources: list[SourceStatus]
     quarantine: list[QuarantineEntry]
+    ask_intent_coverage: AskIntentCoverage | None = None
 
 
 @router.get("/api/coverage", response_model=CoverageResponse)
@@ -54,4 +65,13 @@ async def get_coverage(
             QuarantineEntry(finding_id=q.finding_id, failed_check=q.failed_check)
             for q in result.quarantine
         ],
+        ask_intent_coverage=(
+            AskIntentCoverage(
+                total_questions=result.ask_intent_coverage.total_questions,
+                fallback_count=result.ask_intent_coverage.fallback_count,
+                fallback_rate=result.ask_intent_coverage.fallback_rate,
+            )
+            if result.ask_intent_coverage is not None
+            else None
+        ),
     )

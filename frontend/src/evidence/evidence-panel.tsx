@@ -17,10 +17,7 @@ export function EvidencePanel({ scoreContributionId, onClose }: EvidencePanelPro
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex justify-end bg-neutral-900/20"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/20" onClick={onClose}>
       <div
         role="dialog"
         aria-label="Evidence trace"

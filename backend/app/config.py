@@ -57,5 +57,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     reader_model_id: str = "claude-haiku-4-5-20251001"
 
+    # Narrator/Ask agent's model tier (specs/008-narrator-and-ask-agent,
+    # decisions/02-repo-and-tooling.md's Claude model ID pinning table) — same
+    # anthropic_api_key above, a different pinned model ID for higher-stakes
+    # generation than the readers' Haiku-class calls.
+    generation_model_id: str = "claude-sonnet-5"
+
 
 settings = Settings()

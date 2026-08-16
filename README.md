@@ -191,3 +191,59 @@ silently-empty, misleadingly-healthy run. `GET /api/coverage`'s `quarantine`
 field is real for the first time, reflecting whatever the gate actually
 rejected. See `specs/007-model-findings/quickstart.md` for the full validation
 walkthrough.
+
+## Narrator and Ask Agent (Phase 8)
+
+The explanation layer: the Narrator turns a score run's ranked findings into a
+fact-checked headline/reasons/actions, and the Ask agent — the one genuinely
+agentic component, a compiled LangGraph `StateGraph` — answers questions by
+looking up already-computed data, never recalculating the score. One new
+environment prerequisite — Narrator/Ask agent's model tier (same
+`ANTHROPIC_API_KEY` as Tone/Intent, a higher-stakes model):
+
+```bash
+echo "GENERATION_MODEL_ID=claude-sonnet-5" >> .env
+docker compose up --build -d   # picks up the new env var
+```
+
+Narrate the latest score run (a separate manual script, mirroring
+`compute_score.py`/`run_readers.py` — no live/chained trigger path exists yet
+anywhere in this pipeline):
+
+```bash
+docker compose exec api python scripts/compute_score.py
+docker compose exec api python scripts/run_narrator.py
+```
+
+**Expected**: a headline/reasons/actions summary printed, with `narrator_outputs`
+now real for the first time (this table existed, unpopulated, since feature
+001) — `GET /api/dashboard`'s `narrator` field renders it, closing the gap
+feature 006 explicitly deferred. If every LLM-generated headline candidate
+fails its own mechanical fact-check, the dashboard falls back to a
+deterministic, non-LLM headline built from the score/band/top-issue alone
+(`fact_check_passed = false`) — never a blank dashboard, never an unverified
+claim.
+
+Ask a question — `POST /api/ask` is real for the first time since
+`architecture/07-api-spec.md` documented it:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:${API_PORT:-8000}/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"marta","password":"agentic-demo-2026"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"question": "why did the score go up?"}' \
+  http://localhost:${API_PORT:-8000}/api/ask
+```
+
+**Expected**: a rendered component (`delta_breakdown`, `stakeholder_cards`,
+etc.) for one of the 7 lookup-and-render intents, a `draft_handoff` response
+for "write to X about this," or an honest decline/fallback — a prediction
+question always declines rather than guessing, a colleague-judgment question
+always refuses, and a stakeholder with fewer than 5 confirmed-baseline
+messages declines with `insufficient_history`, distinct from
+`source_not_connected`. `GET /api/coverage`'s new `ask_intent_coverage` field
+shows the fallback rate without querying the database directly. See
+`specs/008-narrator-and-ask-agent/quickstart.md` for the full validation
+walkthrough, including the now-real `tests/golden_replay/` suite.

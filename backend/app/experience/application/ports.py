@@ -7,14 +7,18 @@ convention for reading another module's owned tables).
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any, TypedDict
 from uuid import UUID
 
 from app.experience.domain.entities import (
     CitedEventRecord,
     CommitmentComparisonRecord,
+    CommitmentStatusRecord,
     ContributionRecord,
+    NarratorSummaryRecord,
     UsageComparisonRecord,
 )
+from app.readers.domain.entities import ConfirmedBaselineWindow, MessageEventInfo
 
 
 @dataclass(frozen=True)
@@ -102,6 +106,12 @@ class FindingReadPort(ABC):
         dispatch case's baseline/current source."""
         ...
 
+    @abstractmethod
+    async def list_open_commitments(self, *, limit: int = 20) -> list[CommitmentStatusRecord]:
+        """`response_pairs` ordered most-recent-first — the Ask agent's "what
+        did we promise them?" intent (specs/008-narrator-and-ask-agent)."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # PulseEventPort
@@ -180,6 +190,19 @@ class QuarantineRecord:
     failed_check: str
 
 
+@dataclass(frozen=True)
+class AskIntentCoverageRecord:
+    """specs/008-narrator-and-ask-agent — the Ask agent's own fallback rate,
+    found missing from this port during `/speckit-analyze` (SC-007)."""
+
+    total_questions: int
+    fallback_count: int
+
+    @property
+    def fallback_rate(self) -> float:
+        return self.fallback_count / self.total_questions if self.total_questions else 0.0
+
+
 class CoveragePort(ABC):
     @abstractmethod
     async def list_sources(self) -> list[SourceRecord]: ...
@@ -202,6 +225,14 @@ class CoveragePort(ABC):
         yet, never as a placeholder."""
         ...
 
+    @abstractmethod
+    async def ask_intent_coverage(self) -> AskIntentCoverageRecord | None:
+        """`None` when no `ask_queries` rows exist yet. Closes SC-007's own
+        promise that the Ask agent's fallback rate is "visible and
+        measurable at any time, without querying the database directly"
+        (specs/008-narrator-and-ask-agent, found during `/speckit-analyze`)."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # IdentityGapPort
@@ -222,3 +253,117 @@ class IdentityGapPort(ABC):
         (`research.md`'s Decision — reuses the `participant` field every
         ingestion normalizer already writes)."""
         ...
+
+
+# ---------------------------------------------------------------------------
+# NarratorReadPort — specs/008-narrator-and-ask-agent
+# ---------------------------------------------------------------------------
+
+
+class NarratorReadPort(ABC):
+    @abstractmethod
+    async def get_for_score_run(self, score_run_id: UUID) -> NarratorSummaryRecord | None:
+        """`None` when no `narrator_outputs` row exists yet for this run —
+        the "absent, not empty" discipline REQ-M8-P2 already applies
+        elsewhere on this response (`contracts/dashboard.md`)."""
+        ...
+
+    @abstractmethod
+    async def get_latest(self) -> NarratorSummaryRecord | None:
+        """The most recent narration, regardless of score run — backs the
+        Ask agent's "what should we do?" intent, which reads the same
+        playbook-personalized actions the dashboard already displays rather
+        than recomputing anything (REQ-M9-03)."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# LedgerQueryPort — specs/008-narrator-and-ask-agent
+# ---------------------------------------------------------------------------
+
+
+class LedgerQueryPort(ABC):
+    @abstractmethod
+    async def baseline_vs_current(
+        self, stakeholder_id: UUID
+    ) -> tuple[ConfirmedBaselineWindow, list[MessageEventInfo]] | None:
+        """Reuses `app.readers.domain`'s existing value objects (feature 007)
+        as its return shape. `None` when the stakeholder has fewer than 5
+        confirmed-baseline messages — the Ask agent's "is this normal for
+        X?" intent (REQ-M9-02), and the source of the `insufficient_history`
+        decline (Clarifications, 2026-08-15)."""
+        ...
+
+    @abstractmethod
+    async def timeline_for_stakeholder(
+        self, stakeholder_id: UUID, *, limit: int = 20
+    ) -> list[MessageEventInfo]:
+        """Every message-bearing event involving this stakeholder, most
+        recent first — the "show me everything about X" intent."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# AskQueryRepositoryPort — specs/008-narrator-and-ask-agent
+# ---------------------------------------------------------------------------
+
+
+class AskQueryRepositoryPort(ABC):
+    @abstractmethod
+    async def log(
+        self,
+        *,
+        question_text: str,
+        matched_intent: str | None,
+        rendered_component: str | None,
+        declined_reason: str | None,
+        response_time_ms: int,
+        asked_by_user_id: UUID,
+    ) -> None:
+        """One `ask_queries` row per graph run, regardless of which terminal
+        node fired — the dataset REQ-M9's ~90% intent-coverage measurement
+        reads from (FR-023)."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# AskAgentPort — the Ask agent's own seam, `decisions/03-langgraph-for-
+# ask-agent.md`. Application-layer code (ask_router.py) depends on this,
+# never on `LangGraphAskAgent` directly.
+# ---------------------------------------------------------------------------
+
+
+class AskAgentState(TypedDict, total=False):
+    """`architecture/08-class-diagrams.md` diagram 4's state shape — every
+    key but `question` is absent until the node that produces it runs;
+    LangGraph's `StateGraph` reads this class's type hints to build its
+    channel schema, so it must be a real `TypedDict`, not a plain dict
+    subclass."""
+
+    question: str
+    asked_by_user_id: UUID
+    intent: str | None
+    subject_hint: str | None
+    tool_results: dict[str, Any]
+    component: str | None
+    component_props: dict[str, Any] | None
+    fallback_text: str | None
+    sources: tuple[UUID, ...]
+    declined_reason: str | None
+    started_at: float
+
+
+@dataclass(frozen=True)
+class AskAgentResult:
+    intent: str | None
+    component: str | None
+    component_props: dict[str, Any] | None
+    fallback_text: str | None
+    sources: tuple[UUID, ...]
+    declined_reason: str | None
+    response_time_ms: int
+
+
+class AskAgentPort(ABC):
+    @abstractmethod
+    async def answer(self, question: str, *, asked_by_user_id: UUID) -> AskAgentResult: ...

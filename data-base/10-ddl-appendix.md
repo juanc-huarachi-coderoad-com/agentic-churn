@@ -481,7 +481,11 @@ CREATE TABLE narrator_outputs (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TYPE declined_reason AS ENUM ('prediction','colleague_judgment','source_not_connected','unclear');
+CREATE TYPE declined_reason AS ENUM ('prediction','colleague_judgment','source_not_connected','unclear','insufficient_history');
+-- 'insufficient_history' added by migrations/versions/0002_declined_reason_insufficient_history.py
+-- (specs/008-narrator-and-ask-agent) — the "is this normal for X?" intent's own honest
+-- abstention when a stakeholder has fewer than 5 confirmed-baseline messages, distinct
+-- from a disconnected source.
 
 CREATE TABLE ask_queries (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

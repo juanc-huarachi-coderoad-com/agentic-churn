@@ -51,7 +51,10 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-svh items-center justify-center">
-      <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="w-full max-w-sm space-y-4 p-8">
+      <form
+        onSubmit={(e) => void handleSubmit(onSubmit)(e)}
+        className="w-full max-w-sm space-y-4 p-8"
+      >
         <h1 className="text-lg font-medium text-neutral-900">Log in</h1>
 
         <div>
@@ -64,7 +67,9 @@ export function LoginPage() {
             className="mt-1 w-full rounded border border-neutral-300 px-3 py-2"
             {...register('username')}
           />
-          {errors.username && <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>}
+          {errors.username && (
+            <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
+          )}
         </div>
 
         <div>
@@ -78,7 +83,9 @@ export function LoginPage() {
             className="mt-1 w-full rounded border border-neutral-300 px-3 py-2"
             {...register('password')}
           />
-          {errors.password && <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>}
+          {errors.password && (
+            <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
+          )}
         </div>
 
         {errors.root && <p className="text-sm text-red-600">{errors.root.message}</p>}

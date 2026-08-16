@@ -53,13 +53,9 @@ describe('EvidencePanel', () => {
     vi.mocked(apiFetch).mockResolvedValue(jsonResponse(WORKED_EXAMPLE))
     renderPanel('ba87c77f-e21f-45af-9705-533138e948bf')
 
-    expect(
-      await screen.findByText('responds within 4 promised business hours'),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('responds within 4 promised business hours')).toBeInTheDocument()
     expect(screen.getByText('50 business hours elapsed, still open')).toBeInTheDocument()
-    expect(
-      screen.getByText('response time exceeded the promised threshold'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('response time exceeded the promised threshold')).toBeInTheDocument()
     expect(screen.getByText('“Slow API response”')).toBeInTheDocument()
     expect(screen.getByText(/39\.0 points total/)).toBeInTheDocument()
     // No feedback controls anywhere on the panel (FR-014 — feature 010's scope).

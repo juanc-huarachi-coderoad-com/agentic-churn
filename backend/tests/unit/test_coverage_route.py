@@ -121,3 +121,55 @@ async def test_coverage_quarantine_reflects_a_real_quarantined_finding(client, a
                 text("DELETE FROM quarantine WHERE finding_id = :id"), {"id": finding_id}
             )
             await conn.execute(text("DELETE FROM findings WHERE id = :id"), {"id": finding_id})
+
+
+async def test_ask_intent_coverage_reflects_real_ask_queries_rows(client, auth_token):
+    """specs/008-narrator-and-ask-agent, SC-007 — the Ask agent's fallback
+    rate visible without querying the database directly (found missing
+    during `/speckit-analyze`, E1)."""
+    user_id = uuid.uuid4()
+    rows = [
+        (uuid.uuid4(), "score_delta", "delta_breakdown", None),
+        (uuid.uuid4(), None, None, "prediction"),
+    ]
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, display_name, is_active) "
+                "VALUES (:id, 'ask-coverage-test-user', 'x', 'Ask Coverage Test', true)"
+            ),
+            {"id": user_id},
+        )
+        for row_id, matched_intent, rendered_component, declined_reason in rows:
+            await conn.execute(
+                text(
+                    "INSERT INTO ask_queries (id, question_text, matched_intent, "
+                    "rendered_component, declined_reason, response_time_ms, asked_by_user_id) "
+                    "VALUES (:id, 'test question', :matched_intent, :rendered_component, "
+                    "CAST(:declined_reason AS declined_reason), 100, :user_id)"
+                ),
+                {
+                    "id": row_id,
+                    "matched_intent": matched_intent,
+                    "rendered_component": rendered_component,
+                    "declined_reason": declined_reason,
+                    "user_id": user_id,
+                },
+            )
+
+    try:
+        response = await client.get(
+            "/api/coverage", headers={"Authorization": f"Bearer {auth_token}"}
+        )
+        coverage = response.json()["ask_intent_coverage"]
+        assert coverage is not None
+        assert coverage["total_questions"] >= 2
+        assert coverage["fallback_count"] >= 1
+        assert 0.0 <= coverage["fallback_rate"] <= 1.0
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM ask_queries WHERE id = ANY(:ids)"),
+                {"ids": [r[0] for r in rows]},
+            )
+            await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})

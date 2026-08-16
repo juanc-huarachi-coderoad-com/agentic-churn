@@ -10,6 +10,7 @@ from app.auth.application.ports import TokenRepositoryPort
 from app.config import settings
 from app.context.adapters.profile_router import router as profile_router
 from app.db import engine, get_session
+from app.experience.adapters.ask_router import router as ask_router
 from app.experience.adapters.coverage_router import router as coverage_router
 from app.experience.adapters.dashboard_router import router as dashboard_router
 from app.experience.adapters.evidence_router import router as evidence_router
@@ -53,6 +54,7 @@ app.include_router(dashboard_router)
 app.include_router(evidence_router)
 app.include_router(coverage_router)
 app.include_router(profile_router)
+app.include_router(ask_router)
 
 
 @app.get("/health")

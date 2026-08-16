@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -12,6 +13,7 @@ from app.experience.adapters.sqlalchemy_repository import (
     SqlAlchemyClientProfileRepository,
     SqlAlchemyCoverageReader,
     SqlAlchemyIdentityGapReader,
+    SqlAlchemyNarratorReadRepository,
     SqlAlchemyPulseEventReader,
     SqlAlchemyScoreReader,
     SqlAlchemyStakeholderReader,
@@ -65,6 +67,26 @@ class CoverageLine(BaseModel):
     status: str
 
 
+class NarratorReason(BaseModel):
+    text: str
+    points: float
+    evidence_event_ids: list[str]
+
+
+class NarratorAction(BaseModel):
+    text: str
+    owner: str
+    due_date: str
+
+
+class NarratorSummary(BaseModel):
+    """specs/008-narrator-and-ask-agent — `contracts/dashboard.md`."""
+
+    headline: str
+    reasons: list[NarratorReason]
+    actions: list[NarratorAction]
+
+
 class DashboardResponse(BaseModel):
     """Per `contracts/dashboard.md` — the full `DashboardResponse` shape
     (`architecture/07-api-spec.md`) once a current profile exists;
@@ -79,6 +101,7 @@ class DashboardResponse(BaseModel):
     pulse_timeline: list[PulseEvent] = []
     stakeholder_cards: list[StakeholderCard] = []
     coverage_line: CoverageLine | None = None
+    narrator: NarratorSummary | None = None
 
 
 @router.get("/api/dashboard", response_model=DashboardResponse)
@@ -94,6 +117,7 @@ async def get_dashboard(
         stakeholders=SqlAlchemyStakeholderReader(session),
         coverage=SqlAlchemyCoverageReader(session),
         identity_gaps=SqlAlchemyIdentityGapReader(session),
+        narrator=SqlAlchemyNarratorReadRepository(session),
     )
     result = await use_case.execute()
 
@@ -156,6 +180,29 @@ async def get_dashboard(
                 status=result.coverage_line.status,
             )
             if result.coverage_line is not None
+            else None
+        ),
+        narrator=(
+            NarratorSummary(
+                headline=result.narrator.headline,
+                reasons=[
+                    NarratorReason(
+                        text=str(r["text"]),
+                        points=float(r["points"]),  # type: ignore[arg-type]
+                        evidence_event_ids=[
+                            str(e) for e in cast(list[Any], r["evidence_event_ids"])
+                        ],
+                    )
+                    for r in result.narrator.reasons
+                ],
+                actions=[
+                    NarratorAction(
+                        text=str(a["text"]), owner=str(a["owner"]), due_date=str(a["due_date"])
+                    )
+                    for a in result.narrator.actions
+                ],
+            )
+            if result.narrator is not None
             else None
         ),
     )

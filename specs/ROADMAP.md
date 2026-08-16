@@ -36,7 +36,7 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 005 | [`deterministic-findings`](005-deterministic-findings/) | 5 · Findings (no AI) | ✅ **Complete** — all 37 tasks implemented and verified against real Docker/Postgres, including one genuine defensive-coding gap found during verification, not blocking (see Log) | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence/Relationship — REQ-M5-11's Relationship reader isn't assigned to any phase in `base/...md` §16's table despite being deterministic and paired with Absence throughout; grouped here with its fellow non-LLM readers rather than left dangling or bundled with the LLM readers in feature 007) | `data-base/05-schema-reasoning.md` |
 | 006 | [`dashboard-evidence-trace`](006-dashboard-evidence-trace/) | 6 · Full dashboard | ✅ **Complete** — all 52 tasks implemented and verified against real Docker/Postgres, including two `/speckit-analyze` remediations applied before implementation and one genuine Docker build gap found during verification, not blocking (see Log) | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
 | 007 | [`model-findings`](007-model-findings/) | 7 · Tone/Intent + validation gate | ✅ **Complete** — all 30 tasks implemented and verified against real Docker/Postgres, including four genuine bugs found and fixed (see Log) | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
-| 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started — **next up** | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
+| 008 | [`narrator-and-ask-agent`](008-narrator-and-ask-agent/) | 8 · Explanation layer | ✅ **Complete** — all 43 tasks implemented and verified against real Docker/Postgres, including a real layer-boundary violation and a golden-replay test-design bug, both found and fixed (see Log) | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | `draft-composer` | 9 · The closer | ⬜ Not started | `requirements/10-draft-composer.md` | `sequences/04` |
 | 010 | `feedback-memory` | 10 · Learning loop | ⬜ Not started | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
 | 011 | `production-hardening` | 11 · Hardening | ⬜ Not started | remaining NFRs, `decisions/01-mvp-scope-and-phasing.md` | — |
@@ -260,3 +260,77 @@ Repeat for each row above, in order:
   from a real `scripts/run_readers.py` run against a freshly provisioned
   database until that use case is wired into the collector/readers flow
   itself.
+- **2026-08-16** — Feature 008 (`narrator-and-ask-agent`) specified, clarified
+  (2 questions — the "write to X about this" intent had no representable
+  response shape in `AskComponentResponse`'s enum for a draft composer that
+  doesn't exist until feature 009, resolved to a distinct `draft_handoff`
+  response now carrying issue/stakeholder context; the "is this normal for
+  X?" intent's insufficient-baseline-history failure mode was indistinguishable
+  from `source_not_connected`, resolved to a new `insufficient_history`
+  `declined_reason`), planned, analyzed (5 findings — 1 HIGH: `QueryFindingsTool`
+  could have surfaced a quarantined finding through the Ask agent with no
+  validated-only filter, closed before implementation; 4 MEDIUM/LOW covering
+  a missing port in `data-model.md`, a stale `plan.md` artifact, an
+  unbuilt SC-007 promise, and an under-tested REQ-M9-P3 assertion, all fixed),
+  and implemented. All 43 tasks complete: the Narrator (`app.narrator`'s
+  first real content — a mechanical fact-check discarding any unverifiable
+  headline/reason/action, a deterministic non-LLM fallback headline when
+  every candidate fails it) and the Ask agent (`LangGraphAskAgent`, the
+  first and only compiled `StateGraph` in this codebase — classify → branch
+  → {decline, fallback, handoff, resolve_and_render} → log → END, all 8
+  REQ-M9-02 intents plus 5 `declined_reason` values live). Closes both
+  dashboard gaps feature 006 explicitly deferred: `DashboardResponse.narrator`
+  and the always-present Ask bar are both real for the first time. This is
+  also the feature three prior Complexity Tracking tables (004, 005, 007)
+  named as the one that would finally turn `tests/golden_replay/` from a
+  skipped placeholder into a real, passing test — done, verified stable
+  across 3 consecutive runs. Verified against the real, freshly built, fully
+  containerized stack (`docker compose up --build -d`, not just the host
+  venv): `GET /api/dashboard`'s new `narrator` field, `GET /api/coverage`'s
+  new `ask_intent_coverage` field, and `POST /api/ask`'s first real
+  implementation (failing honestly inside the container without a live
+  `ANTHROPIC_API_KEY`, the same as on the host) all confirmed live; full
+  backend suite (201 tests total, up from 157 after feature 007) and
+  `lint-imports --config ../.importlinter` (3/3 contracts kept) both pass in
+  isolation; frontend `lint`/`typecheck`/`test` (19/19)/`build` all clean.
+  Six genuine bugs found and fixed during implementation, not by inspection:
+  (1) the fact-check's proper-noun extraction treated every sentence's own
+  leading word as a claimed name if capitalized, so any action beginning
+  with an imperative verb ("Escalate the ticket...") was discarded every
+  time — found by running the use case against real playbook/contribution
+  data, not a synthetic test case; fixed by excluding the sentence's leading
+  word from name-candidates, a documented trade-off (a genuine name that
+  opens a sentence is now also exempted); (2) `ask_queries.matched_intent`
+  was being set to `"prediction"`/`"colleague_judgment"` on decline paths,
+  contradicting `data-base/08-schema-experience.md`'s own worked example
+  (`matched_intent = NULL` for "Will Meridian actually cancel?") — found
+  while writing the branch-coverage tests, fixed with a shared
+  `_matched_intent_value()` helper; (3) `narration_v1.py` (the prompt
+  template + `NarrationModelOutput` schema) was originally placed in
+  `app.narrator.adapters.prompts`, and `app.narrator.application.use_cases`
+  imported it directly — a real `import-linter` violation
+  (`application is not allowed to import adapters`) only caught by actually
+  running `lint-imports`, not by writing the code; fixed by moving it to
+  `app.narrator.application.prompts`, matching `IntentReader`'s own
+  precedent from feature 007; (4) the golden-replay test's first draft
+  compared a fresh post-replay rebuild against *ambient* pre-existing
+  `event_threads`/`response_pairs`/`rollups` counts and failed spuriously (7
+  vs 22 threads) — this suite runs against a shared, cumulative dev database
+  many other test files also append real events to; fixed by establishing a
+  fresh baseline via one rebuild first, then comparing a second rebuild
+  against that, not against ambient state; (5) `docker compose build api`
+  alone does not rebuild the separately-tagged `migrate` image sharing the
+  same Dockerfile, so a fresh migration silently ran against a stale image
+  with no migration file — found by actually running `docker compose up`
+  end to end, not assumed from a single service's build; (6) the originally
+  planned `alembic` revision id (`0002_declined_reason_insufficient_history`)
+  didn't fit `alembic_version.version_num`'s `VARCHAR(32)` column, caught
+  only by actually running the migration against a real database — shortened
+  to `0002_ask_insufficient_history`. One pre-existing, non-blocking gap
+  flagged, not fixed (entirely outside this feature's scope): 6
+  `tests/scoring/test_recompute_score_use_case.py` cases fail only when the
+  full suite runs together, never in isolation — a `score_runs.score` value
+  rounds to exactly `100.00` at column precision for that test file's own
+  large synthetic point totals, violating `CHECK (score < 100)`; entirely
+  within `backend/app/scoring/` (feature 004's module), which this feature
+  never touches.

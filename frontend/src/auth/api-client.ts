@@ -2,7 +2,8 @@ import { useAuthStore } from './auth-store'
 
 // Matches API_PORT's default in docker-compose.yml/.env.example — a Vite build-time
 // override (VITE_API_BASE_URL) covers a non-default port without a code change.
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000'
+const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:8000'
 
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const token = useAuthStore.getState().token
