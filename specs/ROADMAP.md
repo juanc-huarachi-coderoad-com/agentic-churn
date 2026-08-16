@@ -35,8 +35,8 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 004 | [`score-engine`](004-score-engine/) | 4 · Scoring engine (checkpoint phase) | ✅ **Complete** — all 29 tasks implemented and verified against real Docker/Postgres, including three genuine bugs found and fixed (see Log) | `requirements/06-scoring-engine.md`, `13-scoring-calibration-appendix.md` | `data-base/06-schema-scoring.md`; `sequences/06` |
 | 005 | [`deterministic-findings`](005-deterministic-findings/) | 5 · Findings (no AI) | ✅ **Complete** — all 37 tasks implemented and verified against real Docker/Postgres, including one genuine defensive-coding gap found during verification, not blocking (see Log) | `requirements/05-interpreters-readers.md` (Commitment/Usage/Recurrence/Absence/Relationship — REQ-M5-11's Relationship reader isn't assigned to any phase in `base/...md` §16's table despite being deterministic and paired with Absence throughout; grouped here with its fellow non-LLM readers rather than left dangling or bundled with the LLM readers in feature 007) | `data-base/05-schema-reasoning.md` |
 | 006 | [`dashboard-evidence-trace`](006-dashboard-evidence-trace/) | 6 · Full dashboard | ✅ **Complete** — all 52 tasks implemented and verified against real Docker/Postgres, including two `/speckit-analyze` remediations applied before implementation and one genuine Docker build gap found during verification, not blocking (see Log) | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
-| 007 | `model-findings` | 7 · Tone/Intent + validation gate | ⬜ Not started — **next up** | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
-| 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
+| 007 | [`model-findings`](007-model-findings/) | 7 · Tone/Intent + validation gate | ✅ **Complete** — all 30 tasks implemented and verified against real Docker/Postgres, including four genuine bugs found and fixed (see Log) | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
+| 008 | `narrator-and-ask-agent` | 8 · Explanation layer | ⬜ Not started — **next up** | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | `draft-composer` | 9 · The closer | ⬜ Not started | `requirements/10-draft-composer.md` | `sequences/04` |
 | 010 | `feedback-memory` | 10 · Learning loop | ⬜ Not started | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
 | 011 | `production-hardening` | 11 · Hardening | ⬜ Not started | remaining NFRs, `decisions/01-mvp-scope-and-phasing.md` | — |
@@ -203,3 +203,60 @@ Repeat for each row above, in order:
   against the real database instead. Worth a Dockerfile fix (add `gcc`/`build-
   essential` to the builder stage) before any feature next needs a containerized
   E2E run.
+- **2026-08-15** — Feature 007 (`model-findings`) specified, clarified (1
+  question — `findings.finding_type`'s hard FK into `finding_type_config` had
+  no seeded row for two of Intent's three categories; resolved by seeding
+  dedicated rows per category, not collapsing them onto `escalation_language`),
+  planned, analyzed (7 findings — 1 HIGH: `spec.md`'s "supplied evidence
+  window" edge case described a narrower check than anything in the design
+  could actually implement, reconciled to a real-ledger-existence check; 6
+  MEDIUM/LOW covering under-documented ports and a P5 constitution
+  mis-classification, all fixed before implementation), and implemented. All
+  30 tasks complete: `ToneReader` (baseline-relative deviation, abstains
+  honestly below REQ-M6-CAL-04's 5-sample floor), `IntentReader` (closed-enum
+  escalation/competitive/contractual classification), and the M5a
+  `ValidationGate` — now wired into `RunReadersUseCase` for all eight readers,
+  not just these two, closing the gap feature 005 deliberately left open
+  (findings promoted past `pending_validation` for the first time).
+  `AnthropicLLMAdapter` uses the Messages API's native `output_format`
+  structured-output mechanism — no `tools` parameter ever passed, a stronger
+  guarantee than the forced-tool-call design first proposed in `research.md`
+  before checking current SDK docs. Verified against the real, freshly reset
+  and re-provisioned Meridian database: the full nine-finding worked example
+  (`examples/01-end-to-end-walkthrough.md`) reproduces end to end for the
+  first time including both new LLM findings, all real and `validated`; every
+  step of `quickstart.md` walked live via `curl` against the running
+  containers (`GET /api/coverage`'s `quarantine` field real for the first
+  time, a validated finding visible to `scripts/compute_score.py`); the full
+  backend suite (155/157, 2 expected skips, up from 137 after feature 006)
+  and `lint-imports --config ../.importlinter` (3/3 contracts kept) both pass
+  clean. Four genuine bugs found and fixed during verification, not by
+  inspection: (1) `SqlAlchemyCoverageReader.list_quarantine()`
+  (`backend/app/experience/adapters/sqlalchemy_repository.py`) was still
+  hardcoded to `return []` even with the gate wired in — `tasks.md` had
+  wrongly assumed feature 006 needed no route-level change, when the route's
+  contract was right but this one query was still a placeholder; (2)
+  `RunReadersUseCase`'s gate-evaluate-then-persist step was unguarded by its
+  own `try`/`except` (only each reader's `interpret()` call was) — an
+  unexpected exception there would have silently skipped every reader still
+  queued after the failing one; (3) a missing `ANTHROPIC_API_KEY` was
+  initially caught and silently treated as per-message abstention inside
+  `ToneReader`/`IntentReader`, unlike `RecurrenceReader`'s identical missing-
+  `OPENAI_API_KEY` case, which reports a clear reader-level failure — fixed
+  so a systemic misconfiguration can never look identical to a genuinely
+  healthy, nothing-to-report run; (4) `SqlAlchemyCandidateCorpusRepository.
+  list_candidates()`'s `KeyError` on a `title`-less malformed row — exactly
+  the gap feature 005's own roadmap entry above flagged as "worth a
+  `.get('title', ...)` hardening pass before feature 007 builds on top of
+  this repository" — fixed now rather than deferred again. Also fixed, as a
+  direct consequence of (2)/(4) surfacing through it: feature 004's
+  `test_worked_example.py` reset routine did `DELETE FROM findings` without
+  first clearing `quarantine`/`validation_failures`, an FK dependency that
+  never actually fired against a real row until this feature became the
+  first to populate either table. One pre-existing, non-blocking gap flagged,
+  not fixed (out of this feature's scope): `ComputeRollupsUseCase` (feature
+  005, REQ-M2-06) has no caller anywhere in the actual pipeline — only its
+  own dedicated unit test invokes it — so `usage_deviation` will not appear
+  from a real `scripts/run_readers.py` run against a freshly provisioned
+  database until that use case is wired into the collector/readers flow
+  itself.

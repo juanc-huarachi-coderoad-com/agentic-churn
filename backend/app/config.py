@@ -51,5 +51,11 @@ class Settings(BaseSettings):
     # honestly at the adapter (spec.md's Edge Cases), never a silent skip.
     openai_api_key: str = ""
 
+    # Tone/Intent readers' model provider (specs/007-model-findings,
+    # decisions/02-repo-and-tooling.md) — no safe default for the key, same
+    # honest-failure discipline as openai_api_key above.
+    anthropic_api_key: str = ""
+    reader_model_id: str = "claude-haiku-4-5-20251001"
+
 
 settings = Settings()

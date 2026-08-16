@@ -66,6 +66,14 @@ _RESET_TABLES = (
     "band_history",
     "score_runs",
     "finding_issue_map",
+    # validation_failures/quarantine must clear before findings — both carry
+    # a FK to findings.id (quarantine.finding_id UNIQUE, REQ-M5A-03), and
+    # feature 007's ValidationGate is the first real writer of either table.
+    # Never populated before this feature, so this FK dependency never
+    # actually fired against a real row until now (found during this
+    # feature's own verification, not by inspection).
+    "validation_failures",
+    "quarantine",
     "findings",
     "issues",
 )

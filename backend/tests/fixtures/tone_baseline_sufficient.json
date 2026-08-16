@@ -1,0 +1,13 @@
+{
+  "description": "A stakeholder with a confirmed baseline of 5+ prior messages plus one genuinely different-sounding new message — proves the Tone reader emits a real tone_deterioration finding once REQ-M6-CAL-04's 5-message floor is cleared (specs/007-model-findings/quickstart.md step 3). The real Meridian fixture deliberately has too few prior Ana messages to exercise this path.",
+  "stakeholder_id": "21000000-0000-0000-0000-000000000001",
+  "baseline_sample_texts": [
+    "Thanks so much for the detailed update, really appreciate it!",
+    "Great, that all makes sense to me — looking forward to next steps.",
+    "Perfect, thank you for looping me in on this one.",
+    "Appreciate the quick turnaround, exactly what we needed.",
+    "Thanks again, talk soon and have a great weekend!"
+  ],
+  "new_message_text": "ok",
+  "model_response": { "deviation": 0.9, "magnitude": 0.85, "confidence": 0.8 }
+}

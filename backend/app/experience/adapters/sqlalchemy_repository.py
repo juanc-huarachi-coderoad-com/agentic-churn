@@ -375,11 +375,20 @@ class SqlAlchemyCoverageReader(CoveragePort):
         return len(groups)
 
     async def list_quarantine(self) -> list[QuarantineRecord]:
-        # Real, not a stub: feature 007's ValidationGate is the only mechanism
-        # that would ever set findings.status = 'quarantined', and it doesn't
-        # exist yet — there is no failed_check data to read (spec.md's Note on
-        # scope, contracts/coverage.md).
-        return []
+        # Real for the first time (feature 007's ValidationGate) — feature
+        # 006 shipped this hardcoded to `[]` since nothing could populate
+        # `quarantine` yet (found and fixed during feature 007's own
+        # verification, not just assumed correct from the plan: the route's
+        # own contract/schema were already right, only this query was still
+        # a placeholder).
+        rows = (
+            await self._session.execute(
+                text("SELECT finding_id, failed_check FROM quarantine ORDER BY created_at")
+            )
+        ).all()
+        return [
+            QuarantineRecord(finding_id=r.finding_id, failed_check=r.failed_check) for r in rows
+        ]
 
 
 class SqlAlchemyStakeholderReader(StakeholderReadPort):

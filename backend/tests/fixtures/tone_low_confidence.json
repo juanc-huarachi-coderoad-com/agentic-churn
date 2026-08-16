@@ -1,0 +1,13 @@
+{
+  "description": "A stakeholder with a confirmed baseline of 5+ prior messages (clears REQ-M6-CAL-04, unlike examples/01's fnd-10 worked example which predates that calibrated floor) whose new message produces a genuinely low-confidence model judgment — proves the validation gate quarantines a real finding as confidence_below_floor (tone_deterioration's floor is 0.65, data-base/05-schema-reasoning.md), reproducing examples/01 section 7's fnd-10/q-1 shape without contradicting the abstention floor (specs/007-model-findings/quickstart.md step 5).",
+  "stakeholder_id": "21000000-0000-0000-0000-000000000002",
+  "baseline_sample_texts": [
+    "Sounds good, thanks.",
+    "Sure, works for me.",
+    "Okay, noted.",
+    "Got it, thanks for the heads up.",
+    "Sounds fine, go ahead."
+  ],
+  "new_message_text": "k",
+  "model_response": { "deviation": 0.6, "magnitude": 0.55, "confidence": 0.55 }
+}

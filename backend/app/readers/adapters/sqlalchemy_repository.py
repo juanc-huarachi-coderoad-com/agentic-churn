@@ -4,21 +4,33 @@ matching the rest of the codebase's DDL-first pattern (no ORM declarative models
 """
 
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ingestion.application.ports import EncryptionPort
 from app.readers.application.ports import (
     AbsenceEventInfo,
     AbsenceEventRepositoryPort,
     CandidateCorpusPort,
+    ConfirmedBaselineRepositoryPort,
+    EventExistencePort,
     FindingRepositoryPort,
+    FindingTypeConfigPort,
+    MessageEventRepositoryPort,
+    QuarantineRepositoryPort,
     RelationshipContextPort,
     ResponsePairRepositoryPort,
     RollupRepositoryPort,
 )
-from app.readers.domain.entities import CandidateTicket, ResponsePairInfo
+from app.readers.domain.entities import (
+    CandidateTicket,
+    ConfirmedBaselineWindow,
+    FailedCheck,
+    MessageEventInfo,
+    ResponsePairInfo,
+)
 from app.scoring.domain.entities import Finding
 
 
@@ -221,6 +233,14 @@ class SqlAlchemyCandidateCorpusRepository(CandidateCorpusPort):
                 )
             )
         ).all()
+        # `.get(...)`, not `[...]` — a malformed row missing `title`/
+        # `ticket_number` is skipped, not a `KeyError` that would crash this
+        # reader's entire run (the defensive hardening `specs/ROADMAP.md`'s
+        # feature 005 log entry already flagged as worth doing before this
+        # feature builds on top of this repository; RunReadersUseCase's own
+        # per-reader failure isolation, FR-014, contains this exact class of
+        # failure, but a fully-skipped malformed row is strictly better than
+        # an isolated-but-total Recurrence failure over one bad row).
         return [
             CandidateTicket(
                 event_id=r.id,
@@ -228,7 +248,190 @@ class SqlAlchemyCandidateCorpusRepository(CandidateCorpusPort):
                 title=r.structured_payload["title"],
             )
             for r in rows
+            if "title" in r.structured_payload and "ticket_number" in r.structured_payload
         ]
+
+
+class SqlAlchemyMessageEventRepository(MessageEventRepositoryPort):
+    """The shared candidate corpus Tone and Intent both self-fetch from
+    (`data-model.md`) — `message`-type events (Gmail/Slack, encrypted body)
+    and `ticket_state_change`-type events (Zendesk, plain-JSONB title),
+    matching `app.experience.adapters.sqlalchemy_repository._quoted_text`'s
+    already-established dual-path extraction pattern (feature 006), not
+    reimported cross-module — this module gets its own copy for the same
+    reason `research.md`'s "no cross-module adapter import" convention
+    applies everywhere else in this file."""
+
+    def __init__(self, session: AsyncSession, encryption: EncryptionPort) -> None:
+        self._session = session
+        self._encryption = encryption
+
+    async def list_all(self) -> list[MessageEventInfo]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT id, occurred_at, stakeholder_id, structured_payload, "
+                    "body_encrypted FROM events "
+                    "WHERE event_type IN ('message'::event_type, "
+                    "'ticket_state_change'::event_type)"
+                )
+            )
+        ).all()
+        results: list[MessageEventInfo] = []
+        for r in rows:
+            event_text: str | None
+            if r.body_encrypted is not None:
+                event_text = self._encryption.decrypt(r.body_encrypted)
+            else:
+                title = r.structured_payload.get("title")
+                event_text = str(title) if title else None
+            if event_text is None:
+                continue
+            results.append(
+                MessageEventInfo(
+                    event_id=r.id,
+                    occurred_at=r.occurred_at,
+                    stakeholder_id=r.stakeholder_id,
+                    text=event_text,
+                )
+            )
+        return results
+
+
+class SqlAlchemyConfirmedBaselineRepository(ConfirmedBaselineRepositoryPort):
+    """Joins `baseline_confirmations` -> matching message-bearing `events` for
+    a stakeholder. Deliberately doesn't filter by `baseline_confirmations.
+    metric` (`data-model.md`'s note) — takes the most recently confirmed
+    window for that stakeholder, at most one expected in Phase 1."""
+
+    def __init__(self, session: AsyncSession, encryption: EncryptionPort) -> None:
+        self._session = session
+        self._encryption = encryption
+
+    async def get_confirmed_window(
+        self, stakeholder_id: UUID
+    ) -> ConfirmedBaselineWindow | None:
+        confirmation = (
+            await self._session.execute(
+                text(
+                    "SELECT window_start, window_end FROM baseline_confirmations "
+                    "WHERE subject_type = 'stakeholder'::rollup_subject_type "
+                    "AND subject_id = :stakeholder_id "
+                    "ORDER BY confirmed_at DESC LIMIT 1"
+                ),
+                {"stakeholder_id": stakeholder_id},
+            )
+        ).one_or_none()
+        if confirmation is None:
+            return None
+
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT structured_payload, body_encrypted FROM events "
+                    "WHERE stakeholder_id = :stakeholder_id "
+                    "AND event_type IN ('message'::event_type, "
+                    "'ticket_state_change'::event_type) "
+                    "AND occurred_at >= :window_start AND occurred_at <= :window_end"
+                ),
+                {
+                    "stakeholder_id": stakeholder_id,
+                    "window_start": confirmation.window_start,
+                    "window_end": confirmation.window_end,
+                },
+            )
+        ).all()
+        sample_texts: list[str] = []
+        for r in rows:
+            if r.body_encrypted is not None:
+                sample_texts.append(self._encryption.decrypt(r.body_encrypted))
+            else:
+                title = r.structured_payload.get("title")
+                if title:
+                    sample_texts.append(str(title))
+
+        return ConfirmedBaselineWindow(
+            stakeholder_id=stakeholder_id,
+            window_start=confirmation.window_start,
+            window_end=confirmation.window_end,
+            sample_texts=tuple(sample_texts),
+        )
+
+
+class SqlAlchemyFindingTypeConfigRepository(FindingTypeConfigPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_thresholds(self, finding_type: str) -> tuple[float, int] | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT confidence_floor, min_evidence_count FROM finding_type_config "
+                    "WHERE finding_type = :finding_type"
+                ),
+                {"finding_type": finding_type},
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return float(row.confidence_floor), int(row.min_evidence_count)
+
+
+class SqlAlchemyEventExistenceRepository(EventExistencePort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def existing_ids(self, ids: list[UUID]) -> set[UUID]:
+        if not ids:
+            return set()
+        rows = (
+            await self._session.execute(
+                text("SELECT id FROM events WHERE id = ANY((:ids)::uuid[])"),
+                {"ids": ids},
+            )
+        ).all()
+        return {r.id for r in rows}
+
+
+class SqlAlchemyQuarantineRepository(QuarantineRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record(self, finding_id: UUID, failed_checks: list[FailedCheck]) -> None:
+        # `failed_checks` is never empty when `record()` is called (the gate
+        # only calls this on a failed evaluation) — the *first* failed check
+        # becomes `quarantine.failed_check` (one column, one value, REQ-M5A-02);
+        # every failed check, including that first one, gets its own
+        # `validation_failures` row (fine-grained log, `data-base/05`).
+        quarantine_id = uuid4()
+        await self._session.execute(
+            text(
+                "INSERT INTO quarantine (id, finding_id, failed_check, detail) "
+                "VALUES (:id, :finding_id, (:failed_check)::validation_check, :detail)"
+            ),
+            {
+                "id": quarantine_id,
+                "finding_id": finding_id,
+                "failed_check": failed_checks[0].check_name,
+                "detail": failed_checks[0].actual,
+            },
+        )
+        for check in failed_checks:
+            await self._session.execute(
+                text(
+                    "INSERT INTO validation_failures "
+                    "(id, quarantine_id, check_name, expected, actual) "
+                    "VALUES (:id, :quarantine_id, :check_name, :expected, :actual)"
+                ),
+                {
+                    "id": uuid4(),
+                    "quarantine_id": quarantine_id,
+                    "check_name": check.check_name,
+                    "expected": check.expected,
+                    "actual": check.actual,
+                },
+            )
+        await self._session.commit()
 
 
 class SqlAlchemyFindingRepository(FindingRepositoryPort):

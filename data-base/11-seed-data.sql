@@ -95,7 +95,12 @@ INSERT INTO finding_type_config (finding_type, base_points, confidence_floor, mi
     ('contact_absence',         12.00, 0.60, 1, 30, 'v1'),
     ('relationship_change',      8.00, 0.55, 1, 30, 'v1'),
     ('csat_deviation',          10.00, 0.60, 1, 21, 'v1'),
-    ('commitment_met',          10.00, 0.50, 1,  7, 'v1');
+    ('commitment_met',          10.00, 0.50, 1,  7, 'v1'),
+    -- Added by feature 007 (specs/007-model-findings): the Intent reader's other
+    -- two closed categories (REQ-M5-13), mirroring escalation_language's row
+    -- verbatim as the Phase 1 default (spec.md Clarifications, 2026-08-15).
+    ('competitive_mention',     14.00, 0.60, 1, 14, 'v1'),
+    ('contractual_reference',   14.00, 0.60, 1, 14, 'v1');
 
 -- ------------------------------------------------------------
 -- Playbook (data-base/08-schema-experience.md)

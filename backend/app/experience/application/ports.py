@@ -197,9 +197,9 @@ class CoveragePort(ABC):
 
     @abstractmethod
     async def list_quarantine(self) -> list[QuarantineRecord]:
-        """Real, and always empty until feature 007's `ValidationGate`
-        exists — `findings.status = 'quarantined'` never occurs yet
-        (spec.md's Note on scope)."""
+        """Real — feature 007's `ValidationGate` is what populates
+        `quarantine`; empty only when nothing has actually been quarantined
+        yet, never as a placeholder."""
         ...
 
 

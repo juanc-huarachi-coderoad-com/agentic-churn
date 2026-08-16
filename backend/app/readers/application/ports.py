@@ -8,10 +8,78 @@ adapter import (feature 004's established convention, `research.md`'s Decision).
 
 from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import TypeVar
 from uuid import UUID
 
-from app.readers.domain.entities import CandidateTicket, ResponsePairInfo
+from app.readers.domain.entities import (
+    CandidateTicket,
+    ConfirmedBaselineWindow,
+    FailedCheck,
+    MessageEventInfo,
+    ResponsePairInfo,
+)
 from app.scoring.domain.entities import Finding
+
+T = TypeVar("T")
+
+
+# ---------------------------------------------------------------------------
+# Tone / Intent readers (LLMPort, MessageEventRepositoryPort) — specs/007-model-findings
+# ---------------------------------------------------------------------------
+
+
+class LLMPort(ABC):
+    """`architecture/09-clean-architecture-and-patterns.md`'s already-named
+    single-method interface — no `tools` parameter exists, structurally
+    making tool-granting impossible from a reader's side (REQ-M5-P2)."""
+
+    @abstractmethod
+    async def generate_structured(self, prompt: str, schema: type[T]) -> T: ...
+
+
+class MessageEventRepositoryPort(ABC):
+    @abstractmethod
+    async def list_all(self) -> list[MessageEventInfo]:
+        """Every message-bearing event (Gmail/Slack `message`, Zendesk
+        `ticket_state_change`) — the shared candidate corpus Tone and Intent
+        both self-fetch from. Cache filtering against already-interpreted
+        events happens in each reader via `FindingRepositoryPort.
+        already_interpreted`, not here."""
+        ...
+
+
+class ConfirmedBaselineRepositoryPort(ABC):
+    @abstractmethod
+    async def get_confirmed_window(
+        self, stakeholder_id: UUID
+    ) -> ConfirmedBaselineWindow | None:
+        """`None` if no `baseline_confirmations` row exists yet for this
+        stakeholder — the common case until `scripts/confirm_baseline.py` has
+        been run (`research.md` Decision 3)."""
+        ...
+
+
+class FindingTypeConfigPort(ABC):
+    @abstractmethod
+    async def get_thresholds(self, finding_type: str) -> tuple[float, int] | None:
+        """`(confidence_floor, min_evidence_count)`, or `None` if
+        `finding_type` isn't a configured row — that `None` case *is* how the
+        gate's schema check's `finding_type`-membership sub-check is
+        implemented (`research.md` Decision 6.1), not a separate code path."""
+        ...
+
+
+class EventExistencePort(ABC):
+    @abstractmethod
+    async def existing_ids(self, ids: list[UUID]) -> set[UUID]:
+        """Which of the given IDs are real rows in `events` — the gate's
+        `cited_event_missing` check."""
+        ...
+
+
+class QuarantineRepositoryPort(ABC):
+    @abstractmethod
+    async def record(self, finding_id: UUID, failed_checks: list[FailedCheck]) -> None: ...
 
 # ---------------------------------------------------------------------------
 # Commitment reader (ResponsePairRepositoryPort)

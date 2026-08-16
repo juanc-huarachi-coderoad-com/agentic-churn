@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.19.1",
+    "anthropic>=0.40.0",
     "apscheduler>=3.11.3",
     "argon2-cffi>=25.1.0",
     "asyncpg>=0.31.0",

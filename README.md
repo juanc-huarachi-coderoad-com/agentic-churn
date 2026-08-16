@@ -134,9 +134,10 @@ the exact worked-example numbers and the source-degraded freeze path.
 
 Real findings, no model call: Commitment, Usage, Recurrence, Absence, and
 Relationship each read the real ledger and emit `Finding`s deterministically —
-`ValidationGate`/Tone/Intent/Meeting (M5a/the LLM-based readers) are feature 007's
-scope, not this one. One new environment prerequisite — Recurrence's embedding
-provider:
+`ValidationGate`/Tone/Intent (M5a/the LLM-based readers, feature 007 below) now
+gate and persist every finding this phase's five readers emit too; Meeting
+stays unbuilt (sent to Phase 2, `decisions/01-mvp-scope-and-phasing.md`). One
+new environment prerequisite — Recurrence's embedding provider:
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." >> .env
@@ -150,8 +151,43 @@ docker compose exec api python scripts/run_readers.py
 
 **Expected**: a per-reader summary — findings persisted, or (if `OPENAI_API_KEY` is
 missing/invalid) Recurrence's own isolated failure message, while the other four
-readers' counts are unaffected (FR-014a). Every finding persists at
-`status = pending_validation`; re-running over an unchanged ledger adds nothing
-(the REQ-M5-15 cache). See `specs/005-deterministic-findings/quickstart.md` for the
-full validation walkthrough, including the exact worked-example table and the
-failure-isolation and cache checks.
+readers' counts are unaffected (FR-014a). Every finding now passes through the
+validation gate (feature 007) before persisting — see the next section. Re-running
+over an unchanged ledger adds nothing (the REQ-M5-15 cache). See
+`specs/005-deterministic-findings/quickstart.md` for the full validation
+walkthrough, including the exact worked-example table and the failure-isolation
+and cache checks.
+
+## Model Findings (Phase 7)
+
+Tone and Intent — the two LLM-based readers — plus the M5a validation gate that
+now runs on every finding from all eight readers, not just these two: schema
+valid, cited events real, enough evidence, confidence at or above the type's
+floor. A finding that fails is quarantined, tagged with the specific reason, and
+never repaired or resubmitted (REQ-M5A-01..04). One new environment
+prerequisite — Tone/Intent's model provider:
+
+```bash
+echo "ANTHROPIC_API_KEY=sk-ant-..." >> .env
+echo "READER_MODEL_ID=claude-haiku-4-5-20251001" >> .env
+docker compose up --build -d   # picks up the new env vars
+```
+
+Tone needs a human-confirmed baseline before it will ever emit a finding for a
+given stakeholder — REQ-M6-CAL-04's "no history, no opinion" abstention floor
+(at least 5 prior messages in the confirmed window):
+
+```bash
+docker compose exec api python scripts/run_collector.py --source simulated
+docker compose exec api python scripts/confirm_baseline.py --stakeholder ana \
+  --metric email_style --window-days 60
+docker compose exec api python scripts/run_readers.py
+```
+
+**Expected**: a per-reader summary including `findings_quarantined` alongside
+`findings_persisted`; a missing `ANTHROPIC_API_KEY` reports Tone/Intent's own
+isolated failure, the same as Recurrence's missing `OPENAI_API_KEY` — never a
+silently-empty, misleadingly-healthy run. `GET /api/coverage`'s `quarantine`
+field is real for the first time, reflecting whatever the gate actually
+rejected. See `specs/007-model-findings/quickstart.md` for the full validation
+walkthrough.

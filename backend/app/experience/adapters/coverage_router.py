@@ -26,8 +26,8 @@ class QuarantineEntry(BaseModel):
 
 class CoverageResponse(BaseModel):
     """Per `contracts/coverage.md` — `architecture/07-api-spec.md`'s
-    `CoverageResponse`. `quarantine` is real, and permanently empty until
-    feature 007's `ValidationGate` exists."""
+    `CoverageResponse`. `quarantine` is real (feature 007's `ValidationGate`
+    populates it) — empty only when nothing has actually been quarantined."""
 
     sources: list[SourceStatus]
     quarantine: list[QuarantineEntry]

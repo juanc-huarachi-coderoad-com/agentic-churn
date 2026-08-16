@@ -29,7 +29,8 @@ class Reader(ABC):
 
     @abstractmethod
     async def interpret(self) -> list[Finding]:
-        """Zero or more findings, all `status = pending_validation` (REQ-M5-01/02) —
-        `ValidationGate` doesn't exist until feature 007 (`research.md`'s Decision),
-        so nothing downstream of this call promotes or quarantines a finding yet."""
+        """Zero or more findings, all `status = pending_validation` (REQ-M5-01/02)
+        — `RunReadersUseCase` (feature 007) passes every one of them through
+        `ValidationGate` before its one and only `persist()` call; nothing in
+        this method itself promotes or quarantines a finding."""
         ...
