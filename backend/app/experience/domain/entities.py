@@ -3,10 +3,12 @@
 I/O. `data-model.md`'s own list.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
+
+from app.narrator.domain.entities import FactCheckResult
 
 DashboardStateKind = Literal[
     "no_profile",
@@ -139,3 +141,99 @@ class NarratorSummaryRecord:
     headline: str
     reasons: tuple[dict[str, object], ...]
     actions: tuple[dict[str, object], ...]
+
+
+# ---------------------------------------------------------------------------
+# Draft composer (M10) — specs/009-draft-composer. `VerifiedFactSet`/
+# `FactCheckResult` are NOT redefined here — imported from
+# `app.narrator.domain.entities` (research.md Decision 2).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class IssueEvidenceRecord:
+    """The requested issue's own aggregated evidence — `IssueReadPort.
+    get_issue_evidence`'s return shape. Any issue with cited evidence, not
+    only the top-ranked one (Clarifications, 2026-08-16)."""
+
+    issue_id: UUID
+    label: str
+    finding_types: tuple[str, ...]
+    cited_event_ids: tuple[UUID, ...]
+
+
+@dataclass(frozen=True)
+class AgreedAction:
+    """One of the latest run's already-narrated actions, filtered to the
+    requested issue's own finding types (research.md Decision 4) — the
+    source of every date `verify_dates` accepts."""
+
+    text: str
+    owner: str
+    due_date: str
+    finding_type: str
+
+
+@dataclass(frozen=True)
+class VerifiedDateSet:
+    """Every date/day-name token legitimately present in the issue's
+    `AgreedAction`s and thread history — built once, before generation."""
+
+    dates: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class DateCheckResult:
+    passed: bool
+    unverified_dates: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class CauseCheckResult:
+    """`verify_no_invented_cause`'s outcome (research.md Decision 6,
+    `/speckit-analyze` finding U1) — every causal clause's numbers/names
+    must already be in the same `VerifiedFactSet` `verify_facts` uses."""
+
+    passed: bool
+    unverified_causal_clauses: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class LeakCheckResult:
+    """One candidate draft's internal-leak-check outcome (denylist +
+    other-client-name check)."""
+
+    passed: bool
+    leaked_terms: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class ConcessionCheckResult:
+    """`verify_no_concession`'s outcome (research.md Decision 6,
+    `/speckit-analyze` finding G1) — closed denylist match."""
+
+    passed: bool
+    matched_terms: frozenset[str] = field(default_factory=frozenset)
+
+
+@dataclass(frozen=True)
+class DraftCheckResult:
+    """The composed result of all five checks — `passed` is `True` only if
+    all five are (REQ-M10-07)."""
+
+    passed: bool
+    fact_check: FactCheckResult
+    date_check: DateCheckResult
+    cause_check: CauseCheckResult
+    leak_check: LeakCheckResult
+    concession_check: ConcessionCheckResult
+
+
+@dataclass(frozen=True)
+class GeneratedDraft:
+    """The use case's pre-persistence result."""
+
+    draft_text: str
+    tone_variant: str
+    evidence_event_ids: tuple[UUID, ...]
+    check_result: DraftCheckResult

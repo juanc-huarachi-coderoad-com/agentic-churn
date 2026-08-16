@@ -2,13 +2,14 @@ import type { AskComponentResponse } from '../types'
 
 interface AnswerRendererProps {
   answer: AskComponentResponse
+  onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
 }
 
 // One renderer per closed-set component type (REQ-M9-02) — the Ask agent
 // never answers with a paragraph, only one of these fixed shapes. Every
 // branch below reads only fields the backend already computed; nothing here
 // generates or reorders anything itself (REQ-M9-03).
-export function AnswerRenderer({ answer }: AnswerRendererProps) {
+export function AnswerRenderer({ answer, onOpenDraftComposer }: AnswerRendererProps) {
   const props = answer.component_props
 
   switch (answer.component) {
@@ -27,7 +28,7 @@ export function AnswerRenderer({ answer }: AnswerRendererProps) {
     case 'filtered_timeline':
       return <FilteredTimeline props={props} />
     case 'draft_handoff':
-      return <DraftHandoff props={props} />
+      return <DraftHandoff props={props} onOpenDraftComposer={onOpenDraftComposer} />
   }
 }
 
@@ -175,12 +176,40 @@ function FilteredTimeline({ props }: { props: Record<string, unknown> }) {
 }
 
 // The one non-inline-answer case (FR-012a) — surfaces the handoff context
-// rather than composing a message itself (feature 009's job).
-function DraftHandoff({ props }: { props: Record<string, unknown> }) {
+// rather than composing a message itself (feature 009's job). Real trigger
+// as of feature 009 (research.md Decision 10) — a link when both issue_id
+// and stakeholder_id resolved; the original static fallback copy is kept
+// unchanged for a null stakeholder_id (no picker UI is built here).
+function DraftHandoff({
+  props,
+  onOpenDraftComposer,
+}: {
+  props: Record<string, unknown>
+  onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+}) {
+  const issueId = props.issue_id as string | null | undefined
+  const stakeholderId = props.stakeholder_id as string | null | undefined
+
+  if (issueId && stakeholderId && onOpenDraftComposer) {
+    return (
+      <p className="text-sm text-neutral-600">
+        Ready to draft a message about this issue —{' '}
+        <button
+          type="button"
+          onClick={() => onOpenDraftComposer(issueId, stakeholderId)}
+          className="font-medium text-neutral-900 underline"
+        >
+          open the draft composer
+        </button>
+        .
+      </p>
+    )
+  }
+
   return (
     <p className="text-sm text-neutral-600">
       Ready to draft a message about this issue — open the draft composer to continue.
-      {props.stakeholder_id == null && (
+      {!stakeholderId && (
         <span className="mt-1 block text-xs text-neutral-400">
           Couldn't identify who to write to — you'll need to pick a recipient there.
         </span>

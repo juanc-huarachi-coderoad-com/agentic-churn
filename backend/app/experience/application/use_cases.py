@@ -11,15 +11,36 @@ from uuid import UUID
 from app.experience.application.ports import (
     ClientProfileRepositoryPort,
     CoveragePort,
+    DraftMessageRepositoryPort,
     FindingReadPort,
     IdentityGapPort,
+    IssueReadPort,
+    LedgerQueryPort,
     NarratorReadPort,
+    PlaybookReadPort,
     PulseEventPort,
     ScoreReadPort,
     StakeholderReadPort,
 )
-from app.experience.domain.entities import ArithmeticClause, CitedEventRecord, EvidenceComparison
+from app.experience.application.prompts.draft_composer_v1 import (
+    DraftModelOutput,
+)
+from app.experience.application.prompts.draft_composer_v1 import (
+    build_prompt as build_draft_prompt,
+)
+from app.experience.domain.entities import (
+    AgreedAction,
+    ArithmeticClause,
+    CitedEventRecord,
+    DraftCheckResult,
+    EvidenceComparison,
+    GeneratedDraft,
+    NarratorSummaryRecord,
+    VerifiedDateSet,
+)
 from app.experience.domain.services import (
+    build_verified_date_set,
+    build_verified_fact_set,
     evaluate_absence_evidence,
     evaluate_commitment_evidence,
     evaluate_generic_evidence,
@@ -30,7 +51,14 @@ from app.experience.domain.services import (
     pulse_severity,
     render_state_message,
     resolve_dashboard_state,
+    verify_dates,
+    verify_facts,
+    verify_no_concession,
+    verify_no_invented_cause,
+    verify_no_leak,
 )
+from app.narrator.domain.entities import VerifiedFactSet
+from app.readers.application.ports import LLMPort
 
 _PULSE_WINDOW_DAYS = 14
 _TREND_DAYS = 14
@@ -451,4 +479,198 @@ class GetCoverageUseCase:
                 if ask_intent_coverage is not None
                 else None
             ),
+        )
+
+
+# ---------------------------------------------------------------------------
+# GenerateDraftUseCase — Draft composer (M10), specs/009-draft-composer
+# ---------------------------------------------------------------------------
+
+
+class IssueNotFoundError(Exception):
+    """`issue_id` doesn't resolve to an issue with cited (validated)
+    evidence — the route's `404` path (`contracts/drafts.md`)."""
+
+
+class StakeholderNotFoundError(Exception):
+    """`stakeholder_id` doesn't resolve to a stakeholder on the current
+    profile — the route's `404` path (`/speckit-analyze` finding U3)."""
+
+
+class DraftCheckFailedError(Exception):
+    """`DraftCheckResult.passed` is `False` — the route's `422` path. Never
+    carries which check failed (`research.md` Decision 7, Clarifications
+    2026-08-16): the CS lead sees the same generic failure message a
+    generation error/timeout already produces."""
+
+
+@dataclass(frozen=True)
+class DraftResult:
+    id: UUID
+    draft_text: str
+    tone_variant: str
+    evidence_event_ids: tuple[UUID, ...]
+    checks_passed: bool
+
+
+class GenerateDraftUseCase:
+    """A plain `LLMPort` call, no orchestration framework
+    (`decisions/02-repo-and-tooling.md`'s ratified shape for M10,
+    `research.md` Decision 2) — fetch inputs, generate, run all five
+    pre-display checks (REQ-M10-07, `research.md` Decision 6), persist only
+    on a full pass (`research.md` Decision 7)."""
+
+    def __init__(
+        self,
+        issues: IssueReadPort,
+        stakeholders: StakeholderReadPort,
+        profile: ClientProfileRepositoryPort,
+        ledger: LedgerQueryPort,
+        narrator: NarratorReadPort,
+        playbook: PlaybookReadPort,
+        findings: FindingReadPort,
+        drafts: DraftMessageRepositoryPort,
+        llm: LLMPort,
+    ) -> None:
+        self._issues = issues
+        self._stakeholders = stakeholders
+        self._profile = profile
+        self._ledger = ledger
+        self._narrator = narrator
+        self._playbook = playbook
+        self._findings = findings
+        self._drafts = drafts
+        self._llm = llm
+
+    async def execute(
+        self,
+        *,
+        issue_id: UUID,
+        stakeholder_id: UUID,
+        tone_variant: str,
+        requested_by_user_id: UUID,
+    ) -> DraftResult:
+        stakeholder = await self._stakeholders.get(stakeholder_id)
+        if stakeholder is None:
+            raise StakeholderNotFoundError(stakeholder_id)
+
+        issue_evidence = await self._issues.get_issue_evidence(issue_id)
+        if issue_evidence is None:
+            raise IssueNotFoundError(issue_id)
+
+        profile = await self._profile.get_current()
+        client_name = profile.client_name if profile is not None else ""
+        communication_norms = profile.communication_norms if profile is not None else None
+
+        events = await self._findings.resolve_events(list(issue_evidence.cited_event_ids))
+        evidence_texts = [e.quoted_text for e in events if e.quoted_text]
+
+        thread_history = await self._ledger.timeline_for_stakeholder(stakeholder_id)
+        thread_history_texts = [m.text for m in thread_history if m.text]
+
+        narrator_summary = await self._narrator.get_latest()
+        agreed_actions = await self._resolve_agreed_actions(
+            narrator_summary, issue_evidence.finding_types
+        )
+
+        facts = build_verified_fact_set(
+            evidence_texts=evidence_texts,
+            thread_history_texts=thread_history_texts,
+            stakeholder_name=stakeholder.name,
+            client_name=client_name,
+        )
+        dates = build_verified_date_set(agreed_actions)
+
+        prompt = build_draft_prompt(
+            stakeholder_name=stakeholder.name,
+            tone_variant=tone_variant,
+            issue_label=issue_evidence.label,
+            evidence_texts=evidence_texts,
+            communication_norms=communication_norms,
+            thread_history_texts=thread_history_texts,
+            agreed_actions=[
+                {"text": a.text, "owner": a.owner, "due_date": a.due_date}
+                for a in agreed_actions
+            ],
+        )
+        model_output = await self._llm.generate_structured(prompt, DraftModelOutput)
+
+        check_result = self._run_checks(model_output.draft_text, facts, dates)
+        if not check_result.passed:
+            raise DraftCheckFailedError()
+
+        generated = GeneratedDraft(
+            draft_text=model_output.draft_text,
+            tone_variant=model_output.tone_variant or tone_variant,
+            evidence_event_ids=issue_evidence.cited_event_ids,
+            check_result=check_result,
+        )
+        draft_id = await self._drafts.persist(
+            generated,
+            issue_id=issue_id,
+            stakeholder_id=stakeholder_id,
+            requested_by_user_id=requested_by_user_id,
+        )
+        return DraftResult(
+            id=draft_id,
+            draft_text=generated.draft_text,
+            tone_variant=generated.tone_variant,
+            evidence_event_ids=generated.evidence_event_ids,
+            checks_passed=True,
+        )
+
+    async def _resolve_agreed_actions(
+        self, narrator_summary: NarratorSummaryRecord | None, finding_types: tuple[str, ...]
+    ) -> list[AgreedAction]:
+        """Filters the latest run's already-narrated, already-dated actions
+        down to the requested issue's own finding types (`research.md`
+        Decision 4) — the only source of a "human-supplied" date."""
+        if narrator_summary is None:
+            return []
+        finding_type_set = set(finding_types)
+        resolved: list[AgreedAction] = []
+        for raw_action in narrator_summary.actions:
+            playbook_id_raw = raw_action.get("playbook_id")
+            if not playbook_id_raw:
+                continue
+            try:
+                playbook_id = UUID(str(playbook_id_raw))
+            except ValueError:
+                continue
+            action_finding_type = await self._playbook.finding_type_for_playbook(playbook_id)
+            if action_finding_type is not None and action_finding_type in finding_type_set:
+                resolved.append(
+                    AgreedAction(
+                        text=str(raw_action.get("text", "")),
+                        owner=str(raw_action.get("owner", "")),
+                        due_date=str(raw_action.get("due_date", "")),
+                        finding_type=action_finding_type,
+                    )
+                )
+        return resolved
+
+    def _run_checks(
+        self, draft_text: str, facts: VerifiedFactSet, dates: VerifiedDateSet
+    ) -> DraftCheckResult:
+        fact_result = verify_facts(draft_text, facts)
+        date_result = verify_dates(draft_text, dates)
+        cause_result = verify_no_invented_cause(draft_text, facts)
+        leak_result = verify_no_leak(draft_text)
+        concession_result = verify_no_concession(draft_text)
+        passed = all(
+            (
+                fact_result.passed,
+                date_result.passed,
+                cause_result.passed,
+                leak_result.passed,
+                concession_result.passed,
+            )
+        )
+        return DraftCheckResult(
+            passed=passed,
+            fact_check=fact_result,
+            date_check=date_result,
+            cause_check=cause_result,
+            leak_check=leak_result,
+            concession_check=concession_result,
         )

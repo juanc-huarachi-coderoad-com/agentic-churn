@@ -37,7 +37,7 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 006 | [`dashboard-evidence-trace`](006-dashboard-evidence-trace/) | 6 · Full dashboard | ✅ **Complete** — all 52 tasks implemented and verified against real Docker/Postgres, including two `/speckit-analyze` remediations applied before implementation and one genuine Docker build gap found during verification, not blocking (see Log) | `requirements/08-health-dashboard.md` (full) | `architecture/07-api-spec.md`, `data-base/08` |
 | 007 | [`model-findings`](007-model-findings/) | 7 · Tone/Intent + validation gate | ✅ **Complete** — all 30 tasks implemented and verified against real Docker/Postgres, including four genuine bugs found and fixed (see Log) | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
 | 008 | [`narrator-and-ask-agent`](008-narrator-and-ask-agent/) | 8 · Explanation layer | ✅ **Complete** — all 43 tasks implemented and verified against real Docker/Postgres, including a real layer-boundary violation and a golden-replay test-design bug, both found and fixed (see Log) | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
-| 009 | `draft-composer` | 9 · The closer | ⬜ Not started | `requirements/10-draft-composer.md` | `sequences/04` |
+| 009 | [`draft-composer`](009-draft-composer/) | 9 · The closer | ✅ **Complete** — all 36 tasks implemented and verified against real Docker/Postgres, including a `/speckit-analyze` remediation before implementation (5→3→5 checks, see Log) and one genuine regression found and fixed during implementation (see Log) | `requirements/10-draft-composer.md` | `sequences/04` |
 | 010 | `feedback-memory` | 10 · Learning loop | ⬜ Not started | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
 | 011 | `production-hardening` | 11 · Hardening | ⬜ Not started | remaining NFRs, `decisions/01-mvp-scope-and-phasing.md` | — |
 
@@ -334,3 +334,66 @@ Repeat for each row above, in order:
   large synthetic point totals, violating `CHECK (score < 100)`; entirely
   within `backend/app/scoring/` (feature 004's module), which this feature
   never touches.
+- **2026-08-16** — Feature 009 (`draft-composer`) specified, clarified (3
+  questions — no in-app editing, since `data-model.md`'s `draft_messages`
+  has no edited-text column and REQ-M10-08 names exactly two actions; "any
+  issue with cited evidence" is draftable, not only the top-ranked one,
+  since `DraftRequest.issue_id` is a generic contract parameter; a
+  pre-display-check failure shows the exact same generic message a
+  generation timeout already defines, never one naming which check failed),
+  planned, analyzed (9 findings — 3 HIGH: SC-003's discount/blame guarantee
+  and REQ-M10-P3's "invented causes" half both had zero mechanical
+  verification, and SC-004's "code-level review" had no task; 6 MEDIUM/LOW
+  covering a missing stakeholder-existence check, an unenforced "exactly
+  one ask" claim, an overclaiming tone-variant success criterion, an
+  undocumented exception type, and FR-017's task-invisible rationale — all
+  fixed before implementation, growing the pre-display check pipeline from
+  three functions to five: `verify_no_invented_cause` and
+  `verify_no_concession` joined `verify_facts`/`verify_dates`/
+  `verify_no_leak`), and implemented. All 36 tasks complete: `GenerateDraftUseCase`
+  (`backend/app/experience/application/use_cases.py`, alongside
+  `GetDashboardUseCase`) reads a requested issue's own aggregated evidence
+  (a new `IssueReadPort`), the client profile's `communication_norms` (one
+  additive field on the already-existing `ClientProfileRecord`), real
+  thread history (feature 008's `LedgerQueryPort`, reused unchanged), and
+  the latest run's already-narrated actions filtered to the issue's own
+  finding types (`research.md` Decision 4) — generates via the same
+  `LLMPort`/`GENERATION_MODEL_ID` the Narrator and Ask agent already use,
+  and persists only once all five checks pass. Zero migrations —
+  `draft_messages` and the `tone_variant` enum have existed, unpopulated,
+  since feature 001. Verified against the real, freshly built, fully
+  containerized stack (`docker compose up --build -d`): `POST /api/drafts`
+  fails honestly with the same `ANTHROPIC_API_KEY` error inside the
+  container as narrator/ask-agent already do (proving the wiring, not just
+  the business logic); `.../copy`, `.../log-as-sent`, and a live `/send`
+  probe all return exactly the documented status codes; 13/13 real-DB
+  integration tests pass against the real "Issue A"/Ana Reyes fixture,
+  including a scripted red-team case per check; the full backend suite
+  (241 tests total, up from 201 after feature 008) and `lint-imports
+  --config ../.importlinter` (3/3 contracts kept, confirming the new
+  `experience.domain`→`narrator.domain` cross-module import doesn't violate
+  the layer boundary) both pass; frontend `lint`/`typecheck`/`test`
+  (23/23, up from 19)/`build` all clean. One genuine regression found and
+  fixed during implementation, not by inspection: adding
+  `StakeholderReadPort.get()` (closing `/speckit-analyze` finding U3) broke
+  an existing feature-008 test fake
+  (`tests/experience/test_ask_agent_toolkit.py`'s `_FakeStakeholders`,
+  which had no implementation for the new abstract method) — caught by
+  running the full suite, not just this feature's own tests, and fixed by
+  extending the fake rather than weakening the port. One genuine test-
+  fixture bug found while writing this feature's own tests, not a code
+  bug: a fake draft text using a mid-sentence capitalized common word
+  ("Ana — Engineering is on it today.") reproduced the exact same
+  leading-word-exclusion limitation feature 008 already documented for the
+  Narrator's `fact_check` — `verify_facts` correctly failed it, and the
+  fixture was reworded rather than the check weakened. Two pre-existing,
+  non-blocking gaps confirmed unrelated to this feature during full-suite
+  verification, not fixed (out of scope): the same 6
+  `tests/scoring/test_recompute_score_use_case.py` score-rounding failures
+  this roadmap already flagged for feature 008, plus one newly-observed
+  `tests/readers/test_run_readers_use_case.py` failure (a `recurring_issue`
+  finding citing only 1 event instead of the expected 2+) that reproduces
+  only when run after `tests/scoring/test_worked_example.py` has already
+  mutated the same shared, cumulative dev database in this session — both
+  entirely within `backend/app/scoring/`/`backend/app/readers/` (features
+  004/005/007's modules), which this feature never touches.

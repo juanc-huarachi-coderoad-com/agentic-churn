@@ -15,6 +15,8 @@ from app.experience.domain.entities import (
     CommitmentComparisonRecord,
     CommitmentStatusRecord,
     ContributionRecord,
+    GeneratedDraft,
+    IssueEvidenceRecord,
     NarratorSummaryRecord,
     UsageComparisonRecord,
 )
@@ -27,6 +29,9 @@ class ClientProfileRecord:
     renewal_date: date | None = None
     """Added for `ClientHeader.days_to_renewal` — `research.md`'s Decision,
     `/speckit-analyze` finding CV2 (extends this existing port, not a new one)."""
+    communication_norms: str | None = None
+    """specs/009-draft-composer, `research.md` Decision 5 — the account-wide
+    free-text communication norms REQ-M10-04 personalizes drafts against."""
 
 
 class ClientProfileRepositoryPort(ABC):
@@ -160,6 +165,14 @@ class StakeholderReadPort(ABC):
     async def list_stakeholders(self) -> list[StakeholderRecord]:
         """Current profile stakeholders with their most recent real ledger
         activity — `last_seen_at is None` means never active."""
+        ...
+
+    @abstractmethod
+    async def get(self, stakeholder_id: UUID) -> StakeholderRecord | None:
+        """`None` if `stakeholder_id` doesn't resolve to a stakeholder on the
+        current profile — the draft composer's `404` path (specs/
+        009-draft-composer, `research.md` Decision 13, `/speckit-analyze`
+        finding U3: the original plan had no way to validate this)."""
         ...
 
 
@@ -367,3 +380,72 @@ class AskAgentResult:
 class AskAgentPort(ABC):
     @abstractmethod
     async def answer(self, question: str, *, asked_by_user_id: UUID) -> AskAgentResult: ...
+
+
+# ---------------------------------------------------------------------------
+# Draft composer (M10) — specs/009-draft-composer
+# ---------------------------------------------------------------------------
+
+
+class IssueReadPort(ABC):
+    @abstractmethod
+    async def get_issue_evidence(self, issue_id: UUID) -> IssueEvidenceRecord | None:
+        """The requested issue's own aggregated evidence — any issue with
+        cited evidence, not only the top-ranked one (Clarifications,
+        2026-08-16). `None` if the issue doesn't exist or has no validated
+        findings."""
+        ...
+
+
+class PlaybookReadPort(ABC):
+    @abstractmethod
+    async def finding_type_for_playbook(self, playbook_id: UUID) -> str | None:
+        """`playbook_actions.applies_to_finding_type` for one template —
+        used to filter the latest run's narrated actions down to the
+        requested issue's own finding types (research.md Decision 4)."""
+        ...
+
+
+@dataclass(frozen=True)
+class DraftMessageRecord:
+    id: UUID
+    issue_id: UUID
+    stakeholder_id: UUID
+    draft_text: str
+    tone_variant: str
+    evidence_event_ids: tuple[UUID, ...]
+    checks_passed: bool
+    copied_at: datetime | None
+    logged_manually_at: datetime | None
+
+
+class DraftMessageRepositoryPort(ABC):
+    @abstractmethod
+    async def persist(
+        self,
+        draft: GeneratedDraft,
+        *,
+        issue_id: UUID,
+        stakeholder_id: UUID,
+        requested_by_user_id: UUID,
+    ) -> UUID:
+        """One `INSERT` into `draft_messages` — only ever called once
+        `DraftCheckResult.passed` is `True` (research.md Decision 7); a
+        failing result never reaches this method."""
+        ...
+
+    @abstractmethod
+    async def get(self, draft_id: UUID) -> DraftMessageRecord | None: ...
+
+    @abstractmethod
+    async def stamp_copied(self, draft_id: UUID) -> bool:
+        """Sets `copied_at = now()`. Returns `False` if `draft_id` doesn't
+        resolve (the route's `404` path)."""
+        ...
+
+    @abstractmethod
+    async def stamp_logged_manually(self, draft_id: UUID) -> bool:
+        """Sets `logged_manually_at = now()` — an internal-only flag,
+        writes nowhere outside this table (REQ-M10-08). Returns `False` if
+        `draft_id` doesn't resolve (the route's `404` path)."""
+        ...

@@ -13,6 +13,7 @@ from app.db import engine, get_session
 from app.experience.adapters.ask_router import router as ask_router
 from app.experience.adapters.coverage_router import router as coverage_router
 from app.experience.adapters.dashboard_router import router as dashboard_router
+from app.experience.adapters.draft_router import router as draft_router
 from app.experience.adapters.evidence_router import router as evidence_router
 from app.ingestion.adapters.encryption import FernetEncryption
 
@@ -55,6 +56,7 @@ app.include_router(evidence_router)
 app.include_router(coverage_router)
 app.include_router(profile_router)
 app.include_router(ask_router)
+app.include_router(draft_router)
 
 
 @app.get("/health")

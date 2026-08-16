@@ -17,11 +17,15 @@ from app.experience.application.ports import (
     ClientProfileRepositoryPort,
     CoveragePort,
     CoverageReportRecord,
+    DraftMessageRecord,
+    DraftMessageRepositoryPort,
     FindingReadPort,
     FindingRecord,
     IdentityGapPort,
+    IssueReadPort,
     LedgerQueryPort,
     NarratorReadPort,
+    PlaybookReadPort,
     PulseEventPort,
     PulseEventRecord,
     QuarantineRecord,
@@ -37,6 +41,8 @@ from app.experience.domain.entities import (
     CommitmentComparisonRecord,
     CommitmentStatusRecord,
     ContributionRecord,
+    GeneratedDraft,
+    IssueEvidenceRecord,
     NarratorSummaryRecord,
     UsageComparisonRecord,
 )
@@ -110,14 +116,18 @@ class SqlAlchemyClientProfileRepository(ClientProfileRepositoryPort):
     async def get_current(self) -> ClientProfileRecord | None:
         result = await self._session.execute(
             text(
-                "SELECT client_name, renewal_date FROM client_profile_versions "
-                "WHERE is_current = true"
+                "SELECT client_name, renewal_date, communication_norms "
+                "FROM client_profile_versions WHERE is_current = true"
             )
         )
         row = result.one_or_none()
         if row is None:
             return None
-        return ClientProfileRecord(client_name=row.client_name, renewal_date=row.renewal_date)
+        return ClientProfileRecord(
+            client_name=row.client_name,
+            renewal_date=row.renewal_date,
+            communication_norms=row.communication_norms,
+        )
 
 
 class SqlAlchemyScoreReader(ScoreReadPort):
@@ -485,6 +495,28 @@ class SqlAlchemyStakeholderReader(StakeholderReadPort):
             for r in rows
         ]
 
+    async def get(self, stakeholder_id: UUID) -> StakeholderRecord | None:
+        # specs/009-draft-composer, research.md Decision 13 (/speckit-analyze
+        # finding U3) — a single-ID lookup, distinct from list_stakeholders'
+        # current-profile-only scan (mirrors IssueReadPort.get_issue_evidence's
+        # own single-ID-lookup shape).
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT s.id, s.name, s.role, "
+                    "(SELECT MAX(e.occurred_at) FROM events e WHERE e.stakeholder_id = s.id) "
+                    "AS last_seen_at "
+                    "FROM stakeholders s WHERE s.id = :id"
+                ),
+                {"id": stakeholder_id},
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return StakeholderRecord(
+            stakeholder_id=row.id, name=row.name, role=row.role, last_seen_at=row.last_seen_at
+        )
+
 
 class SqlAlchemyIdentityGapReader(IdentityGapPort):
     def __init__(self, session: AsyncSession) -> None:
@@ -670,3 +702,138 @@ class SqlAlchemyAskQueryRepository(AskQueryRepositoryPort):
             },
         )
         await self._session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Draft composer (M10) — specs/009-draft-composer
+# ---------------------------------------------------------------------------
+
+
+class SqlAlchemyIssueReader(IssueReadPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_issue_evidence(self, issue_id: UUID) -> IssueEvidenceRecord | None:
+        # status = 'validated' filter, matching SqlAlchemyFindingReader.
+        # get_finding's own precedent (research.md Decision 3) — an issue
+        # whose only findings are pending/quarantined has no evidence a
+        # draft may cite.
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT i.label, f.finding_type, f.cited_event_ids "
+                    "FROM issues i "
+                    "JOIN finding_issue_map fim ON fim.issue_id = i.id "
+                    "JOIN findings f ON f.id = fim.finding_id AND f.status = 'validated' "
+                    "WHERE i.id = :issue_id"
+                ),
+                {"issue_id": issue_id},
+            )
+        ).all()
+        if not rows:
+            return None
+        finding_types: dict[str, None] = {}
+        cited_event_ids: dict[UUID, None] = {}
+        for r in rows:
+            finding_types[r.finding_type] = None
+            for event_id in r.cited_event_ids:
+                cited_event_ids[event_id] = None
+        return IssueEvidenceRecord(
+            issue_id=issue_id,
+            label=rows[0].label,
+            finding_types=tuple(finding_types),
+            cited_event_ids=tuple(cited_event_ids),
+        )
+
+
+class SqlAlchemyPlaybookReader(PlaybookReadPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def finding_type_for_playbook(self, playbook_id: UUID) -> str | None:
+        row = (
+            await self._session.execute(
+                text("SELECT applies_to_finding_type FROM playbook_actions WHERE id = :id"),
+                {"id": playbook_id},
+            )
+        ).one_or_none()
+        return row.applies_to_finding_type if row is not None else None
+
+
+class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def persist(
+        self,
+        draft: GeneratedDraft,
+        *,
+        issue_id: UUID,
+        stakeholder_id: UUID,
+        requested_by_user_id: UUID,
+    ) -> UUID:
+        row = (
+            await self._session.execute(
+                text(
+                    "INSERT INTO draft_messages (issue_id, stakeholder_id, "
+                    "requested_by_user_id, draft_text, tone_variant, evidence_event_ids, "
+                    "checks_passed) "
+                    "VALUES (:issue_id, :stakeholder_id, :requested_by_user_id, :draft_text, "
+                    "CAST(:tone_variant AS tone_variant), :evidence_event_ids, "
+                    ":checks_passed) "
+                    "RETURNING id"
+                ),
+                {
+                    "issue_id": issue_id,
+                    "stakeholder_id": stakeholder_id,
+                    "requested_by_user_id": requested_by_user_id,
+                    "draft_text": draft.draft_text,
+                    "tone_variant": draft.tone_variant,
+                    "evidence_event_ids": list(draft.evidence_event_ids),
+                    "checks_passed": draft.check_result.passed,
+                },
+            )
+        ).one()
+        await self._session.commit()
+        return row.id
+
+    async def get(self, draft_id: UUID) -> DraftMessageRecord | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT id, issue_id, stakeholder_id, draft_text, tone_variant, "
+                    "evidence_event_ids, checks_passed, copied_at, logged_manually_at "
+                    "FROM draft_messages WHERE id = :id"
+                ),
+                {"id": draft_id},
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return DraftMessageRecord(
+            id=row.id,
+            issue_id=row.issue_id,
+            stakeholder_id=row.stakeholder_id,
+            draft_text=row.draft_text,
+            tone_variant=row.tone_variant,
+            evidence_event_ids=tuple(row.evidence_event_ids),
+            checks_passed=row.checks_passed,
+            copied_at=row.copied_at,
+            logged_manually_at=row.logged_manually_at,
+        )
+
+    async def stamp_copied(self, draft_id: UUID) -> bool:
+        result = await self._session.execute(
+            text("UPDATE draft_messages SET copied_at = now() WHERE id = :id"),
+            {"id": draft_id},
+        )
+        await self._session.commit()
+        return result.rowcount > 0
+
+    async def stamp_logged_manually(self, draft_id: UUID) -> bool:
+        result = await self._session.execute(
+            text("UPDATE draft_messages SET logged_manually_at = now() WHERE id = :id"),
+            {"id": draft_id},
+        )
+        await self._session.commit()
+        return result.rowcount > 0

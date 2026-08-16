@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { apiFetch } from '../auth/api-client'
 import { AskBar } from '../ask/ask-bar'
+import { DraftComposerPanel } from '../draft-composer/draft-composer-panel'
 import { EvidencePanel } from '../evidence/evidence-panel'
 import { ContributionBars } from './contribution-bars'
 import { CoverageLine } from './coverage-line'
@@ -21,6 +22,9 @@ async function fetchDashboard(): Promise<DashboardResponse> {
 
 export function DashboardPage() {
   const [selectedContributionId, setSelectedContributionId] = useState<string | null>(null)
+  const [draftHandoff, setDraftHandoff] = useState<{ issueId: string; stakeholderId: string } | null>(
+    null,
+  )
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dashboard'],
     queryFn: fetchDashboard,
@@ -102,7 +106,14 @@ export function DashboardPage() {
         scoreContributionId={selectedContributionId}
         onClose={() => setSelectedContributionId(null)}
       />
-      <AskBar />
+      <DraftComposerPanel
+        issueId={draftHandoff?.issueId ?? null}
+        stakeholderId={draftHandoff?.stakeholderId ?? null}
+        onClose={() => setDraftHandoff(null)}
+      />
+      <AskBar
+        onOpenDraftComposer={(issueId, stakeholderId) => setDraftHandoff({ issueId, stakeholderId })}
+      />
     </main>
   )
 }

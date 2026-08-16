@@ -247,3 +247,53 @@ messages declines with `insufficient_history`, distinct from
 shows the fallback rate without querying the database directly. See
 `specs/008-narrator-and-ask-agent/quickstart.md` for the full validation
 walkthrough, including the now-real `tests/golden_replay/` suite.
+
+## Draft Composer (Phase 9)
+
+"The closer." Generates a client-facing message from a requested issue's own
+evidence, the client profile's communication norms, real thread history, and
+the latest run's already-agreed actions — then runs it through five
+mechanical pre-display checks (facts, dates, invented causes, internal
+leaks, commercial concessions) before it can ever be persisted or displayed.
+**No new environment prerequisite** — reuses the same `GENERATION_MODEL_ID`
+Sonnet tier the Narrator and Ask agent already use, and no migration: the
+`draft_messages` table has existed, unpopulated, since feature 001.
+
+Generate a draft for the worked example's top issue:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:${API_PORT:-8000}/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"marta","password":"agentic-demo-2026"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"issue_id":"<issue-id>","stakeholder_id":"<stakeholder-id>","tone_variant":"direct"}' \
+  http://localhost:${API_PORT:-8000}/api/drafts
+```
+
+**Expected**: `200`, `checks_passed: true`, a message opening with the
+specific evidence-backed failure, exactly one ask, and every fact traceable
+back to real evidence/thread history/profile data. A draft that fails any of
+the five checks returns `422` with the same generic message
+`architecture/06-error-handling.md` already defines for a generation
+error — never a partial draft, never a message naming which check failed.
+
+Copy or log a generated draft as manually sent:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:${API_PORT:-8000}/api/drafts/<draft-id>/copy
+curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" \
+  http://localhost:${API_PORT:-8000}/api/drafts/<draft-id>/log-as-sent
+```
+
+**There is no `/send` route — anywhere, in any form (REQ-M10-P1).** A
+request against `.../send` returns `404` because no such route is ever
+registered; `tests/experience/test_no_external_transport.py` mechanically
+confirms no file this feature touches even imports an outbound-transport
+client (SMTP, HTTP client used for a third-party send, chat/CRM SDK) — a
+structural guarantee, not just an absent route. The Ask agent's
+`draft_handoff` response (feature 008) now opens a real panel in the
+dashboard instead of a placeholder message. See
+`specs/009-draft-composer/quickstart.md` for the full validation walkthrough,
+including the scripted red-team case per check.

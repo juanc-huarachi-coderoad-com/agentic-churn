@@ -59,6 +59,9 @@ class _FakeStakeholders(StakeholderReadPort):
     async def list_stakeholders(self):
         return []
 
+    async def get(self, stakeholder_id):
+        return None
+
 
 def _toolkit() -> AskAgentToolkit:
     return AskAgentToolkit(
