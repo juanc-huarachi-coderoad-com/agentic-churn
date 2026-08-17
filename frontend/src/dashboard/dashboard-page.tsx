@@ -113,6 +113,7 @@ export function DashboardPage() {
       />
       <AskBar
         onOpenDraftComposer={(issueId, stakeholderId) => setDraftHandoff({ issueId, stakeholderId })}
+        onOpenEvidence={setSelectedContributionId}
       />
     </main>
   )

@@ -37,6 +37,7 @@ const WORKED_EXAMPLE = {
   ],
   arithmetic_explanation:
     'Base 20 points for broken_response_promise, increased 50% for product area criticality, increased 30% for recency — 39.0 points total.',
+  disclosure_text: null,
 }
 
 describe('EvidencePanel', () => {
@@ -58,8 +59,47 @@ describe('EvidencePanel', () => {
     expect(screen.getByText('response time exceeded the promised threshold')).toBeInTheDocument()
     expect(screen.getByText('“Slow API response”')).toBeInTheDocument()
     expect(screen.getByText(/39\.0 points total/)).toBeInTheDocument()
-    // No feedback controls anywhere on the panel (FR-014 — feature 010's scope).
-    expect(screen.queryByText(/false alarm/i)).not.toBeInTheDocument()
+    // Verdict controls are always present (FR-001); disclosure text is not,
+    // since this pattern has never been damped.
+    expect(screen.getByRole('button', { name: 'False alarm' })).toBeInTheDocument()
+    expect(screen.queryByText(/weight reduced/i)).not.toBeInTheDocument()
+  })
+
+  it('renders the disclosure text when the pattern is damped', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(
+      jsonResponse({
+        ...WORKED_EXAMPLE,
+        disclosure_text: 'weight reduced — your team flagged this pattern as a false alarm',
+      }),
+    )
+    renderPanel('ba87c77f-e21f-45af-9705-533138e948bf')
+
+    expect(
+      await screen.findByText('weight reduced — your team flagged this pattern as a false alarm'),
+    ).toBeInTheDocument()
+  })
+
+  it('submits a verdict in a single click, with no modal or confirmation', async () => {
+    vi.mocked(apiFetch).mockImplementation(async (path) => {
+      if (path === '/api/feedback') {
+        return new Response(null, { status: 204 })
+      }
+      return jsonResponse(WORKED_EXAMPLE)
+    })
+    renderPanel('ba87c77f-e21f-45af-9705-533138e948bf')
+
+    await screen.findByText('responds within 4 promised business hours')
+    await userEvent.click(screen.getByRole('button', { name: 'False alarm' }))
+
+    expect(apiFetch).toHaveBeenCalledWith(
+      '/api/feedback',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ finding_id: WORKED_EXAMPLE.finding_id, verdict: 'false_alarm' }),
+      }),
+    )
+    // No modal/dialog rendered as a result of the click.
+    expect(screen.queryByRole('dialog', { name: /confirm/i })).not.toBeInTheDocument()
   })
 
   it('calls onClose when the close button is clicked', async () => {

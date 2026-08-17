@@ -17,6 +17,8 @@ from app.experience.application.ports import (
     ClientProfileRepositoryPort,
     CoveragePort,
     CoverageReportRecord,
+    DampingDisclosurePort,
+    DisclosureRecord,
     DraftMessageRecord,
     DraftMessageRepositoryPort,
     FindingReadPort,
@@ -241,7 +243,7 @@ class SqlAlchemyFindingReader(FindingReadPort):
         row = (
             await self._session.execute(
                 text(
-                    "SELECT id, finding_type, cited_event_ids FROM findings "
+                    "SELECT id, finding_type, cited_event_ids, reader_type FROM findings "
                     "WHERE id = :id AND status = 'validated'"
                 ),
                 {"id": finding_id},
@@ -250,7 +252,10 @@ class SqlAlchemyFindingReader(FindingReadPort):
         if row is None:
             return None
         return FindingRecord(
-            id=row.id, finding_type=row.finding_type, cited_event_ids=tuple(row.cited_event_ids)
+            id=row.id,
+            finding_type=row.finding_type,
+            cited_event_ids=tuple(row.cited_event_ids),
+            reader_type=row.reader_type,
         )
 
     async def resolve_events(self, event_ids: list[UUID]) -> list[CitedEventRecord]:
@@ -837,3 +842,27 @@ class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
         )
         await self._session.commit()
         return result.rowcount > 0
+
+
+class SqlAlchemyDampingDisclosureReader(DampingDisclosurePort):
+    """Read-only consumer of feature 010's `damping_weights` table — the
+    weight-gated filter (`AND weight < 1.000`) is the single source of
+    truth for "should this ever be shown," not any logic in the caller
+    (`specs/010-feedback-memory/research.md` Decision 4)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_disclosure(self, pattern_signature: str) -> DisclosureRecord | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT disclosure_text FROM damping_weights "
+                    "WHERE pattern_signature = :ps AND weight < 1.000"
+                ),
+                {"ps": pattern_signature},
+            )
+        ).one_or_none()
+        if row is None or row.disclosure_text is None:
+            return None
+        return DisclosureRecord(disclosure_text=row.disclosure_text)

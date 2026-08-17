@@ -3,24 +3,25 @@ import type { AskComponentResponse } from '../types'
 interface AnswerRendererProps {
   answer: AskComponentResponse
   onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+  onOpenEvidence?: (scoreContributionId: string) => void
 }
 
 // One renderer per closed-set component type (REQ-M9-02) — the Ask agent
 // never answers with a paragraph, only one of these fixed shapes. Every
 // branch below reads only fields the backend already computed; nothing here
 // generates or reorders anything itself (REQ-M9-03).
-export function AnswerRenderer({ answer, onOpenDraftComposer }: AnswerRendererProps) {
+export function AnswerRenderer({ answer, onOpenDraftComposer, onOpenEvidence }: AnswerRendererProps) {
   const props = answer.component_props
 
   switch (answer.component) {
     case 'delta_breakdown':
-      return <DeltaBreakdown props={props} />
+      return <DeltaBreakdown props={props} onOpenEvidence={onOpenEvidence} />
     case 'baseline_comparison':
       return <BaselineComparison props={props} />
     case 'stakeholder_cards':
       return <StakeholderList props={props} />
     case 'ranked_issues':
-      return <RankedIssues props={props} />
+      return <RankedIssues props={props} onOpenEvidence={onOpenEvidence} />
     case 'action_checklist':
       return <ActionChecklist props={props} />
     case 'commitments_status':
@@ -36,9 +37,20 @@ interface Cause {
   finding_type: string
   points: number
   is_positive: boolean
+  // Already present in the backend response (app.experience.adapters.
+  // ask_agent_graph.py's query_score_runs); simply wasn't typed/read on the
+  // frontend until feature 010 needed it for the evidence click-through
+  // (specs/010-feedback-memory/research.md Decision 3).
+  score_contribution_id: string
 }
 
-function DeltaBreakdown({ props }: { props: Record<string, unknown> }) {
+function DeltaBreakdown({
+  props,
+  onOpenEvidence,
+}: {
+  props: Record<string, unknown>
+  onOpenEvidence?: (scoreContributionId: string) => void
+}) {
   const causes = (props.causes as Cause[] | undefined) ?? []
   return (
     <div className="space-y-2">
@@ -47,12 +59,19 @@ function DeltaBreakdown({ props }: { props: Record<string, unknown> }) {
       </p>
       <ul className="space-y-1">
         {causes.map((cause) => (
-          <li key={cause.finding_type} className="flex justify-between text-sm">
-            <span className="text-neutral-700">{cause.finding_type.replace(/_/g, ' ')}</span>
-            <span className={cause.is_positive ? 'text-green-700' : 'text-red-700'}>
-              {cause.points > 0 ? '+' : ''}
-              {cause.points.toFixed(1)}
-            </span>
+          <li key={cause.finding_type}>
+            <button
+              type="button"
+              disabled={!onOpenEvidence}
+              onClick={() => onOpenEvidence?.(cause.score_contribution_id)}
+              className="flex w-full justify-between text-left text-sm disabled:cursor-default"
+            >
+              <span className="text-neutral-700">{cause.finding_type.replace(/_/g, ' ')}</span>
+              <span className={cause.is_positive ? 'text-green-700' : 'text-red-700'}>
+                {cause.points > 0 ? '+' : ''}
+                {cause.points.toFixed(1)}
+              </span>
+            </button>
           </li>
         ))}
       </ul>
@@ -101,14 +120,27 @@ function StakeholderList({ props }: { props: Record<string, unknown> }) {
   )
 }
 
-function RankedIssues({ props }: { props: Record<string, unknown> }) {
+function RankedIssues({
+  props,
+  onOpenEvidence,
+}: {
+  props: Record<string, unknown>
+  onOpenEvidence?: (scoreContributionId: string) => void
+}) {
   const issues = (props.ranked_issues as Cause[] | undefined) ?? []
   return (
     <ol className="list-decimal space-y-1 pl-5 text-sm">
       {issues.map((issue) => (
-        <li key={issue.finding_type} className="text-neutral-700">
-          {issue.finding_type.replace(/_/g, ' ')}{' '}
-          <span className="text-neutral-400">({Math.abs(issue.points).toFixed(1)} pts)</span>
+        <li key={issue.finding_type}>
+          <button
+            type="button"
+            disabled={!onOpenEvidence}
+            onClick={() => onOpenEvidence?.(issue.score_contribution_id)}
+            className="text-left text-neutral-700 disabled:cursor-default"
+          >
+            {issue.finding_type.replace(/_/g, ' ')}{' '}
+            <span className="text-neutral-400">({Math.abs(issue.points).toFixed(1)} pts)</span>
+          </button>
         </li>
       ))}
     </ol>

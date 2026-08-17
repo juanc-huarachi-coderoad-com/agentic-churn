@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
+from app.context.domain.entities import DampingWeight, FindingPatternComponents
 from app.context.domain.profile_schema import ClientProfileInput
 
 
@@ -54,3 +55,49 @@ class ClientProfileRepositoryPort(ABC):
 
     @abstractmethod
     async def get_current(self) -> ProfileVersionSummary | None: ...
+
+
+# ---------------------------------------------------------------------------
+# M4 · Feedback memory (`specs/010-feedback-memory/data-model.md`)
+# ---------------------------------------------------------------------------
+
+
+class FeedbackFindingReadPort(ABC):
+    @abstractmethod
+    async def get_pattern_components(
+        self, finding_id: UUID
+    ) -> FindingPatternComponents | None:
+        """`None` if `finding_id` doesn't exist or isn't `validated` — mirrors
+        `SqlAlchemyFindingReader.get_finding`'s existing validated-only filter
+        precedent (`app.experience.adapters.sqlalchemy_repository`)."""
+        ...
+
+
+class IssueTopFindingReadPort(ABC):
+    @abstractmethod
+    async def get_top_finding_id(self, issue_id: UUID) -> UUID | None:
+        """`rank_within_issue = 1` for the given issue; `None` if the issue
+        doesn't exist or has no mapped findings."""
+        ...
+
+
+class FeedbackVerdictRepositoryPort(ABC):
+    @abstractmethod
+    async def get_damping(self, pattern_signature: str) -> DampingWeight:
+        """A zeroed, `weight=1.0` default if no row exists yet — never
+        `None` (FR-008's upsert semantics live at the write, not the read)."""
+        ...
+
+    @abstractmethod
+    async def record(
+        self,
+        *,
+        finding_id: UUID | None,
+        issue_id: UUID | None,
+        verdict: str,
+        submitted_by_user_id: UUID,
+        updated: DampingWeight,
+    ) -> None:
+        """One transaction: append to `feedback_verdicts`, upsert
+        `damping_weights`."""
+        ...

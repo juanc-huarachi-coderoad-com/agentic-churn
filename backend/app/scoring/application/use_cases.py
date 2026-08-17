@@ -8,6 +8,7 @@ persist everything — recomputed entirely from zero every time (REQ-M6-20, REQ-
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from app.context.domain.damping_calculator import pattern_signature
 from app.scoring.application.ports import (
     ClientProfileMultipliersPort,
     CoverageCheckPort,
@@ -152,8 +153,9 @@ class RecomputeScoreUseCase:
         total_positive_points = 0.0
 
         for finding in findings:
-            pattern_signature = f"{finding.reader_type}+{finding.finding_type}"
-            damping = await self._damping.get_weight(pattern_signature)
+            damping = await self._damping.get_weight(
+                pattern_signature(finding.reader_type, finding.finding_type)
+            )
             influence = _influence(finding.id)
             criticality = _criticality(finding.id)
 

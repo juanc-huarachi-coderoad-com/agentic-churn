@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from app.context.domain.damping_calculator import pattern_signature
 from app.experience.application.ports import (
     ClientProfileRepositoryPort,
     CoveragePort,
+    DampingDisclosurePort,
     DraftMessageRepositoryPort,
     FindingReadPort,
     IdentityGapPort,
@@ -354,6 +356,7 @@ class EvidenceTraceResult:
     comparison: EvidenceComparison
     quoted_messages: list[QuotedMessageResult]
     arithmetic: list[ArithmeticClause]
+    disclosure_text: str | None
 
 
 class GetEvidenceTraceUseCase:
@@ -362,9 +365,15 @@ class GetEvidenceTraceUseCase:
     `evaluate_generic_evidence()` for a type outside the five feature-005
     readers produce (`/speckit-analyze` finding CV1)."""
 
-    def __init__(self, score: ScoreReadPort, findings: FindingReadPort) -> None:
+    def __init__(
+        self,
+        score: ScoreReadPort,
+        findings: FindingReadPort,
+        damping: DampingDisclosurePort | None = None,
+    ) -> None:
         self._score = score
         self._findings = findings
+        self._damping = damping
 
     async def execute(self, score_contribution_id: UUID) -> EvidenceTraceResult:
         contribution = await self._score.get_contribution(score_contribution_id)
@@ -379,6 +388,13 @@ class GetEvidenceTraceUseCase:
         comparison = await self._dispatch_comparison(finding.finding_type, events)
         arithmetic = format_arithmetic(contribution)
 
+        disclosure_text = None
+        if self._damping is not None:
+            pattern = pattern_signature(finding.reader_type, finding.finding_type)
+            disclosure = await self._damping.get_disclosure(pattern)
+            if disclosure is not None:
+                disclosure_text = disclosure.disclosure_text
+
         return EvidenceTraceResult(
             finding_id=finding.id,
             finding_type=finding.finding_type,
@@ -391,6 +407,7 @@ class GetEvidenceTraceUseCase:
                 for e in events
             ],
             arithmetic=list(arithmetic),
+            disclosure_text=disclosure_text,
         )
 
     async def _dispatch_comparison(

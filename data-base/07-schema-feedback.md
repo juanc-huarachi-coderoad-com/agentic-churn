@@ -17,7 +17,7 @@ Append-only log of every verdict click.
 | `issue_id` | UUID FK → `issues.id`, NULL | If the verdict applies to a whole issue card |
 | `verdict` | ENUM(`correct`,`false_alarm`,`resolved`) | REQ-M4-01 |
 | `submitted_by_user_id` | UUID FK → `users.id` | A real identity, not free text — see `data-base/12-users-and-auth.md` |
-| `pattern_signature` | TEXT | `reader_type + finding_type + event_signature_class` — the key `damping_weights` groups on (REQ-M4-02) |
+| `pattern_signature` | TEXT | `reader_type + finding_type` — the key `damping_weights` groups on (REQ-M4-02). Two components, not three: the already-shipped scoring engine (feature 004, `RecomputeScoreUseCase.execute`) constructs and reads this key as literally `f"{reader_type}+{finding_type}"`, with no event-type component — corrected here from an earlier draft of this doc that described a third "event_signature_class" component never actually implemented (feature 010, `/speckit-plan`, 2026-08-16). `finding_type_config` (below) is itself keyed by `finding_type` alone, consistent with this granularity. |
 | `created_at` | TIMESTAMPTZ | |
 
 A `CHECK` constraint (`finding_id IS NOT NULL OR issue_id IS NOT NULL`) guarantees every verdict applies to *something* — a verdict with both fields NULL would be meaningless and is structurally rejected.

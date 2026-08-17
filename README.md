@@ -297,3 +297,48 @@ structural guarantee, not just an absent route. The Ask agent's
 dashboard instead of a placeholder message. See
 `specs/009-draft-composer/quickstart.md` for the full validation walkthrough,
 including the scripted red-team case per check.
+
+## Feedback Memory (Phase 10)
+
+"The learning loop." A single-click verdict (`correct`/`false_alarm`/
+`resolved`) on any finding-bearing card — the evidence trace panel, reached
+from the dashboard or an Ask-agent answer — recomputes that pattern's
+damping weight, which every future scoring run reads as a multiplicative
+term. No retraining, no fine-tuning: one stored number, always shown with a
+plain-language reason. **No new environment prerequisite, no migration** —
+`feedback_verdicts`/`damping_weights` have existed, unpopulated, since
+feature 001.
+
+Mark a finding a false alarm, twice, then confirm the pattern later:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:${API_PORT:-8000}/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"marta","password":"agentic-demo-2026"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"finding_id":"<finding-id>","verdict":"false_alarm"}' \
+  http://localhost:${API_PORT:-8000}/api/feedback
+curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"finding_id":"<finding-id>","verdict":"false_alarm"}' \
+  http://localhost:${API_PORT:-8000}/api/feedback
+curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"finding_id":"<finding-id>","verdict":"correct"}' \
+  http://localhost:${API_PORT:-8000}/api/feedback
+```
+
+**Expected**: three `204`s; `damping_weights` for that finding's pattern
+(`reader_type+finding_type`) shows `weight` at `0.500` → `0.250` → `0.2875`
+(REQ-M6-CAL-03a's worked values) — losing trust is faster than regaining
+it, by design. The pattern's evidence trace (`GET /api/evidence/{id}`) now
+carries a non-null `disclosure_text`; a fresh scoring run reads the new
+weight, but the `score_run` that existed before any of these calls stays
+byte-identical. `false_alarm`/`correct` submitted with only an `issue_id`
+(no `finding_id`) return `422` — one click on a multi-reader issue can
+never touch several different readers' weights at once (FR-005a). See
+`specs/010-feedback-memory/quickstart.md` for the full validation
+walkthrough.

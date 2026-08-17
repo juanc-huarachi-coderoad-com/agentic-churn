@@ -86,6 +86,70 @@ async def test_evidence_reproduces_the_worked_example(client, auth_token):
     assert body["arithmetic_explanation"].endswith(" points total.")
 
 
+async def test_evidence_disclosure_text_absent_when_pattern_never_damped(client, auth_token):
+    """spec.md User Story 2 Acceptance Scenario 2 — no disclosure is shown
+    for a pattern that has never received a verdict."""
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT sc.id FROM score_contributions sc "
+                    "JOIN findings f ON f.id = sc.finding_id "
+                    "WHERE f.status = 'validated' LIMIT 1"
+                )
+            )
+        ).one_or_none()
+    if row is None:
+        pytest.skip("no score_contribution seeded yet")
+
+    response = await client.get(
+        f"/api/evidence/{row.id}", headers={"Authorization": f"Bearer {auth_token}"}
+    )
+    assert response.status_code == 200
+    assert response.json()["disclosure_text"] is None
+
+
+async def test_evidence_disclosure_text_present_once_pattern_is_damped(client, auth_token):
+    """spec.md User Story 2 Acceptance Scenario 1 — REQ-M4-04."""
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text(
+                    "SELECT sc.id, f.reader_type, f.finding_type FROM score_contributions sc "
+                    "JOIN findings f ON f.id = sc.finding_id "
+                    "WHERE f.status = 'validated' LIMIT 1"
+                )
+            )
+        ).one_or_none()
+    if row is None:
+        pytest.skip("no score_contribution seeded yet")
+    pattern = f"{row.reader_type}+{row.finding_type}"
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO damping_weights "
+                "(pattern_signature, weight, false_alarm_count, disclosure_text) "
+                "VALUES (:ps, 0.500, 1, 'weight reduced — your team flagged this pattern "
+                "as a false alarm')"
+            ),
+            {"ps": pattern},
+        )
+    try:
+        response = await client.get(
+            f"/api/evidence/{row.id}", headers={"Authorization": f"Bearer {auth_token}"}
+        )
+        assert response.status_code == 200
+        assert response.json()["disclosure_text"] == (
+            "weight reduced — your team flagged this pattern as a false alarm"
+        )
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("DELETE FROM damping_weights WHERE pattern_signature = :ps"), {"ps": pattern}
+            )
+
+
 async def test_evidence_falls_back_honestly_for_a_finding_type_outside_the_dispatch_table(
     client, auth_token
 ):

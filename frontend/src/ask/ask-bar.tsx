@@ -8,12 +8,13 @@ type AskBarState = 'idle' | 'thinking' | 'answered'
 
 interface AskBarProps {
   onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+  onOpenEvidence?: (scoreContributionId: string) => void
 }
 
 // specs/008-narrator-and-ask-agent — always present, bottom of screen
 // (base/...md §11.3), Idle/Thinking/Answered (REQ-M8-02). Never recomputes
 // anything itself — every answer is exactly what POST /api/ask returned.
-export function AskBar({ onOpenDraftComposer }: AskBarProps) {
+export function AskBar({ onOpenDraftComposer, onOpenEvidence }: AskBarProps) {
   const [question, setQuestion] = useState('')
   const mutation = useMutation({ mutationFn: postAsk })
 
@@ -45,7 +46,11 @@ export function AskBar({ onOpenDraftComposer }: AskBarProps) {
             )}
             {mutation.data &&
               (isComponentResponse(mutation.data) ? (
-                <AnswerRenderer answer={mutation.data} onOpenDraftComposer={onOpenDraftComposer} />
+                <AnswerRenderer
+                  answer={mutation.data}
+                  onOpenDraftComposer={onOpenDraftComposer}
+                  onOpenEvidence={onOpenEvidence}
+                />
               ) : (
                 <div>
                   <p className="text-sm text-neutral-700">{mutation.data.fallback_text}</p>

@@ -38,7 +38,7 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 007 | [`model-findings`](007-model-findings/) | 7 · Tone/Intent + validation gate | ✅ **Complete** — all 30 tasks implemented and verified against real Docker/Postgres, including four genuine bugs found and fixed (see Log) | `requirements/05-interpreters-readers.md` (Tone/Intent/M5a) | `architecture/04-ai-safety-and-model-usage.md`, `05-agent-catalog.md` |
 | 008 | [`narrator-and-ask-agent`](008-narrator-and-ask-agent/) | 8 · Explanation layer | ✅ **Complete** — all 43 tasks implemented and verified against real Docker/Postgres, including a real layer-boundary violation and a golden-replay test-design bug, both found and fixed (see Log) | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | [`draft-composer`](009-draft-composer/) | 9 · The closer | ✅ **Complete** — all 36 tasks implemented and verified against real Docker/Postgres, including a `/speckit-analyze` remediation before implementation (5→3→5 checks, see Log) and one genuine regression found and fixed during implementation (see Log) | `requirements/10-draft-composer.md` | `sequences/04` |
-| 010 | `feedback-memory` | 10 · Learning loop | ⬜ Not started | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
+| 010 | [`feedback-memory`](010-feedback-memory/) | 10 · Learning loop | ✅ **Complete** — all 31 tasks implemented and verified against a freshly rebuilt real Docker/Postgres stack, including a real duplicate-formula discovery and a `pattern_signature` doc/code mismatch found and fixed (see Log) | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
 | 011 | `production-hardening` | 11 · Hardening | ⬜ Not started | remaining NFRs, `decisions/01-mvp-scope-and-phasing.md` | — |
 
 `requirements/12-traceability-matrix.md` maps REQ-ID → spec section → module →
@@ -397,3 +397,79 @@ Repeat for each row above, in order:
   mutated the same shared, cumulative dev database in this session — both
   entirely within `backend/app/scoring/`/`backend/app/readers/` (features
   004/005/007's modules), which this feature never touches.
+- **2026-08-16** — Feature 010 (`feedback-memory`) specified, clarified (2
+  questions — `pattern_signature`'s composition, later corrected during
+  `/speckit-plan` once the already-shipped scoring engine's real code was
+  read (see below); an issue-scoped verdict never needs to fan out across
+  several readers' patterns, since `false_alarm`/`correct` always require
+  a specific `finding_id` and issue-scoped verdicts are effectively always
+  `resolved`, which REQ-M6-CAL-03b already guarantees never touches
+  weight), planned, analyzed (4 findings — 2 HIGH: `plan.md`'s Project
+  Structure tree still showed a nonexistent `tests/context/` directory
+  after `tasks.md` had already corrected it to the real `tests/unit/`
+  convention, and the static no-LLM-import scan (T029) was scoped only to
+  `app/context/` despite this feature also touching `app/experience/`/
+  `app/scoring/`; 2 MEDIUM: a confusing double-priority phase header, and
+  FR-004/FR-009 having no task or "intentionally absent" note unlike
+  REQ-M4-P1/P2 — all fixed before implementation), and implemented. All 31
+  tasks complete: `RecordFeedbackVerdictUseCase` lands inside `app.context`
+  (M4's designated home per `decisions/02-repo-and-tooling.md`, alongside
+  M3) with its own pure `damping_calculator.py`
+  (`pattern_signature`/`compute_weight`/`build_disclosure_text`,
+  REQ-M6-CAL-03a/b); `POST /api/feedback` is real for the first time;
+  `GET /api/evidence/{id}` gains a live `disclosure_text` field; and
+  `EvidencePanel` (`frontend/src/evidence/evidence-panel.tsx`) gets its
+  first real verdict controls, closing the exact slot feature 006's own
+  comment reserved for this feature ("no feedback controls here — feature
+  010's job"). The Ask agent's `delta_breakdown`/`ranked_issues` answers
+  now click through to that same panel via a field (`score_contribution_id`)
+  their backend response already sent but the frontend never read — zero
+  new backend surface needed for that wiring. Verified against a
+  completely fresh, rebuilt stack (`docker compose down -v` +
+  `up --build -d`, then `scripts/seed.py` → `run_collector.py` →
+  `seed_score_fixture.py` → `compute_score.py`, the same bootstrap
+  sequence feature 004's quickstart documents): every step of
+  `quickstart.md` walked live via `curl` against the real running `api`
+  container — `weight` moving `1.000 → 0.500 → 0.250 → 0.2875` exactly on
+  REQ-M6-CAL-03a's worked values (stored as `0.287` at
+  `damping_weights.weight`'s own `NUMERIC(4,3)` precision), the matching
+  `disclosure_text` wording, a pre-existing `score_run` staying
+  byte-identical after a fresh recompute while that same fresh run's
+  `score_contributions.damping` read the new weight live and the
+  dashboard score moved `91.82 → 71.60` as a direct, observed
+  consequence, and REQ-M4-P2/FR-005a's `422` rejection of an
+  issue-only `false_alarm`; 148 backend tests + a dedicated 8-test
+  real-DB feedback suite + 25 frontend tests all pass, and
+  `lint-imports --config ../.importlinter` keeps all 3 contracts clean
+  with the two new cross-module `domain`→`domain` imports this feature
+  adds (`app.scoring.application`→`app.context.domain` for
+  `pattern_signature`, `app.experience`→`app.context.domain` for the
+  same). Two genuine findings, not by inspection: (1) `data-base/
+  07-schema-feedback.md` documented `pattern_signature` as
+  `reader_type+finding_type+event_signature_class` (three components) —
+  found false during `/speckit-plan`, before any code was written, by
+  reading feature 004's actual shipped `RecomputeScoreUseCase` source
+  rather than trusting the prose doc: it constructs and reads the key as
+  literally `f"{reader_type}+{finding_type}"`, two components, with no
+  event-type join at all. Building a three-component writer against a
+  two-component reader would have made every `damping_weights` lookup
+  miss silently, so this feature follows the shipped format instead —
+  `spec.md`'s Clarifications entry and `data-base/07-schema-feedback.md`'s
+  own prose were both corrected in place. (2)
+  `app.scoring.domain.services.DampingCalculator` already existed —
+  feature 004 built and unit-tested the identical REQ-M6-CAL-03a formula
+  ahead of time, but nothing in production ever called it. Found via a
+  pytest test-basename collision (`tests/scoring/test_damping_
+  calculator.py` vs. this feature's own new test file of the same name),
+  not by inspection; this feature's `compute_weight()` now delegates to
+  that pre-existing class instead of reimplementing the arithmetic a
+  second time, removing a real duplication before it could silently
+  drift — the same "one canonical implementation" reasoning already
+  applied to `pattern_signature` itself. One pre-existing, non-blocking
+  gap reconfirmed unrelated to this feature during full-suite
+  verification: the same `tests/readers/test_run_readers_use_case.py`
+  `recurring_issue`-citing-only-1-event failure this roadmap already
+  documented for feature 009, reproducing again for the identical reason
+  (the shared, cumulative dev database's `tests/scoring/` suite mutating
+  state before `tests/readers/` runs in the same session) — not touched by
+  this feature's own module boundaries.

@@ -350,6 +350,7 @@ components:
         what_changed: { type: array, items: { type: string } }
         quoted_messages: { type: array, items: { type: object, properties: { event_id: { type: string, format: uuid }, text: { type: string }, occurred_at: { type: string, format: date-time } } } }
         arithmetic_explanation: { type: string, description: "The maths in plain sentences, spec §11.4" }
+        disclosure_text: { type: string, nullable: true, description: "REQ-M4-04, specs/010-feedback-memory. Present only when this finding's pattern currently has damping_weights.weight < 1.0; null otherwise — never an empty string." }
 
     CoverageResponse:
       type: object

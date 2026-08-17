@@ -85,6 +85,7 @@ class FindingRecord:
     id: UUID
     finding_type: str
     cited_event_ids: tuple[UUID, ...]
+    reader_type: str
 
 
 class FindingReadPort(ABC):
@@ -448,4 +449,23 @@ class DraftMessageRepositoryPort(ABC):
         """Sets `logged_manually_at = now()` — an internal-only flag,
         writes nowhere outside this table (REQ-M10-08). Returns `False` if
         `draft_id` doesn't resolve (the route's `404` path)."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# DampingDisclosurePort (feature 010 — feedback memory read side)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DisclosureRecord:
+    disclosure_text: str
+
+
+class DampingDisclosurePort(ABC):
+    @abstractmethod
+    async def get_disclosure(self, pattern_signature: str) -> DisclosureRecord | None:
+        """`None` whenever `weight >= 1.0` — the "only when true and
+        relevant" rule (REQ-M4-04, FR-011) is enforced at the read, not
+        left to the caller."""
         ...

@@ -8,6 +8,7 @@ from app.auth.adapters.sqlalchemy_repository import SqlAlchemyTokenRepository
 from app.auth.application.dependencies import provide_token_repository
 from app.auth.application.ports import TokenRepositoryPort
 from app.config import settings
+from app.context.adapters.feedback_router import router as feedback_router
 from app.context.adapters.profile_router import router as profile_router
 from app.db import engine, get_session
 from app.experience.adapters.ask_router import router as ask_router
@@ -57,6 +58,7 @@ app.include_router(coverage_router)
 app.include_router(profile_router)
 app.include_router(ask_router)
 app.include_router(draft_router)
+app.include_router(feedback_router)
 
 
 @app.get("/health")

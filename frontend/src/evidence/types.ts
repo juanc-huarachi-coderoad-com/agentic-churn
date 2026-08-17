@@ -16,4 +16,5 @@ export interface EvidenceTraceResponse {
   what_changed: string[]
   quoted_messages: QuotedMessage[]
   arithmetic_explanation: string
+  disclosure_text: string | null
 }

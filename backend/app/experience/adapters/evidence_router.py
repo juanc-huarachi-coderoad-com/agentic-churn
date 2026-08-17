@@ -9,6 +9,7 @@ from app.auth.application.dependencies import CurrentUser, get_current_user
 from app.config import settings
 from app.db import get_session
 from app.experience.adapters.sqlalchemy_repository import (
+    SqlAlchemyDampingDisclosureReader,
     SqlAlchemyFindingReader,
     SqlAlchemyScoreReader,
 )
@@ -49,6 +50,7 @@ class EvidenceTraceResponse(BaseModel):
     what_changed: list[str]
     quoted_messages: list[QuotedMessage]
     arithmetic_explanation: str
+    disclosure_text: str | None = None
 
 
 @router.get("/api/evidence/{score_contribution_id}", response_model=EvidenceTraceResponse)
@@ -61,6 +63,7 @@ async def get_evidence(
     use_case = GetEvidenceTraceUseCase(
         score=SqlAlchemyScoreReader(session),
         findings=SqlAlchemyFindingReader(session, encryption),
+        damping=SqlAlchemyDampingDisclosureReader(session),
     )
     try:
         result = await use_case.execute(score_contribution_id)
@@ -79,4 +82,5 @@ async def get_evidence(
             for m in result.quoted_messages
         ],
         arithmetic_explanation=_join_arithmetic([c.text for c in result.arithmetic]),
+        disclosure_text=result.disclosure_text,
     )

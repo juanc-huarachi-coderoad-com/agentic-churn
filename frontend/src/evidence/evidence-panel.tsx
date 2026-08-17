@@ -1,16 +1,23 @@
 import { useEvidence } from './use-evidence'
+import { type Verdict, useFeedback } from './use-feedback'
 
 interface EvidencePanelProps {
   scoreContributionId: string | null
   onClose: () => void
 }
 
+const VERDICTS: { verdict: Verdict; label: string }[] = [
+  { verdict: 'correct', label: 'Correct' },
+  { verdict: 'false_alarm', label: 'False alarm' },
+  { verdict: 'resolved', label: 'Resolved' },
+]
+
 // Client-side overlay on the same /dashboard route, not a route change
 // (research.md's Decision — "opens from any number," base/...md §11.4).
-// No feedback controls here — out of this feature's scope (FR-014, feature
-// 010's job); no Ask bar either (feature 008's job).
+// No Ask bar here (feature 008's job).
 export function EvidencePanel({ scoreContributionId, onClose }: EvidencePanelProps) {
   const { data, isLoading, isError } = useEvidence(scoreContributionId)
+  const feedback = useFeedback(scoreContributionId)
 
   if (scoreContributionId === null) {
     return null
@@ -78,6 +85,31 @@ export function EvidencePanel({ scoreContributionId, onClose }: EvidencePanelPro
             )}
 
             <p className="mt-6 text-sm text-neutral-600">{data.arithmetic_explanation}</p>
+
+            {data.disclosure_text && (
+              // REQ-M4-04 — the pattern's current, plain-language reason.
+              // Absent (not empty) whenever the pattern has never been
+              // damped (constitution P6 — no manufactured signal).
+              <p className="mt-4 text-sm text-amber-700">{data.disclosure_text}</p>
+            )}
+
+            {/* One click, no modal, no confirmation toast (FR-002). */}
+            <div className="mt-6 flex gap-2">
+              {VERDICTS.map(({ verdict, label }) => (
+                <button
+                  key={verdict}
+                  type="button"
+                  disabled={feedback.isPending}
+                  onClick={() => feedback.mutate({ findingId: data.finding_id, verdict })}
+                  className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {feedback.isError && (
+              <p className="mt-2 text-sm text-red-600">Couldn't record that — try again.</p>
+            )}
           </>
         )}
       </div>

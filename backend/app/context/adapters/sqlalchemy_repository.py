@@ -2,7 +2,7 @@
 matching the rest of the codebase's DDL-first pattern (no ORM declarative models).
 """
 
-from datetime import time
+from datetime import UTC, datetime, time
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -11,10 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.context.application.ports import (
     ClientProfileRepositoryPort,
     CommitmentSummary,
+    FeedbackFindingReadPort,
+    FeedbackVerdictRepositoryPort,
+    IssueTopFindingReadPort,
     ProductAreaSummary,
     ProfileVersionSummary,
     StakeholderSummary,
 )
+from app.context.domain.entities import DampingWeight, FindingPatternComponents
 from app.context.domain.profile_schema import (
     CRITICALITY_MULTIPLIERS,
     INFLUENCE_MULTIPLIERS,
@@ -237,3 +241,133 @@ class SqlAlchemyClientProfileRepository(ClientProfileRepositoryPort):
                 for r in commitment_rows
             ],
         )
+
+
+# ---------------------------------------------------------------------------
+# M4 · Feedback memory (`specs/010-feedback-memory/data-model.md`)
+# ---------------------------------------------------------------------------
+
+
+class SqlAlchemyFeedbackFindingReader(FeedbackFindingReadPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_pattern_components(
+        self, finding_id: UUID
+    ) -> FindingPatternComponents | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT reader_type, finding_type FROM findings "
+                    "WHERE id = :id AND status = 'validated'"
+                ),
+                {"id": finding_id},
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return FindingPatternComponents(reader_type=row.reader_type, finding_type=row.finding_type)
+
+
+class SqlAlchemyIssueTopFindingReader(IssueTopFindingReadPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_top_finding_id(self, issue_id: UUID) -> UUID | None:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT finding_id FROM finding_issue_map WHERE issue_id = :issue_id "
+                    "ORDER BY rank_within_issue ASC LIMIT 1"
+                ),
+                {"issue_id": issue_id},
+            )
+        ).one_or_none()
+        return row.finding_id if row is not None else None
+
+
+class SqlAlchemyFeedbackVerdictRepository(FeedbackVerdictRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_damping(self, pattern_signature: str) -> DampingWeight:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT pattern_signature, weight, false_alarm_count, resolved_count, "
+                    "correct_count, disclosure_text, last_updated_at FROM damping_weights "
+                    "WHERE pattern_signature = :ps"
+                ),
+                {"ps": pattern_signature},
+            )
+        ).one_or_none()
+        if row is None:
+            return DampingWeight(
+                pattern_signature=pattern_signature,
+                weight=1.0,
+                false_alarm_count=0,
+                resolved_count=0,
+                correct_count=0,
+                disclosure_text=None,
+                last_updated_at=datetime.now(UTC),
+            )
+        return DampingWeight(
+            pattern_signature=row.pattern_signature,
+            weight=float(row.weight),
+            false_alarm_count=row.false_alarm_count,
+            resolved_count=row.resolved_count,
+            correct_count=row.correct_count,
+            disclosure_text=row.disclosure_text,
+            last_updated_at=row.last_updated_at,
+        )
+
+    async def record(
+        self,
+        *,
+        finding_id: UUID | None,
+        issue_id: UUID | None,
+        verdict: str,
+        submitted_by_user_id: UUID,
+        updated: DampingWeight,
+    ) -> None:
+        await self._session.execute(
+            text(
+                "INSERT INTO feedback_verdicts "
+                "(id, finding_id, issue_id, verdict, submitted_by_user_id, pattern_signature) "
+                "VALUES (:id, :finding_id, :issue_id, (:verdict)::verdict_type, "
+                ":submitted_by_user_id, :pattern_signature)"
+            ),
+            {
+                "id": uuid4(),
+                "finding_id": finding_id,
+                "issue_id": issue_id,
+                "verdict": verdict,
+                "submitted_by_user_id": submitted_by_user_id,
+                "pattern_signature": updated.pattern_signature,
+            },
+        )
+        await self._session.execute(
+            text(
+                "INSERT INTO damping_weights "
+                "(pattern_signature, weight, false_alarm_count, resolved_count, "
+                "correct_count, disclosure_text, last_updated_at) "
+                "VALUES (:pattern_signature, :weight, :false_alarm_count, :resolved_count, "
+                ":correct_count, :disclosure_text, now()) "
+                "ON CONFLICT (pattern_signature) DO UPDATE SET "
+                "weight = EXCLUDED.weight, "
+                "false_alarm_count = EXCLUDED.false_alarm_count, "
+                "resolved_count = EXCLUDED.resolved_count, "
+                "correct_count = EXCLUDED.correct_count, "
+                "disclosure_text = EXCLUDED.disclosure_text, "
+                "last_updated_at = now()"
+            ),
+            {
+                "pattern_signature": updated.pattern_signature,
+                "weight": updated.weight,
+                "false_alarm_count": updated.false_alarm_count,
+                "resolved_count": updated.resolved_count,
+                "correct_count": updated.correct_count,
+                "disclosure_text": updated.disclosure_text,
+            },
+        )
+        await self._session.commit()
