@@ -48,6 +48,7 @@ from app.experience.domain.entities import (
     NarratorSummaryRecord,
     UsageComparisonRecord,
 )
+from app.ingestion.adapters.encryption import EncryptionKeyError
 from app.ingestion.application.ports import EncryptionPort
 from app.readers.domain.entities import ConfirmedBaselineWindow, MessageEventInfo
 
@@ -70,6 +71,9 @@ _SIGNAL_TYPE_GROUPS: dict[str, str] = {
 }
 
 
+_SHREDDED_BODY_MARKER = "[original message no longer available — retention period expired]"
+
+
 def _quoted_text(
     structured_payload: dict[str, object],
     body_encrypted: bytes | None,
@@ -77,9 +81,17 @@ def _quoted_text(
 ) -> str | None:
     """A real client message body where one exists; a `ticket_state_change`'s
     own title stands in otherwise; `None` for events with no textual content
-    (e.g. `usage_measurement`) — never fabricated (spec.md's Edge Cases)."""
+    (e.g. `usage_measurement`) — never fabricated (spec.md's Edge Cases).
+
+    `EncryptionKeyError` (specs/011-production-hardening, FR-004) is caught at
+    this adapter boundary only — the application layer above never imports or
+    sees it, only this plain marker string, keeping the Application→Adapter
+    import boundary intact (P8; `/speckit-analyze` finding C1)."""
     if body_encrypted is not None:
-        return encryption.decrypt(body_encrypted)
+        try:
+            return encryption.decrypt(body_encrypted)
+        except EncryptionKeyError:
+            return _SHREDDED_BODY_MARKER
     title = structured_payload.get("title")
     return str(title) if title else None
 

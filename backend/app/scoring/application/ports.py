@@ -5,7 +5,7 @@ app.scoring.adapters.*. Application depends on these, never on a concrete adapte
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from app.scoring.domain.entities import (
@@ -135,6 +135,41 @@ class CoverageCheckPort(ABC):
         ...
 
 
+# ---------------------------------------------------------------------------
+# finding_type_config writes (specs/011-production-hardening, User Story 4)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FindingTypeConfigChangeResult:
+    change_id: UUID
+    new_config_version: str
+    changed_at: datetime
+
+
+class FindingTypeConfigWritePort(ABC):
+    @abstractmethod
+    async def update_base_points(
+        self,
+        finding_type: str,
+        new_base_points: float,
+        changed_by_user_id: UUID,
+    ) -> FindingTypeConfigChangeResult:
+        """Updates `finding_type_config.base_points`, bumps the shared
+        `finding_type_config.version` string (every score run computed after
+        this point carries a visibly different `finding_type_config_version`
+        than every run before it — REQ-NFR-08/FR-015), and inserts one audit
+        row into `finding_type_config_changes` (FR-014) — all in one
+        transaction. Raises `FindingTypeNotFoundError` if `finding_type`
+        doesn't exist in `finding_type_config`."""
+        ...
+
+
+class FindingTypeNotFoundError(Exception):
+    """`finding_type` doesn't exist in `finding_type_config` — a `404`, not a
+    silently-inserted row (`contracts/weight-recalibration.md`)."""
+
+
 __all__ = [
     "BandHistoryRecord",
     "ClientProfileMultipliersPort",
@@ -144,6 +179,9 @@ __all__ = [
     "FindingLifecycle",
     "FindingRepositoryPort",
     "FindingTypeConfig",
+    "FindingTypeConfigChangeResult",
+    "FindingTypeConfigWritePort",
+    "FindingTypeNotFoundError",
     "ProfileMultiplierContext",
     "ScoreContribution",
     "ScoreRun",

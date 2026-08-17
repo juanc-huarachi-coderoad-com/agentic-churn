@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.application.dependencies import CurrentUser, get_current_user
+from app.auth.application.dependencies import CurrentUser, require_full_access
 from app.config import settings
 from app.db import get_session
 from app.experience.adapters.ask_agent_graph import AskAgentToolkit, LangGraphAskAgent
@@ -25,7 +25,9 @@ from app.experience.adapters.sqlalchemy_repository import (
     SqlAlchemyScoreReader,
     SqlAlchemyStakeholderReader,
 )
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
+from app.observability.adapters.tracing import traced
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 
 router = APIRouter()
@@ -50,26 +52,29 @@ class AskFallbackResponse(BaseModel):
 @router.post("/api/ask", response_model=AskComponentResponse | AskFallbackResponse)
 async def ask(
     request: AskRequest,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_full_access),
     session: AsyncSession = Depends(get_session),
 ) -> AskComponentResponse | AskFallbackResponse:
-    encryption = FernetEncryption(settings.encryption_key_path)
-    llm = AnthropicLLMAdapter(settings.anthropic_api_key, settings.generation_model_id)
-    toolkit = AskAgentToolkit(
-        ledger=SqlAlchemyLedgerQueryRepository(session, encryption),
-        findings=SqlAlchemyFindingReader(session, encryption),
-        score=SqlAlchemyScoreReader(session),
-        stakeholders=SqlAlchemyStakeholderReader(session),
-    )
-    agent = LangGraphAskAgent(
-        llm=llm,
-        toolkit=toolkit,
-        narrator=SqlAlchemyNarratorReadRepository(session),
-        coverage=SqlAlchemyCoverageReader(session),
-        ask_queries=SqlAlchemyAskQueryRepository(session),
-    )
+    with traced("ask_query"):
+        encryption = BucketedFernetEncryption(
+            FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+        )
+        llm = AnthropicLLMAdapter(settings.anthropic_api_key, settings.generation_model_id)
+        toolkit = AskAgentToolkit(
+            ledger=SqlAlchemyLedgerQueryRepository(session, encryption),
+            findings=SqlAlchemyFindingReader(session, encryption),
+            score=SqlAlchemyScoreReader(session),
+            stakeholders=SqlAlchemyStakeholderReader(session),
+        )
+        agent = LangGraphAskAgent(
+            llm=llm,
+            toolkit=toolkit,
+            narrator=SqlAlchemyNarratorReadRepository(session),
+            coverage=SqlAlchemyCoverageReader(session),
+            ask_queries=SqlAlchemyAskQueryRepository(session),
+        )
 
-    result = await agent.answer(request.question, asked_by_user_id=current_user.user_id)
+        result = await agent.answer(request.question, asked_by_user_id=current_user.user_id)
 
     if result.component is not None:
         return AskComponentResponse(

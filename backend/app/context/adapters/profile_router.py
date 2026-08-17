@@ -7,14 +7,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.application.dependencies import CurrentUser, get_current_user
+from app.auth.application.dependencies import CurrentUser, get_current_user, require_full_access
 from app.config import settings
 from app.context.adapters.sqlalchemy_repository import SqlAlchemyClientProfileRepository
 from app.context.adapters.yaml_profile_loader import ProfileFileNotFoundError, load_profile_yaml
 from app.context.application.ports import ProfileVersionSummary
 from app.context.application.use_cases import SubmitProfileUseCase
+from app.context.domain.profile_schema import ClientProfileInput
 from app.db import get_session
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
     SqlAlchemyEventRepository,
@@ -57,6 +59,10 @@ class ProfileResponse(BaseModel):
     stakeholders: list[StakeholderResponse]
     product_areas: list[ProductAreaResponse]
     commitments: list[CommitmentResponse]
+    # specs/011-production-hardening, User Story 5 (FR-017) — previously missing
+    # from this response entirely, even though the editor needs to show both.
+    exclusions: list[str]
+    communication_norms: str | None
 
 
 def _to_response(summary: ProfileVersionSummary) -> ProfileResponse:
@@ -79,18 +85,22 @@ def _to_response(summary: ProfileVersionSummary) -> ProfileResponse:
             CommitmentResponse(type=c.type, threshold_business_hours=c.threshold_business_hours)
             for c in summary.commitments
         ],
+        exclusions=summary.exclusions,
+        communication_norms=summary.communication_norms,
     )
 
 
 # Composition-root-adjacent: this feature has no dedicated encryption dependency-
-# override yet (app.main provides one FernetEncryption instance at import time), so
-# the replay path constructs its own from settings — matching app.main's own startup
-# wiring rather than adding a second injection mechanism for one route.
+# override yet (app.main provides one BucketedFernetEncryption instance at import
+# time), so the replay path constructs its own from settings — matching app.main's
+# own startup wiring rather than adding a second injection mechanism for one route.
 def _build_replay_use_case(session: AsyncSession) -> ReplayUseCase:
     return ReplayUseCase(
         events=SqlAlchemyEventRepository(session),
         profile_context=SqlAlchemyClientProfileContext(session),
-        encryption=FernetEncryption(settings.encryption_key_path),
+        encryption=BucketedFernetEncryption(
+            FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+        ),
     )
 
 
@@ -106,7 +116,7 @@ def _build_recompute_score_use_case(session: AsyncSession) -> RecomputeScoreUseC
 
 @router.post("/api/profile/reload", response_model=ProfileResponse)
 async def reload_profile(
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_full_access),
     session: AsyncSession = Depends(get_session),
 ) -> ProfileResponse:
     try:
@@ -121,6 +131,33 @@ async def reload_profile(
             status_code=422, detail=exc.errors(include_context=False, include_url=False)
         ) from None
 
+    use_case = SubmitProfileUseCase(
+        repository=SqlAlchemyClientProfileRepository(session),
+        replay=_build_replay_use_case(session),
+        recompute_score=_build_recompute_score_use_case(session),
+    )
+    summary = await use_case.execute(profile, authored_by_user_id=current_user.user_id)
+    return _to_response(summary)
+
+
+@router.post("/api/profile", response_model=ProfileResponse)
+async def submit_profile(
+    profile: ClientProfileInput,
+    current_user: CurrentUser = Depends(require_full_access),
+    session: AsyncSession = Depends(get_session),
+) -> ProfileResponse:
+    """specs/011-production-hardening, User Story 5 — the Post-MVP editor route
+    `architecture/07-api-spec.md` already named ahead of time. `profile`'s type
+    is `ClientProfileInput` — the exact same Pydantic model `load_profile_yaml`
+    already builds from the YAML file, so FastAPI validates a structured JSON
+    submission with the identical rules (`research.md` Decision 4): a malformed
+    body is rejected with a `422` and its own field-level detail *before* this
+    function is even called, and a body that fails a cross-field rule (e.g. no
+    stakeholder with `signs_renewal: true`) raises the same `pydantic.
+    ValidationError` FastAPI already turns into a structured `422` by default.
+    `SubmitProfileUseCase` is unmodified — this route is a second front door to
+    code that already exists.
+    """
     use_case = SubmitProfileUseCase(
         repository=SqlAlchemyClientProfileRepository(session),
         replay=_build_replay_use_case(session),

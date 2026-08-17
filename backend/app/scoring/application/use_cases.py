@@ -14,6 +14,8 @@ from app.scoring.application.ports import (
     CoverageCheckPort,
     DampingRepositoryPort,
     FindingRepositoryPort,
+    FindingTypeConfigChangeResult,
+    FindingTypeConfigWritePort,
     ScoreRunRepositoryPort,
 )
 from app.scoring.domain.entities import ScoreContribution, ScoreRun
@@ -243,3 +245,42 @@ class RecomputeScoreUseCase:
         )
 
         return run
+
+
+class InvalidWeightError(Exception):
+    """`new_base_points < 0` — a `422`, not a silently-clamped value
+    (`contracts/weight-recalibration.md`)."""
+
+
+class UpdateFindingTypeWeightUseCase:
+    """specs/011-production-hardening, User Story 4 — the system-side deliverable
+    of the weight-elicitation workshop (`decisions/00-open-questions-resolved.md`
+    Q4): writes a new base weight, then triggers a full recompute so it takes
+    effect starting with the very next score, matching `RecomputeScoreUseCase`'s
+    own `trigger="weight_edit_replay"` value that has sat in the `score_runs.
+    trigger` enum, unused, since the schema was first authored (`research.md`
+    Decision 3)."""
+
+    def __init__(
+        self,
+        finding_type_config: FindingTypeConfigWritePort,
+        recompute_score: RecomputeScoreUseCase,
+    ) -> None:
+        self._finding_type_config = finding_type_config
+        self._recompute_score = recompute_score
+
+    async def execute(
+        self,
+        *,
+        finding_type: str,
+        new_base_points: float,
+        changed_by_user_id: UUID,
+    ) -> FindingTypeConfigChangeResult:
+        if new_base_points < 0:
+            raise InvalidWeightError(f"base_points must be >= 0, got {new_base_points}")
+
+        result = await self._finding_type_config.update_base_points(
+            finding_type, new_base_points, changed_by_user_id
+        )
+        await self._recompute_score.execute(trigger="weight_edit_replay")
+        return result

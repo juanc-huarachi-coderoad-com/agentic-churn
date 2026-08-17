@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.application.dependencies import CurrentUser, get_current_user
+from app.auth.application.dependencies import CurrentUser, require_full_access
 from app.config import settings
 from app.db import get_session
 from app.experience.adapters.sqlalchemy_repository import (
@@ -36,7 +36,8 @@ from app.experience.application.use_cases import (
     IssueNotFoundError,
     StakeholderNotFoundError,
 )
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 
 router = APIRouter()
@@ -63,7 +64,9 @@ class DraftResponse(BaseModel):
 
 
 def _build_use_case(session: AsyncSession) -> GenerateDraftUseCase:
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     llm = AnthropicLLMAdapter(settings.anthropic_api_key, settings.generation_model_id)
     return GenerateDraftUseCase(
         issues=SqlAlchemyIssueReader(session),
@@ -81,7 +84,7 @@ def _build_use_case(session: AsyncSession) -> GenerateDraftUseCase:
 @router.post("/api/drafts", response_model=DraftResponse)
 async def create_draft(
     request: DraftRequest,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_full_access),
     session: AsyncSession = Depends(get_session),
 ) -> DraftResponse:
     use_case = _build_use_case(session)
@@ -109,7 +112,7 @@ async def create_draft(
 @router.post("/api/drafts/{draft_id}/copy", status_code=204)
 async def copy_draft(
     draft_id: UUID,
-    _current_user: CurrentUser = Depends(get_current_user),
+    _current_user: CurrentUser = Depends(require_full_access),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     found = await SqlAlchemyDraftMessageRepository(session).stamp_copied(draft_id)
@@ -120,7 +123,7 @@ async def copy_draft(
 @router.post("/api/drafts/{draft_id}/log-as-sent", status_code=204)
 async def log_draft_as_sent(
     draft_id: UUID,
-    _current_user: CurrentUser = Depends(get_current_user),
+    _current_user: CurrentUser = Depends(require_full_access),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     found = await SqlAlchemyDraftMessageRepository(session).stamp_logged_manually(draft_id)

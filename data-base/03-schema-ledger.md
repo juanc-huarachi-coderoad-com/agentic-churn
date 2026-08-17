@@ -18,7 +18,7 @@ Append-only. **No `UPDATE`/`DELETE` grant exists on this table for the applicati
 | `stakeholder_id` | UUID FK → `stakeholders.id`, NULL | Resolved participant, if any |
 | `product_area_id` | UUID FK → `product_areas.id`, NULL | |
 | `body_encrypted` | BYTEA NULL | Message body, envelope-encrypted; NULL after retention expiry (crypto-shredded) |
-| `data_key_ref` | TEXT **NOT NULL** | Permanent reference to the data key that protects `body_encrypted` (`.env`-scoped file in the MVP, KMS Post-MVP). **Never cleared** — see the crypto-shredding note below |
+| `data_key_ref` | TEXT **NOT NULL** | Permanent reference to the data key that protects `body_encrypted` — a daily UTC-calendar-date bucket ID (`YYYY-MM-DD`), one Fernet key per bucket, file-backed (`specs/011-production-hardening/research.md` Decision 1; `app.ingestion.adapters.key_store.FileKeyStore`). **Never cleared** — see the crypto-shredding note below |
 | `structured_payload` | JSONB | Non-body structured fields (ticket priority, usage delta, survey score, etc.) |
 | `supersedes_event_id` | UUID FK → `events.id`, NULL | Set when this event is a correction of a prior one (REQ-M2-03) |
 | `thread_key` | TEXT NULL | Cross-channel thread identifier assigned by stitching |
@@ -31,6 +31,7 @@ Append-only. **No `UPDATE`/`DELETE` grant exists on this table for the applicati
 - `data_key_ref` is **`NOT NULL`, permanent, and never modified** — it's a historical record of which key *used to* protect this row.
 - `body_encrypted` is the column that actually gets nulled, once the retention window expires and the key it depends on is destroyed in the key store.
 - Nulling `body_encrypted` is the **one narrowly-scoped exception** to `events`' append-only rule: a dedicated `shredder_role` (not the application's normal role) holds `UPDATE (body_encrypted)` and nothing else on this table — see `data-base/10-ddl-appendix.md`.
+- Implemented (specs/011-production-hardening, User Story 1): a daily `RunRetentionUseCase` resolves every bucket still active in the key store, destroys the ones whose entire UTC day is older than the retention window, and nulls the affected `events.body_encrypted` rows — never `raw_envelopes.payload_encrypted`, since destroying the key alone already makes that row's ciphertext unrecoverable. Each run is recorded in `retention_job_runs`.
 
 **Hash chain, precisely.** "Hash-chain link" meant nothing runnable until this revision. It now is:
 

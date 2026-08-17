@@ -24,13 +24,18 @@ from sqlalchemy import text  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.db import async_session_factory  # noqa: E402
-from app.ingestion.adapters.encryption import FernetEncryption  # noqa: E402
+from app.ingestion.adapters.encryption import BucketedFernetEncryption  # noqa: E402
+from app.ingestion.adapters.key_store import FileKeyStore  # noqa: E402
 from app.ingestion.adapters.sqlalchemy_repositories import (  # noqa: E402
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyCommitmentLookup,
     SqlAlchemyEventRepository,
 )
-from app.ingestion.application.ports import NewEvent  # noqa: E402
+from app.ingestion.application.ports import (  # noqa: E402
+    EncryptionPort,
+    KeyStorePort,
+    NewEvent,  # noqa: E402
+)
 from app.ingestion.application.use_cases import DetectAbsenceUseCase  # noqa: E402
 
 # demo/ sits in two different places relative to this file depending on where it
@@ -69,7 +74,11 @@ async def _resolve_mvp_event(session, native_id: str) -> UUID:
 
 
 async def _resolve_synthetic_csat_event(
-    session, encryption: FernetEncryption, occurred_at: datetime, citation: dict
+    session,
+    encryption: EncryptionPort,
+    key_store: KeyStorePort,
+    occurred_at: datetime,
+    citation: dict,
 ) -> UUID:
     """Inserts one synthetic `survey_response` event via the real, hash-chained
     `EventRepositoryPort.append` path (not a bypass) — CSAT is a Post-MVP source with
@@ -117,7 +126,7 @@ async def _resolve_synthetic_csat_event(
             "native_id": "csat-resp-score-engine-fixture",
             "occurred_at": occurred_at,
             "payload": payload_encrypted,
-            "data_key_ref": settings.encryption_key_id,
+            "data_key_ref": key_store.current_bucket_id(),
         },
     )
     await session.commit()
@@ -134,7 +143,7 @@ async def _resolve_synthetic_csat_event(
                 "previous_score": citation["previous_score"],
             },
         ),
-        data_key_ref=settings.encryption_key_id,
+        data_key_ref=key_store.current_bucket_id(),
     )
     await session.execute(
         text("UPDATE raw_envelopes SET ledger_event_id = :event_id WHERE id = :envelope_id"),
@@ -178,7 +187,8 @@ async def _resolve_product_area(session, key: str | None) -> UUID | None:
 
 async def seed() -> None:
     fixture = json.loads(FIXTURE_PATH.read_text())
-    encryption = FernetEncryption(settings.encryption_key_path)
+    key_store = FileKeyStore(settings.data_keys_dir)
+    encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
 
     async with async_session_factory() as session:
         # Guarantee a real `absence`-type event exists for fnd-4/fnd-5 to cite —
@@ -194,7 +204,7 @@ async def seed() -> None:
             collector_runs=SqlAlchemyCollectorRunRepository(session),
             events=SqlAlchemyEventRepository(session),
             encryption=encryption,
-            data_key_ref=settings.encryption_key_id,
+            key_store=key_store,
         )
         appended = await absence_use_case.execute(as_of=absence_as_of)
         if appended:
@@ -247,7 +257,7 @@ async def seed() -> None:
             elif citation["type"] == "synthetic_csat_event":
                 if csat_event_id is None:
                     csat_event_id = await _resolve_synthetic_csat_event(
-                        session, encryption, csat_occurred_at, citation
+                        session, encryption, key_store, csat_occurred_at, citation
                     )
                     print(f"Inserted synthetic CSAT survey_response event: {csat_event_id}")
                 cited_event_id = csat_event_id

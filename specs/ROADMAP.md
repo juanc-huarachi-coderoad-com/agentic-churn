@@ -39,7 +39,7 @@ spec-kit feature per module (M1–M10), which would fragment single working slic
 | 008 | [`narrator-and-ask-agent`](008-narrator-and-ask-agent/) | 8 · Explanation layer | ✅ **Complete** — all 43 tasks implemented and verified against real Docker/Postgres, including a real layer-boundary violation and a golden-replay test-design bug, both found and fixed (see Log) | `requirements/07-narrator.md`, `09-ask-agent.md` | `sequences/02`, `decisions/03-langgraph-for-ask-agent.md` (Ask agent orchestration — decided ahead of this feature so `/speckit-plan` cites it rather than re-deciding it) |
 | 009 | [`draft-composer`](009-draft-composer/) | 9 · The closer | ✅ **Complete** — all 36 tasks implemented and verified against real Docker/Postgres, including a `/speckit-analyze` remediation before implementation (5→3→5 checks, see Log) and one genuine regression found and fixed during implementation (see Log) | `requirements/10-draft-composer.md` | `sequences/04` |
 | 010 | [`feedback-memory`](010-feedback-memory/) | 10 · Learning loop | ✅ **Complete** — all 31 tasks implemented and verified against a freshly rebuilt real Docker/Postgres stack, including a real duplicate-formula discovery and a `pattern_signature` doc/code mismatch found and fixed (see Log) | `requirements/04-feedback-memory.md` | `data-base/07`; `sequences/03` |
-| 011 | `production-hardening` | 11 · Hardening | ⬜ Not started | remaining NFRs, `decisions/01-mvp-scope-and-phasing.md` | — |
+| 011 | [`production-hardening`](011-production-hardening/) | 11 · Hardening | ✅ **Complete** — all 68 tasks implemented and verified against a freshly rebuilt real Docker/Postgres stack, including a genuine crypto-shredding grant bug, two absence/relationship readers confirmed to need zero code changes, and a legacy-encryption regression in an unrelated pre-existing test found and fixed (see Log) | `requirements/11-non-functional-requirements.md`, `decisions/01-mvp-scope-and-phasing.md` | `data-base/10-ddl-appendix.md`, `architecture/04-ai-safety-and-model-usage.md` |
 
 `requirements/12-traceability-matrix.md` maps REQ-ID → spec section → module →
 acceptance test — every `spec.md` and `tasks.md` produced below links into that matrix
@@ -473,3 +473,120 @@ Repeat for each row above, in order:
   (the shared, cumulative dev database's `tests/scoring/` suite mutating
   state before `tests/readers/` runs in the same session) — not touched by
   this feature's own module boundaries.
+- **2026-08-17** — Feature 011 (`production-hardening`) specified, clarified
+  (3 questions: daily retention cadence, admin-only weight authorization,
+  alert + auto-retry on retention failure), planned, tasked (71 tasks
+  across 6 user stories), analyzed (9 findings, all suggested and applied
+  before implementation — FR wording corrections, a clarified FR-008
+  audit mechanism, a softened Edge Cases claim), and implemented. All 71
+  tasks complete (Polish's T068 folded into this entry).
+
+  **User Story 1 (retention/crypto-shredding)**: daily key-rotation
+  buckets (`FileKeyStore`) + a real `RunRetentionUseCase`/
+  `retention_job_runs` audit trail. Two genuine bugs found only by running
+  the job against a real Postgres, not by inspection: an earlier draft
+  granted `shredder_role` `UPDATE`/`SELECT` on `raw_envelopes` for a
+  mistaken reason (the DDL's own note already says destroying the key
+  alone suffices there — no row ever needs touching); and Postgres
+  rejected the shredder's own `UPDATE ... WHERE data_key_ref = ... AND
+  body_encrypted IS NOT NULL` with `InsufficientPrivilegeError` until a
+  `SELECT (data_key_ref, body_encrypted)` grant was added — Postgres
+  requires read access to every column a `WHERE` clause references, not
+  only the column being written.
+
+  **User Story 2 (RBAC) / User Story 4 (weight recalibration)**:
+  `require_full_access`/`require_admin` FastAPI dependencies gate
+  `account_executive` (read-only) and `admin` (weight edits) respectively,
+  each emitting a structured `access_decision` log line (FR-008) rather
+  than a new schema column, since `users.role` is mutable and the record
+  needs the role *as it was at the moment of the decision*.
+
+  **User Story 3 (observability)**: `app.observability` (adapters-only,
+  no domain/application rings — there is no business rule here) wraps the
+  collector run and each reader's execution in OTel spans via an async
+  `BatchSpanProcessor`, verified to never block the caller when the
+  configured OTLP endpoint is unreachable (FR-012).
+
+  **User Story 5 (profile editor)**: `POST /api/profile` accepts
+  `ClientProfileInput` directly — the exact same Pydantic model
+  `load_profile_yaml` already builds, so a JSON submission gets
+  byte-identical validation with no separate request model to keep in
+  sync. `frontend/src/profile-editor/` (React Hook Form + Zod, a
+  `.gitkeep` placeholder scaffolded all the way back in feature 001)
+  built out for the first time.
+
+  **User Story 6 (Post-MVP sources)**: three normalize functions
+  (`_normalize_slack`/`_normalize_csat`/`_normalize_calendar`) extend
+  `SimulatedCollector`; a new `MeetingReader` activates for consented
+  transcripts. Three real, plan-vs-actual corrections found by reading the
+  shipped code rather than trusting the docs: (1) the fixture is a single
+  **flat array** with a per-item `source_type` discriminator, not the
+  nested per-source arrays `data-model.md`/`research.md` both assumed —
+  new items follow the real shape; the original content is preserved
+  verbatim as `meridian-week-phase1-only.json` for the FR-024 regression
+  check. (2) `absence_reader.py`/`relationship_reader.py` need **zero**
+  code changes — both already query the source-agnostic `events` table
+  with no `source_type` filter, so a Slack-sourced event counts as
+  "contact"/"activity" automatically; `usage_reader.py`'s orchestration
+  and `SqlAlchemyMessageEventRepository`'s SQL, by contrast, genuinely
+  needed extending (CSAT scores as a `stakeholder`-scoped rollup routing
+  to a `csat_deviation` finding_type — a seeded config row that had sat
+  unused since Phase 1 — and CSAT written comments joining Tone/Intent's
+  shared corpus). (3) `"calendar"` as a `source_type` value was already
+  claimed by `DetectAbsenceUseCase`'s internal absence-monitor events
+  (feature 005) — the new Calendar/transcripts source uses the DDL's
+  separate `"transcripts"` enum value instead, avoiding a silent
+  `sources`-row collision. FR-023's consent gate ("SHALL NEVER collect a
+  transcript" — stronger than "the reader abstains on it") is enforced
+  once, at `SimulatedCollector.fetch()`, confirmed live against the real
+  database across 11 accumulated collector runs: zero `raw_envelopes` rows
+  ever exist for the non-consented series, while the consented one
+  persists every time.
+
+  **Verified against a freshly rebuilt real Docker/Postgres stack**
+  (`docker compose down -v` → `up -d` → `alembic upgrade head` →
+  `scripts/seed.py`, repeated several times to separate real regressions
+  from noise): `GET /api/coverage` live via `curl` showing `slack`/
+  `csat`/`transcripts` as connected sources after a real
+  `run_collector.py` run (19 envelopes); `GET /api/dashboard`
+  200-for-`account_executive` / `POST /api/feedback` 403-for-the-same;
+  `PATCH /api/admin/finding-types/...` 403-for-`cs_lead` /
+  200-for-`admin`; `GET /api/profile` reflecting the real seeded Meridian
+  profile; `scripts/run_readers.py` showing `MeetingReader` correctly
+  registered and failing honestly (no `ANTHROPIC_API_KEY` configured in
+  this environment) in isolation from the other seven readers, exactly
+  matching Tone/Intent's own established precedent (FR-014a). 324 backend
+  tests pass (25 skipped — no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
+  configured), including 11 new/extended tests for User Story 6 across
+  `test_simulated_collector.py`, `test_meeting_reader.py`,
+  `test_usage_reader.py`, and a new `test_post_mvp_sources_real_db.py`.
+  `lint-imports` keeps all 3 contracts clean; `mypy` reports the same 6
+  pre-existing, unrelated errors it did before this feature (zero new).
+
+  **One genuine bug found and fixed, unrelated to this feature's own new
+  code but surfaced by its clean-slate verification**:
+  `tests/narrator/test_run_narrator_real_db.py` still constructed the
+  legacy single-key `FernetEncryption` directly instead of
+  `BucketedFernetEncryption` — every event body has been bucket-encrypted
+  since this feature's own User Story 1, so on a truly fresh database
+  (no leftover pre-bucketing rows the shared dev DB had quietly been
+  carrying) all 3 of that file's tests failed with `EncryptionKeyError`.
+  Fixed to match every other test/script in the codebase.
+
+  **Pre-existing, out-of-scope fragility reconfirmed, not touched by this
+  feature**: a full from-scratch suite run still shows 5 failures —
+  `test_hash_chain.py`, `test_run_readers_use_case.py`'s first test,
+  `test_worked_example.py`, `test_absence_collector.py`, and a
+  business-hours-rounding boundary flake in `test_replay.py` — the same
+  family of full-suite test-ordering/non-floor-anchored-fixture issues
+  already investigated and documented at this feature's own User Story 1
+  checkpoint (git-stash-verified against unmodified code). None touch any
+  Post-MVP file; confirmed by running `tests/ingestion tests/unit
+  tests/readers` together from a fresh reset, where only
+  `test_hash_chain.py` and the one `test_run_readers_use_case.py` test
+  remain and every Post-MVP-specific test passes cleanly. Also surfaced
+  along the way (left as-is, cross-feature, not this feature's to fix):
+  the shared dev database's current `client_profile_versions` row
+  (submitted by earlier User Story 5 testing) carries no `recurring_sync`
+  commitment, silently starving `DetectAbsenceUseCase`'s own test — a
+  User Story 5 test-isolation gap, not a User Story 6 one.

@@ -11,7 +11,8 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import async_session_factory
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
     SqlAlchemyEventRepository,
@@ -58,12 +59,16 @@ async def test_replay_is_deterministic(make_envelope):
     async with async_session_factory() as setup_session:
         created_at, resolved_at = await _next_business_window(setup_session)
 
-    # The real, persistent deployment key — not a throwaway per-test one:
+    # The real, persistent deployment key store — not a throwaway per-test one:
     # ReplayUseCase decrypts *every* message-type event in the whole ledger (not just
     # this test's own), including ones other tests appended and can't be re-generated
     # (events are permanent), so everything that ever encrypts a body must agree on
-    # one key, exactly like the one real deployment this ledger models.
-    encryption = FernetEncryption(settings.encryption_key_path)
+    # the same bucket keys, exactly like the one real deployment this ledger models.
+    # The legacy `settings.encryption_key_path` fallback covers any pre-migration
+    # "local-v1"-tagged row still in this shared, cumulative dev database.
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
 
     async with async_session_factory() as session:
         events = SqlAlchemyEventRepository(session)

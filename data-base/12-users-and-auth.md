@@ -6,7 +6,7 @@ Backs `requirements/14-authentication.md`. These two tables are new in this revi
 
 ## `users`
 
-**In plain terms:** one row per person who can log in. At this stage (MVP) there's no permission system layered on top — every active user can see and do everything the product offers (REQ-AUTH-05). `role` is stored for future use (Post-MVP read-only access for the account executive, per `decisions/00-open-questions-resolved.md` Q8) but doesn't restrict anything yet.
+**In plain terms:** one row per person who can log in. `role` is now enforced (specs/011-production-hardening, User Story 2/4) for two of its five values: `account_executive` gets read-only access (every mutating endpoint 403s via `require_full_access`), and `admin` is the only role that can PATCH a finding type's weight (`require_admin`). The other three roles (`cs_lead`, `support_lead`, `engineering_manager`) still see and do everything else the product offers — full RBAC across all five roles remains a later hardening step.
 
 | Field | Type | Description |
 |---|---|---|
@@ -14,7 +14,7 @@ Backs `requirements/14-authentication.md`. These two tables are new in this revi
 | `username` | TEXT UNIQUE | |
 | `password_hash` | TEXT | Argon2id hash — the raw password is never stored, never logged, never recoverable (REQ-AUTH-02) |
 | `display_name` | TEXT | Shown on cards ("Marta" in the draft-composer example, `examples/01-end-to-end-walkthrough.md` §13) |
-| `role` | ENUM(`cs_lead`,`support_lead`,`account_executive`,`engineering_manager`,`admin`), NULL | Informational in the MVP — not yet enforced (REQ-AUTH-05, Post-MVP note below) |
+| `role` | ENUM(`cs_lead`,`support_lead`,`account_executive`,`engineering_manager`,`admin`), NULL | Enforced for `account_executive` (read-only, `require_full_access`) and `admin` (weight recalibration, `require_admin`); informational for the other three (REQ-AUTH-05) |
 | `is_active` | BOOLEAN | A deactivated user's existing tokens are still revoked via `auth_tokens.revoked_at` — deactivating never deletes the row (audit trail preserved) |
 | `created_at` | TIMESTAMPTZ | |
 | `last_login_at` | TIMESTAMPTZ, NULL | |
@@ -77,7 +77,7 @@ sequenceDiagram
 
 ## What this does *not* do yet (Post-MVP)
 
-- **No role-based access control.** Every authenticated user reaches every endpoint. The `role` column exists so this can be added later without a schema migration, but nothing enforces it today.
+- **Only two roles are enforced.** `account_executive` (read-only) and `admin` (weight recalibration) are gated (specs/011-production-hardening); `cs_lead`/`support_lead`/`engineering_manager` still reach every endpoint identically. Broader per-role scoping across all five remains a later hardening step.
 - **No SSO/OAuth.** Username/password only, per the explicit MVP scope for this module.
 - **No password reset flow, no MFA.** Both are reasonable Post-MVP hardening steps, not required for the first solution to be internally usable and demoable.
 

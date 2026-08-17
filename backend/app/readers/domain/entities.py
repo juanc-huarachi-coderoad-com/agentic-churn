@@ -47,6 +47,27 @@ class MessageEventInfo:
     text: str
 
 
+# ---------------------------------------------------------------------------
+# Meeting reader — specs/011-production-hardening, User Story 6 (FR-023)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MeetingTranscriptInfo:
+    """One `meeting`-type event — kept as its own type rather than reusing
+    `MessageEventInfo` (a same-shaped `MessageEventRepositoryPort` row would
+    also hand Tone/Intent transcripts they were never meant to classify;
+    `research.md` Decision 5's "input-data change, not reader-interface
+    change" applies to Absence/Relationship, not to widening the Tone/Intent
+    corpus to a genuinely different content type)."""
+
+    event_id: UUID
+    occurred_at: datetime
+    stakeholder_id: UUID | None
+    series_id: str | None
+    text: str
+
+
 @dataclass(frozen=True)
 class ConfirmedBaselineWindow:
     """What the Tone reader actually receives as "how this stakeholder

@@ -57,7 +57,9 @@ class SqlAlchemyTokenRepository(TokenRepositoryPort):
     async def get_by_hash(self, token_hash: str) -> TokenRecord | None:
         result = await self._session.execute(
             text(
-                "SELECT user_id, expires_at, revoked_at FROM auth_tokens "
+                "SELECT auth_tokens.user_id, auth_tokens.expires_at, "
+                "auth_tokens.revoked_at, users.role FROM auth_tokens "
+                "JOIN users ON users.id = auth_tokens.user_id "
                 "WHERE token_hash = :token_hash"
             ),
             {"token_hash": token_hash},
@@ -66,7 +68,10 @@ class SqlAlchemyTokenRepository(TokenRepositoryPort):
         if row is None:
             return None
         return TokenRecord(
-            user_id=row.user_id, expires_at=row.expires_at, revoked_at=row.revoked_at
+            user_id=row.user_id,
+            expires_at=row.expires_at,
+            revoked_at=row.revoked_at,
+            role=row.role,
         )
 
     async def revoke(self, token_hash: str) -> None:

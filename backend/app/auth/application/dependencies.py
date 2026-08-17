@@ -4,6 +4,7 @@ by `.importlinter`'s global-dependency-rule contract. The concrete repository is
 in at the composition root (app.main) via FastAPI's `dependency_overrides`, exactly the
 pattern decisions/02-repo-and-tooling.md describes for LLMPort/EmbeddingPort."""
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -13,6 +14,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.auth.application.ports import TokenRepositoryPort
 from app.auth.domain.password import hash_token
+
+logger = logging.getLogger(__name__)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -29,6 +32,7 @@ async def provide_token_repository() -> TokenRepositoryPort:
 @dataclass(frozen=True)
 class CurrentUser:
     user_id: UUID
+    role: str | None
 
 
 async def get_current_user(
@@ -49,7 +53,64 @@ async def get_current_user(
     if record.expires_at <= datetime.now(UTC):
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    return CurrentUser(user_id=record.user_id)
+    return CurrentUser(user_id=record.user_id, role=record.role)
+
+
+async def require_full_access(
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """Gates every write-capable route to every role except `account_executive`
+    (specs/011-production-hardening, User Story 2, `contracts/rbac.md`). Every
+    read-only route keeps depending on `get_current_user` directly, unchanged —
+    this dependency only ever narrows the one route set an account executive can
+    reach, never any other role's access to any route (FR-007).
+
+    FR-008: logs one `access_decision` line per call, allowed or denied, with
+    the role *as it was at this exact request* — `users.role` is mutable, so a
+    later lookup couldn't reconstruct which role actually authorized a given
+    past request."""
+    allowed = current_user.role != "account_executive"
+    logger.info(
+        "access_decision",
+        extra={
+            "user_id": str(current_user.user_id),
+            "role": current_user.role,
+            "outcome": "allowed" if allowed else "denied",
+        },
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403, detail="This action is not available for your account."
+        )
+    return current_user
+
+
+async def require_admin(
+    current_user: CurrentUser = Depends(get_current_user),
+) -> CurrentUser:
+    """Gates the weight-recalibration route to `role == "admin"` only — including
+    `cs_lead`, unlike `require_full_access` (specs/011-production-hardening, User
+    Story 4, `contracts/weight-recalibration.md`). Deliberately duplicates
+    `require_full_access`'s few-line logging shape rather than sharing a helper
+    across the two — keeps User Story 4 free of any dependency on User Story 2's
+    delivery order (P10; safe to factor out later if both ship together).
+
+    FR-008: logs one `access_decision` line per call, same shape as
+    `require_full_access` — the role *as it was at this exact request*."""
+    allowed = current_user.role == "admin"
+    logger.info(
+        "access_decision",
+        extra={
+            "user_id": str(current_user.user_id),
+            "role": current_user.role,
+            "outcome": "allowed" if allowed else "denied",
+        },
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=403, detail="This action is not available for your account."
+        )
+    return current_user
 
 
 async def get_bearer_token(

@@ -118,5 +118,52 @@
     "occurred_at": "2026-08-13T14:30:00-05:00",
     "from": "ana.reyes@meridian.com",
     "text": "Separately — I'm forwarding the contract dispute thread to our legal team, please hold off on that topic until they weigh in."
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "slack-msg-4471",
+    "occurred_at": "2026-08-07T16:05:00-05:00",
+    "from": "diego@meridian.com",
+    "text": "quick one in here — anyone seen the reporting export job fail overnight?"
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "slack-msg-4502",
+    "occurred_at": "2026-08-12T09:20:00-05:00",
+    "from": "ana.reyes@meridian.com",
+    "text": "thanks for the quick turnaround on ticket 398, team noticed"
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "csat-resp-2201",
+    "occurred_at": "2026-08-09T12:00:00-05:00",
+    "respondent": "ana.reyes@meridian.com",
+    "score": 6,
+    "comment": "Support has been slower to resolve things lately, and the reopened ticket didn't help."
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "csat-resp-2214",
+    "occurred_at": "2026-08-12T12:00:00-05:00",
+    "respondent": "diego@meridian.com",
+    "score": 9
+  },
+  {
+    "source_type": "calendar",
+    "source_native_id": "calendar-series-qbr-2026w32",
+    "occurred_at": "2026-08-11T15:00:00-05:00",
+    "attendee": "ana.reyes@meridian.com",
+    "series_id": "meridian-qbr",
+    "consent_documented": true,
+    "transcript": "Ana: We need the CSV export fix live before the board review. Diego: Understood — engineering will ship the reporting CSV export by next Friday."
+  },
+  {
+    "source_type": "calendar",
+    "source_native_id": "calendar-series-standup-2026w32",
+    "occurred_at": "2026-08-11T09:00:00-05:00",
+    "attendee": "diego@meridian.com",
+    "series_id": "meridian-standup",
+    "consent_documented": false,
+    "transcript": "Diego: internal standup notes, no client consent on record for this recurring series."
   }
 ]

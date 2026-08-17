@@ -24,7 +24,8 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import async_session_factory
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyCommitmentLookup,
@@ -98,7 +99,8 @@ async def _force_a_real_absence_event() -> None:
     """Same anchoring pattern `scripts/seed_score_fixture.py` already
     established: `as_of = last_contact + 8 days` guarantees a real, deterministic
     `absence` event regardless of the real wall-clock date the suite runs on."""
-    encryption = FernetEncryption(settings.encryption_key_path)
+    key_store = FileKeyStore(settings.data_keys_dir)
+    encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
     async with async_session_factory() as session:
         commitments = SqlAlchemyCommitmentLookup(session)
         last_contact = await commitments.last_contact_at()
@@ -108,14 +110,16 @@ async def _force_a_real_absence_event() -> None:
             collector_runs=SqlAlchemyCollectorRunRepository(session),
             events=SqlAlchemyEventRepository(session),
             encryption=encryption,
-            data_key_ref=settings.encryption_key_id,
+            key_store=key_store,
         )
         await use_case.execute(as_of=as_of)
 
 
 def _build_readers(*, candidates: CandidateCorpusPort, embeddings: EmbeddingPort, session):
     findings = SqlAlchemyFindingRepository(session)
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     messages = SqlAlchemyMessageEventRepository(session, encryption)
     llm = _ContentAwareFakeLLM()
     readers = [
@@ -232,7 +236,9 @@ async def test_recurrence_failure_is_isolated_from_the_other_readers():
     exception, and their findings still reach the gate normally."""
     async with async_session_factory() as session:
         findings = SqlAlchemyFindingRepository(session)
-        encryption = FernetEncryption(settings.encryption_key_path)
+        encryption = BucketedFernetEncryption(
+            FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+        )
         messages = SqlAlchemyMessageEventRepository(session, encryption)
         readers = [
             CommitmentReader(SqlAlchemyResponsePairRepository(session), findings),

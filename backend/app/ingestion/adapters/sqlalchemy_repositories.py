@@ -34,6 +34,7 @@ from app.ingestion.application.ports import (
     ProductAreaRecord,
     RecurringCommitment,
     ResponsePairRow,
+    RetentionJobRepositoryPort,
     RollupRow,
     StakeholderIdentity,
 )
@@ -538,3 +539,70 @@ class SqlAlchemyCommitmentLookup(CommitmentLookupPort):
             )
         ).one_or_none()
         return row.last if row is not None else None
+
+
+class SqlAlchemyRetentionJobRepository(RetentionJobRepositoryPort):
+    """Two sessions, deliberately: `shred_bucket` runs through `shredder_session`
+    (`app.db.shredder_session_factory`, authenticated as the narrowly-scoped
+    `shredder_role`), the only writer of `body_encrypted` anywhere in this
+    codebase; `record_run` runs through the normal, unrestricted `session`,
+    exactly like every other bookkeeping table in this module.
+
+    `shred_bucket` only ever nulls `events.body_encrypted` — **not**
+    `raw_envelopes.payload_encrypted`, a real correction found while
+    implementing this class: `raw_envelopes.payload_encrypted` is `NOT NULL`
+    in the schema, and `data-base/10-ddl-appendix.md`'s own crypto-shredding
+    design note already says destroying the key alone is sufficient for that
+    table ("once destroyed, payload_encrypted is cryptographically
+    unrecoverable even though this row and its data_key_ref value are
+    untouched") — only `events.body_encrypted` was ever designed to be
+    explicitly nulled by the retention job (that column's own comment: "nulled
+    by the retention job once the key is destroyed"). No row-level touch is
+    needed or possible for `raw_envelopes`.
+    """
+
+    def __init__(self, session: AsyncSession, shredder_session: AsyncSession) -> None:
+        self._session = session
+        self._shredder_session = shredder_session
+
+    async def shred_bucket(self, bucket_id: str) -> None:
+        await self._shredder_session.execute(
+            text(
+                "UPDATE events SET body_encrypted = NULL "
+                "WHERE data_key_ref = :bucket_id AND body_encrypted IS NOT NULL"
+            ),
+            {"bucket_id": bucket_id},
+        )
+        await self._shredder_session.commit()
+
+    async def record_run(
+        self,
+        *,
+        started_at: datetime,
+        completed_at: datetime | None,
+        buckets_evaluated: int,
+        buckets_shredded: int,
+        status: str,
+        error_detail: str | None,
+    ) -> UUID:
+        run_id = uuid4()
+        await self._session.execute(
+            text(
+                "INSERT INTO retention_job_runs "
+                "(id, started_at, completed_at, buckets_evaluated, buckets_shredded, "
+                "status, error_detail) "
+                "VALUES (:id, :started_at, :completed_at, :buckets_evaluated, "
+                ":buckets_shredded, (:status)::retention_job_status, :error_detail)"
+            ),
+            {
+                "id": run_id,
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "buckets_evaluated": buckets_evaluated,
+                "buckets_shredded": buckets_shredded,
+                "status": status,
+                "error_detail": error_detail,
+            },
+        )
+        await self._session.commit()
+        return run_id

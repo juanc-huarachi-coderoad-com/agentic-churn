@@ -19,7 +19,8 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import async_session_factory, engine
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.simulated_collector import SimulatedCollector
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
@@ -64,12 +65,15 @@ async def _build_fixture(tmp_path: Path, suffix: str, session) -> Path:
 async def _run(tmp_path, suffix, fail_sources=frozenset()):
     async with async_session_factory() as floor_session:
         fixture_path = await _build_fixture(tmp_path, suffix, floor_session)
-    # The real, persistent deployment key, not a throwaway per-test one — these
-    # envelopes' encrypted bodies are permanent (events can't be deleted), and any
-    # later replay (this run or a future one) decrypts every message-type event in
-    # the whole ledger with whatever key is currently configured (see
-    # test_replay.py's identical note).
-    encryption = FernetEncryption(settings.encryption_key_path)
+    # The real, persistent deployment key store, not a throwaway per-test one —
+    # these envelopes' encrypted bodies are permanent (events can't be deleted), and
+    # any later replay (this run or a future one) decrypts every message-type event
+    # in the whole ledger with whatever keys are currently active (see
+    # test_replay.py's identical note). `key_store=` replaces the old literal
+    # `data_key_ref="test-key"` — RunCollectorUseCase now resolves the real bucket id
+    # itself (specs/011-production-hardening, research.md Decision 1).
+    key_store = FileKeyStore(settings.data_keys_dir)
+    encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
     collector = SimulatedCollector(fixture_path)
     now = datetime.now(UTC)
     async with async_session_factory() as session:
@@ -78,7 +82,7 @@ async def _run(tmp_path, suffix, fail_sources=frozenset()):
             events=SqlAlchemyEventRepository(session),
             profile_context=SqlAlchemyClientProfileContext(session),
             encryption=encryption,
-            data_key_ref="test-key",
+            key_store=key_store,
         )
         return await use_case.execute(
             collector, window_start=now, window_end=now, fail_sources=fail_sources
@@ -88,13 +92,18 @@ async def _run(tmp_path, suffix, fail_sources=frozenset()):
 async def test_run_twice_is_idempotent(tmp_path):
     suffix = uuid.uuid4().hex[:8]
 
+    # 14 Phase 1 items + 2 slack + 2 csat + 1 consented calendar item (the
+    # fixture's second calendar item has consent_documented: false and is
+    # dropped by SimulatedCollector.fetch() before it's ever counted here —
+    # FR-023, also covered explicitly by
+    # test_unconsented_calendar_item_is_never_collected below).
     first = await _run(tmp_path, suffix)
-    assert first.envelopes_emitted == 14
+    assert first.envelopes_emitted == 19
     assert first.duplicates_skipped == 0
 
     second = await _run(tmp_path, suffix)
     assert second.envelopes_emitted == 0
-    assert second.duplicates_skipped == 14
+    assert second.duplicates_skipped == 19
 
 
 async def test_identity_resolution_matches_ana_and_leaves_zendesk_unresolved(tmp_path):
@@ -152,7 +161,33 @@ async def test_source_failure_produces_honest_coverage_report(tmp_path):
     assert report.sources_read < report.sources_expected
     assert report.gap_reason is not None
     assert "zendesk" in report.gap_reason
-    # gmail (3 items) + warehouse (6 items) succeed; zendesk (5 items) skipped entirely
-    # (specs/005-deterministic-findings grew the fixture's zendesk/warehouse/gmail
-    # counts beyond feature 003's original 2/1/2 split).
-    assert result.envelopes_emitted == 9
+    # gmail (3) + warehouse (6) + slack (2) + csat (2) + transcripts (1
+    # consented calendar item — the other lacks consent and is never
+    # collected at all) succeed; zendesk (5 items) skipped entirely
+    # (specs/005-deterministic-findings grew the fixture's zendesk/warehouse/
+    # gmail counts beyond feature 003's original 2/1/2 split; specs/011-
+    # production-hardening added the Post-MVP sources).
+    assert result.envelopes_emitted == 14
+    # slack/csat/transcripts are only "expected" because this run's own
+    # envelopes actually contain them (RunCollectorUseCase._POST_MVP_SOURCE_
+    # TYPES's docstring) — 3 Phase 1 + 3 Post-MVP sources this run.
+    assert report.sources_expected == 6
+
+
+async def test_unconsented_calendar_item_is_never_collected(tmp_path):
+    """FR-023: a calendar item with `consent_documented: false` produces
+    zero `raw_envelopes` rows — filtered at `SimulatedCollector.fetch()`,
+    before it's ever normalized into an Envelope, not merely abstained on by
+    `MeetingReader`."""
+    suffix = uuid.uuid4().hex[:8]
+    await _run(tmp_path, suffix)
+
+    async with engine.begin() as conn:
+        row = (
+            await conn.execute(
+                text("SELECT count(*) AS n FROM raw_envelopes WHERE source_native_id = :id"),
+                {"id": f"calendar-series-standup-2026w32-{suffix}"},
+            )
+        ).one()
+
+    assert row.n == 0

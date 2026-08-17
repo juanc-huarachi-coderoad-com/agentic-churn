@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from cryptography.fernet import Fernet
+
 from app.ingestion.domain.business_hours import WorkingCalendar
 
 
@@ -18,6 +20,38 @@ class EncryptionPort(ABC):
 
     @abstractmethod
     def decrypt(self, ciphertext: bytes) -> str: ...
+
+
+class KeyStorePort(ABC):
+    """Daily key-rotation buckets for crypto-shredding (specs/011-production-
+    hardening, research.md Decision 1). `EncryptionPort`'s signature never
+    changes — a `BucketedFernetEncryption` adapter holds one of these and uses
+    it internally; the retention job (`RunRetentionUseCase`) is this port's other,
+    independent caller, driving `destroy()` directly."""
+
+    @abstractmethod
+    def current_bucket_id(self) -> str:
+        """Today's UTC calendar date, `YYYY-MM-DD` — the bucket every new
+        encryption uses."""
+        ...
+
+    @abstractmethod
+    def resolve(self, bucket_id: str) -> Fernet:
+        """Returns the Fernet key material for `bucket_id`, creating it lazily on
+        first use if it doesn't exist yet."""
+        ...
+
+    @abstractmethod
+    def list_active_buckets(self) -> list[str]:
+        """Every bucket id with a key that still exists — a destroyed bucket
+        never appears here again."""
+        ...
+
+    @abstractmethod
+    def destroy(self, bucket_id: str) -> None:
+        """Permanently deletes `bucket_id`'s key. Idempotent — destroying an
+        already-destroyed (or never-created) bucket is not an error."""
+        ...
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +305,43 @@ class CommitmentLookupPort(ABC):
         ...
 
 
+# ---------------------------------------------------------------------------
+# Retention job (specs/011-production-hardening, FR-001/002)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RetentionJobRunResult:
+    id: UUID
+    buckets_evaluated: int
+    buckets_shredded: int
+    status: str
+
+
+class RetentionJobRepositoryPort(ABC):
+    @abstractmethod
+    async def shred_bucket(self, bucket_id: str) -> None:
+        """Nulls `events.body_encrypted` and `raw_envelopes.payload_encrypted` for
+        every row whose `data_key_ref` matches `bucket_id` — via the narrowly-scoped
+        `shredder_role` connection, never the unrestricted default one."""
+        ...
+
+    @abstractmethod
+    async def record_run(
+        self,
+        *,
+        started_at: datetime,
+        completed_at: datetime | None,
+        buckets_evaluated: int,
+        buckets_shredded: int,
+        status: str,
+        error_detail: str | None,
+    ) -> UUID:
+        """Writes one `retention_job_runs` row (FR-002) — durable, queryable
+        independent of application logs."""
+        ...
+
+
 __all__ = [
     "ClientProfileContext",
     "ClientProfileContextPort",
@@ -282,10 +353,13 @@ __all__ = [
     "EventRecord",
     "EventRepositoryPort",
     "EventThreadRow",
+    "KeyStorePort",
     "NewEvent",
     "ProductAreaRecord",
     "RecurringCommitment",
     "ResponsePairRow",
+    "RetentionJobRepositoryPort",
+    "RetentionJobRunResult",
     "StakeholderIdentity",
     "WorkingCalendar",
 ]

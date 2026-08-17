@@ -28,7 +28,8 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db import async_session_factory, engine
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
     SqlAlchemyEventRepository,
@@ -121,7 +122,9 @@ async def _reset_scoring_state() -> None:
 
 
 async def _pin_response_pairs(as_of: datetime) -> None:
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with async_session_factory() as session:
         replay = ReplayUseCase(
             events=SqlAlchemyEventRepository(session),

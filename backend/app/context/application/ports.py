@@ -41,6 +41,14 @@ class ProfileVersionSummary:
     stakeholders: list[StakeholderSummary]
     product_areas: list[ProductAreaSummary]
     commitments: list[CommitmentSummary]
+    # specs/011-production-hardening, User Story 5 (FR-017) — a real gap found
+    # while wiring the editor UI: this summary never carried these two fields,
+    # even though the client_profile_versions columns behind them
+    # (communication_norms, exclusions) have existed since feature 003. Without
+    # them, the editor could never show — or safely round-trip — a client's
+    # current exclusions/communication norms.
+    exclusions: list[str]
+    communication_norms: str | None
 
 
 class ClientProfileRepositoryPort(ABC):

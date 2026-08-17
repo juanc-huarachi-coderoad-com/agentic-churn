@@ -49,7 +49,14 @@ Pure reads — no route in this section computes anything; every response is a d
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/profile` | GET | Current profile, read-only |
-| `/api/profile/reload` | POST | **MVP only.** The CS lead edits the YAML file directly (`decisions/00-open-questions-resolved.md` Q2) and calls this to trigger validation + a new `client_profile_versions` row + full replay. Post-MVP replaces this with a real editor UI writing through `POST /api/profile` directly. |
+| `/api/profile` | POST | **Implemented (specs/011-production-hardening, User Story 5).** The Post-MVP editor route — accepts `ClientProfileInput` directly (the same domain model `/api/profile/reload` builds from YAML), creates a new `client_profile_versions` row, triggers replay. `require_full_access`-gated. See `specs/011-production-hardening/contracts/profile-editor.md`. |
+| `/api/profile/reload` | POST | The CS lead edits the YAML file directly (`decisions/00-open-questions-resolved.md` Q2) and calls this to trigger validation + a new `client_profile_versions` row + full replay. **Not removed** now that `POST /api/profile` exists — a deployment that still prefers direct YAML editing keeps using this route (`contracts/profile-editor.md`'s note). |
+
+## Weight recalibration (M6, admin only)
+
+| Route | Method | Body |
+|---|---|---|
+| `/api/admin/finding-types/{finding_type}` | PATCH | `{base_points}` — `require_admin`-gated (specs/011-production-hardening, User Story 4, FR-014). Writes `finding_type_config.base_points` + an audit row (`finding_type_config_changes`). See `specs/011-production-hardening/contracts/weight-recalibration.md`. |
 
 ## Ingestion webhooks (M1)
 

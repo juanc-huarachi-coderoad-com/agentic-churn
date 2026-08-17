@@ -17,7 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings  # noqa: E402
 from app.db import async_session_factory  # noqa: E402
-from app.ingestion.adapters.encryption import FernetEncryption  # noqa: E402
+from app.ingestion.adapters.encryption import BucketedFernetEncryption  # noqa: E402
+from app.ingestion.adapters.key_store import FileKeyStore  # noqa: E402
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter  # noqa: E402
 from app.readers.adapters.openai_embedding import OpenAIEmbeddingAdapter  # noqa: E402
 from app.readers.adapters.sqlalchemy_repository import (  # noqa: E402
@@ -27,6 +28,7 @@ from app.readers.adapters.sqlalchemy_repository import (  # noqa: E402
     SqlAlchemyEventExistenceRepository,
     SqlAlchemyFindingRepository,
     SqlAlchemyFindingTypeConfigRepository,
+    SqlAlchemyMeetingTranscriptRepository,
     SqlAlchemyMessageEventRepository,
     SqlAlchemyQuarantineRepository,
     SqlAlchemyRelationshipContext,
@@ -36,6 +38,7 @@ from app.readers.adapters.sqlalchemy_repository import (  # noqa: E402
 from app.readers.application.absence_reader import AbsenceReader  # noqa: E402
 from app.readers.application.commitment_reader import CommitmentReader  # noqa: E402
 from app.readers.application.intent_reader import IntentReader  # noqa: E402
+from app.readers.application.meeting_reader import MeetingReader  # noqa: E402
 from app.readers.application.recurrence_reader import RecurrenceReader  # noqa: E402
 from app.readers.application.relationship_reader import RelationshipReader  # noqa: E402
 from app.readers.application.tone_reader import ToneReader  # noqa: E402
@@ -45,7 +48,9 @@ from app.readers.application.validation_gate import ValidationGate  # noqa: E402
 
 
 async def run() -> None:
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with async_session_factory() as session:
         findings = SqlAlchemyFindingRepository(session)
         messages = SqlAlchemyMessageEventRepository(session, encryption)
@@ -73,6 +78,9 @@ async def run() -> None:
                 findings,
             ),
             IntentReader(messages, llm, findings),
+            MeetingReader(
+                SqlAlchemyMeetingTranscriptRepository(session, encryption), llm, findings
+            ),
         ]
         use_case = RunReadersUseCase(
             readers=readers, findings=findings, gate=gate, quarantine=quarantine

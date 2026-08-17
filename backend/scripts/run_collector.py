@@ -15,7 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings  # noqa: E402
 from app.db import async_session_factory  # noqa: E402
-from app.ingestion.adapters.encryption import FernetEncryption  # noqa: E402
+from app.ingestion.adapters.encryption import BucketedFernetEncryption  # noqa: E402
+from app.ingestion.adapters.key_store import FileKeyStore  # noqa: E402
 from app.ingestion.adapters.simulated_collector import SimulatedCollector  # noqa: E402
 from app.ingestion.adapters.sqlalchemy_repositories import (  # noqa: E402
     SqlAlchemyClientProfileContext,
@@ -23,24 +24,29 @@ from app.ingestion.adapters.sqlalchemy_repositories import (  # noqa: E402
     SqlAlchemyEventRepository,
 )
 from app.ingestion.application.use_cases import ReplayUseCase, RunCollectorUseCase  # noqa: E402
+from app.observability.adapters.tracing import traced  # noqa: E402
 
 
 async def run(source: str) -> None:
     if source != "simulated":
         raise SystemExit(f"Unknown --source {source!r} — only 'simulated' exists in this feature")
 
-    encryption = FernetEncryption(settings.encryption_key_path)
+    key_store = FileKeyStore(settings.data_keys_dir)
+    encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
     async with async_session_factory() as session:
         use_case = RunCollectorUseCase(
             collector_runs=SqlAlchemyCollectorRunRepository(session),
             events=SqlAlchemyEventRepository(session),
             profile_context=SqlAlchemyClientProfileContext(session),
             encryption=encryption,
-            data_key_ref=settings.encryption_key_id,
+            key_store=key_store,
         )
         collector = SimulatedCollector(Path(settings.collector_fixture_path))
         window_end = datetime.now(UTC)
-        result = await use_case.execute(collector, window_start=window_end, window_end=window_end)
+        with traced("collector_run"):
+            result = await use_case.execute(
+                collector, window_start=window_end, window_end=window_end
+            )
         print(
             f"envelopes_emitted={result.envelopes_emitted} "
             f"duplicates_skipped={result.duplicates_skipped} "

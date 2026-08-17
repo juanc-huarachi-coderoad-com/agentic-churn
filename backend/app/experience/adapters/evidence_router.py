@@ -14,7 +14,8 @@ from app.experience.adapters.sqlalchemy_repository import (
     SqlAlchemyScoreReader,
 )
 from app.experience.application.use_cases import EvidenceNotFoundError, GetEvidenceTraceUseCase
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 
 router = APIRouter()
 
@@ -59,7 +60,9 @@ async def get_evidence(
     _current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> EvidenceTraceResponse:
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     use_case = GetEvidenceTraceUseCase(
         score=SqlAlchemyScoreReader(session),
         findings=SqlAlchemyFindingReader(session, encryption),

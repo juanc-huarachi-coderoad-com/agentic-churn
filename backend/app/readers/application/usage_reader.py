@@ -13,6 +13,12 @@ from app.readers.domain.services import is_usage_deviation, usage_deviation_magn
 from app.scoring.domain.entities import Finding
 
 _FINDING_TYPE = "usage_deviation"
+# FR-022: a CSAT-score deviation is scored as its own finding_type — a
+# seeded `finding_type_config` row (`data-base/11-seed-data.sql`) already
+# anticipated this from Phase 1, distinct base_points/confidence_floor/
+# half_life from the warehouse-metric `usage_deviation` row it's paired with
+# here.
+_CSAT_FINDING_TYPE = "csat_deviation"
 _CONFIDENCE = 0.9
 
 
@@ -57,11 +63,13 @@ class UsageReader(Reader):
                     id=uuid4(),
                     reader_type=self.reader_type,
                     reader_version=self.reader_version,
-                    finding_type=_FINDING_TYPE,
+                    finding_type=(
+                        _CSAT_FINDING_TYPE if subject_type == "stakeholder" else _FINDING_TYPE
+                    ),
                     magnitude=usage_deviation_magnitude(z),
                     confidence=_CONFIDENCE,
                     cited_event_ids=(event_id,),
-                    stakeholder_id=None,
+                    stakeholder_id=subject_id if subject_type == "stakeholder" else None,
                     product_area_id=subject_id if subject_type == "product_area" else None,
                     status="pending_validation",
                     state=None,

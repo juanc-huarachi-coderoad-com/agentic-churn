@@ -1,0 +1,122 @@
+[
+  {
+    "source_type": "gmail",
+    "source_native_id": "gmail-msg-8831",
+    "occurred_at": "2026-08-10T09:14:00-05:00",
+    "from": "ana.reyes@meridian.com",
+    "text": "Please advise on the timeline. I need to brief the board on Thursday."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "gmail-msg-8790",
+    "occurred_at": "2026-07-01T10:00:00-05:00",
+    "from": "diego@meridian.com",
+    "text": "Looping in on the tracking_api integration questions from our side."
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "zendesk-456-created",
+    "occurred_at": "2026-08-06T09:15:00-05:00",
+    "reporter": "support-desk@meridian.zendesk.com",
+    "ticket_number": 456,
+    "title": "Slow API response",
+    "product_area": "tracking_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "zendesk-456-reopened",
+    "occurred_at": "2026-08-10T07:40:00-05:00",
+    "reporter": "support-desk@meridian.zendesk.com",
+    "ticket_number": 456,
+    "title": "Slow API response",
+    "reopen_count": 2,
+    "product_area": "tracking_api",
+    "state": "reopened"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "zendesk-398-created",
+    "occurred_at": "2026-08-11T11:02:00-05:00",
+    "reporter": "support-desk@meridian.zendesk.com",
+    "ticket_number": 398,
+    "title": "Add CSV export",
+    "product_area": "reporting",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "zendesk-398-resolved",
+    "occurred_at": "2026-08-11T13:02:00-05:00",
+    "reporter": "support-desk@meridian.zendesk.com",
+    "ticket_number": 398,
+    "title": "Add CSV export",
+    "product_area": "reporting",
+    "state": "resolved"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "zendesk-512-created",
+    "occurred_at": "2026-08-12T15:20:00-05:00",
+    "reporter": "support-desk@meridian.zendesk.com",
+    "ticket_number": 512,
+    "title": "Login page displays wrong company logo",
+    "product_area": "reporting",
+    "state": "created"
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "usage-tracking_api-w29",
+    "occurred_at": "2026-07-08T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "tracking_api",
+    "value_delta_pct": -2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "usage-tracking_api-w30",
+    "occurred_at": "2026-07-15T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "tracking_api",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "usage-tracking_api-w31",
+    "occurred_at": "2026-07-22T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "tracking_api",
+    "value_delta_pct": -3
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "usage-tracking_api-w32",
+    "occurred_at": "2026-07-29T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "tracking_api",
+    "value_delta_pct": 2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "usage-tracking_api-w33",
+    "occurred_at": "2026-08-05T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "tracking_api",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "usage-tracking_api-w34",
+    "occurred_at": "2026-08-12T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "tracking_api",
+    "value_delta_pct": -22
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "gmail-msg-8845",
+    "occurred_at": "2026-08-13T14:30:00-05:00",
+    "from": "ana.reyes@meridian.com",
+    "text": "Separately — I'm forwarding the contract dispute thread to our legal team, please hold off on that topic until they weigh in."
+  }
+]

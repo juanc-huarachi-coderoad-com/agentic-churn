@@ -1,10 +1,12 @@
 """Ingestion application use cases: AppendEventUseCase, response-pair/event-thread
 computation, ReplayUseCase (T020-T022); identity resolution, redaction,
-RunCollectorUseCase (T031-T033, T035); DetectAbsenceUseCase (T040). One file —
-tasks.md groups these together since they share ports.py/sqlalchemy_repositories.py
-and read as one coherent "what happens to a signal after it's collected" pipeline.
+RunCollectorUseCase (T031-T033, T035); DetectAbsenceUseCase (T040);
+RunRetentionUseCase (specs/011-production-hardening, FR-001). One file — tasks.md
+groups these together since they share ports.py/sqlalchemy_repositories.py and
+read as one coherent "what happens to a signal after it's collected" pipeline.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -20,18 +22,24 @@ from app.ingestion.application.ports import (
     EventRecord,
     EventRepositoryPort,
     EventThreadRow,
+    KeyStorePort,
     NewEvent,
     ResponsePairRow,
+    RetentionJobRepositoryPort,
+    RetentionJobRunResult,
     RollupRow,
 )
 from app.ingestion.domain.business_hours import WorkingCalendar, compute_business_hours_elapsed
 from app.ingestion.domain.envelope import Envelope
+from app.ingestion.domain.retention import is_bucket_expired
 from app.ingestion.domain.thread_stitching import (
     ANCHOR_CONFIDENCE,
     TICKET_REFERENCE_CONFIDENCE,
     find_ticket_references,
     thread_key_for_ticket,
 )
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # T020 — append
@@ -42,12 +50,13 @@ class AppendEventUseCase:
     """Builds an event's canonical fields and appends it (REQ-M2-01, REQ-M2-02,
     REQ-M2-03 for `supersedes_event_id`)."""
 
-    def __init__(self, events: EventRepositoryPort, data_key_ref: str) -> None:
+    def __init__(self, events: EventRepositoryPort, key_store: KeyStorePort) -> None:
         self._events = events
-        self._data_key_ref = data_key_ref
+        self._key_store = key_store
 
     async def execute(self, event: NewEvent) -> UUID:
-        return await self._events.append(event, data_key_ref=self._data_key_ref)
+        data_key_ref = self._key_store.current_bucket_id()
+        return await self._events.append(event, data_key_ref=data_key_ref)
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +251,11 @@ def _event_type_for_source(source_type: str) -> str:
         return "ticket_state_change"
     if source_type == "warehouse":
         return "usage_measurement"
-    return "message"
+    if source_type == "csat":
+        return "survey_response"
+    if source_type == "transcripts":
+        return "meeting"
+    return "message"  # gmail, slack
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +281,20 @@ class RunCollectorUseCase:
     """
 
     _MVP_SOURCE_TYPES = ("gmail", "zendesk", "warehouse")
+    # Post-MVP sources (User Story 6, FR-021/022/023) are deliberately absent
+    # from `_MVP_SOURCE_TYPES` — that tuple drives an unconditional
+    # collector_runs row (and therefore a `coverage_reports.sources_expected`
+    # slot) per entry, every single run, which is exactly right for the three
+    # Phase 1 sources (a Phase 1 source that goes silent is a real, honest
+    # gap) but wrong for a Post-MVP one: since there's no "connected" flag
+    # anywhere in the schema (data-model.md's Decision — fixture-driven, not
+    # a new entity), the only signal this codebase has for "is Slack/CSAT/
+    # Calendar connected for this client" is "did this run's fixture data
+    # actually contain any." Treating them as unconditionally expected would
+    # make every client — including the ones in `demo/fixtures/meridian-
+    # week-phase1-only.json` that connect none of them — show a permanent,
+    # spurious coverage gap, which is exactly what FR-024 forbids.
+    _POST_MVP_SOURCE_TYPES = ("slack", "csat", "transcripts")
 
     def __init__(
         self,
@@ -275,13 +302,13 @@ class RunCollectorUseCase:
         events: EventRepositoryPort,
         profile_context: ClientProfileContextPort,
         encryption: EncryptionPort,
-        data_key_ref: str,
+        key_store: KeyStorePort,
     ) -> None:
         self._runs = collector_runs
         self._events = events
         self._profile_context = profile_context
         self._encryption = encryption
-        self._data_key_ref = data_key_ref
+        self._key_store = key_store
 
     async def execute(
         self,
@@ -305,13 +332,22 @@ class RunCollectorUseCase:
         envelopes = [collector.normalize(item) for item in raw_items]
         profile = await self._profile_context.get_current()
 
+        # The three Phase 1 sources are always expected; a Post-MVP source
+        # only joins `source_types` (and therefore `coverage_reports.
+        # sources_expected`) when this run's own envelopes actually contain
+        # it — see `_POST_MVP_SOURCE_TYPES`'s docstring for why.
+        present_post_mvp = [
+            s for s in self._POST_MVP_SOURCE_TYPES if any(e.source_type == s for e in envelopes)
+        ]
+        source_types = self._MVP_SOURCE_TYPES + tuple(present_post_mvp)
+
         run_id_by_source: dict[str, UUID] = {}
-        emitted_by_source: dict[str, int] = dict.fromkeys(self._MVP_SOURCE_TYPES, 0)
-        duplicates_by_source: dict[str, int] = dict.fromkeys(self._MVP_SOURCE_TYPES, 0)
+        emitted_by_source: dict[str, int] = dict.fromkeys(source_types, 0)
+        duplicates_by_source: dict[str, int] = dict.fromkeys(source_types, 0)
         sources_read = 0
         gap_reasons: list[str] = []
 
-        for source_type in self._MVP_SOURCE_TYPES:
+        for source_type in source_types:
             source_id = await self._runs.get_or_create_source(
                 source_type=source_type,
                 display_name=f"Meridian — {source_type}",
@@ -358,6 +394,7 @@ class RunCollectorUseCase:
 
             redacted_text, redacted_fields = redact(envelope.payload_text, profile.exclusions)
             payload_encrypted = self._encryption.encrypt(redacted_text)
+            data_key_ref = self._key_store.current_bucket_id()
 
             envelope_id = await self._runs.insert_envelope(
                 collector_run_id=run_id,
@@ -367,7 +404,7 @@ class RunCollectorUseCase:
                 identity_status="resolved" if stakeholder_id else "unresolved",
                 redacted_fields=redacted_fields,
                 payload_encrypted=payload_encrypted,
-                data_key_ref=self._data_key_ref,
+                data_key_ref=data_key_ref,
             )
 
             event_id = await self._events.append(
@@ -380,14 +417,14 @@ class RunCollectorUseCase:
                     body_encrypted=payload_encrypted,
                     structured_payload=envelope.structured_payload,
                 ),
-                data_key_ref=self._data_key_ref,
+                data_key_ref=data_key_ref,
             )
             await self._runs.link_envelope_to_event(envelope_id, event_id)
             emitted_by_source[source_type] += 1
             latest_occurred_at = max(latest_occurred_at, envelope.occurred_at)
 
         latest_run_id: UUID | None = None
-        for source_type in self._MVP_SOURCE_TYPES:
+        for source_type in source_types:
             if source_type in fail_sources:
                 continue
             run_id = run_id_by_source[source_type]
@@ -402,11 +439,11 @@ class RunCollectorUseCase:
         # Every source failed — no non-failed run to attach coverage to; fall back to
         # whichever run was created last (still a real row, still an honest report).
         if latest_run_id is None:
-            latest_run_id = run_id_by_source[self._MVP_SOURCE_TYPES[-1]]
+            latest_run_id = run_id_by_source[source_types[-1]]
 
         coverage_report_id = await self._runs.record_coverage(
             collector_run_id=latest_run_id,
-            sources_expected=len(self._MVP_SOURCE_TYPES),
+            sources_expected=len(source_types),
             sources_read=sources_read,
             gap_reason="; ".join(gap_reasons) or None,
             complete_to=latest_occurred_at,
@@ -446,13 +483,13 @@ class DetectAbsenceUseCase:
         collector_runs: CollectorRunRepositoryPort,
         events: EventRepositoryPort,
         encryption: EncryptionPort,
-        data_key_ref: str,
+        key_store: KeyStorePort,
     ) -> None:
         self._commitments = commitments
         self._runs = collector_runs
         self._events = events
         self._encryption = encryption
-        self._data_key_ref = data_key_ref
+        self._key_store = key_store
 
     async def execute(self, *, as_of: datetime | None = None) -> list[UUID]:
         as_of = as_of or datetime.now(UTC)
@@ -487,6 +524,7 @@ class DetectAbsenceUseCase:
             payload_encrypted = self._encryption.encrypt(
                 f"No contact matching commitment {commitment.id} since {last_contact}"
             )
+            data_key_ref = self._key_store.current_bucket_id()
             envelope_id = await self._runs.insert_envelope(
                 collector_run_id=run_id,
                 source_native_id=idempotency_key,
@@ -495,7 +533,7 @@ class DetectAbsenceUseCase:
                 identity_status="unresolved",
                 redacted_fields=[],
                 payload_encrypted=payload_encrypted,
-                data_key_ref=self._data_key_ref,
+                data_key_ref=data_key_ref,
             )
             event_id = await self._events.append(
                 NewEvent(
@@ -510,7 +548,7 @@ class DetectAbsenceUseCase:
                         "last_contact_at": last_contact.isoformat() if last_contact else None,
                     },
                 ),
-                data_key_ref=self._data_key_ref,
+                data_key_ref=data_key_ref,
             )
             await self._runs.link_envelope_to_event(envelope_id, event_id)
             await self._runs.finish_run(
@@ -534,10 +572,12 @@ class ComputeRollupsUseCase:
     """Truncates and rebuilds `rollups` from `events` alone (the same "projection,
     rebuildable from events" shape `event_threads`/`response_pairs` already have,
     `data-base/01-database-overview.md`'s Principle 3) — one row per
-    `usage_measurement` event, scoped to exactly what the Usage reader consumes
-    (`spec.md`'s Assumptions), not a general analytics engine. `rollups.value` is
-    each event's own `value_delta_pct` reading (`research.md`'s Decision — the
-    real event schema carries a delta, not a separate absolute value)."""
+    `usage_measurement` or `survey_response` event, scoped to exactly what the
+    Usage reader consumes (`spec.md`'s Assumptions plus FR-022's CSAT
+    extension), not a general analytics engine. `rollups.value` is each
+    event's own `value_delta_pct` (warehouse) or `score` (CSAT) reading
+    (`research.md`'s Decision — the real event schema carries these directly,
+    not a separate absolute value)."""
 
     def __init__(self, events: EventRepositoryPort) -> None:
         self._events = events
@@ -556,6 +596,95 @@ class ComputeRollupsUseCase:
             for record in all_events
             if record.event_type == "usage_measurement"
         ]
+        # FR-022: CSAT numeric scores are the Usage reader's second tracked
+        # metric, alongside the existing warehouse one — `subject_type=
+        # "stakeholder"` (not "product_area"), since a CSAT score is a
+        # per-respondent reading, not a per-product-area one
+        # (`rollup_subject_type`'s enum already anticipated this value).
+        rows += [
+            RollupRow(
+                subject_type="stakeholder",
+                subject_id=record.stakeholder_id,
+                metric="csat_score",
+                window_start=record.occurred_at - timedelta(days=_ROLLUP_SAMPLE_WINDOW_DAYS),
+                window_end=record.occurred_at,
+                value=float(record.structured_payload.get("score", 0)),
+            )
+            for record in all_events
+            if record.event_type == "survey_response"
+        ]
         await self._events.truncate_rollups()
         await self._events.bulk_insert_rollups(rows)
         return len(rows)
+
+
+# ---------------------------------------------------------------------------
+# Retention job (specs/011-production-hardening, FR-001/002/003/004a)
+# ---------------------------------------------------------------------------
+
+
+class RunRetentionUseCase:
+    """Daily crypto-shredding (`research.md` Decision 1). Resolves every bucket
+    still active in `KeyStorePort`, destroys the ones whose entire UTC day is
+    older than the retention window, nulls their `events.body_encrypted` rows,
+    and records one `retention_job_runs` row either way. FR-004a: a failure
+    partway through is logged (independent of User Story 3's tracing — this
+    use case alone fully satisfies FR-004a) and re-raised so the caller's own
+    schedule naturally retries on the next run (FR-003's idempotency makes a
+    partial run always safe to redo)."""
+
+    def __init__(
+        self,
+        key_store: KeyStorePort,
+        retention_repo: RetentionJobRepositoryPort,
+        retention_window_days: int,
+    ) -> None:
+        self._key_store = key_store
+        self._retention_repo = retention_repo
+        self._retention_window_days = retention_window_days
+
+    async def execute(self, *, now: datetime | None = None) -> RetentionJobRunResult:
+        now = now or datetime.now(UTC)
+        started_at = now
+        buckets_evaluated = 0
+        buckets_shredded = 0
+        try:
+            for bucket_id in self._key_store.list_active_buckets():
+                buckets_evaluated += 1
+                if is_bucket_expired(
+                    bucket_id, retention_window_days=self._retention_window_days, now=now
+                ):
+                    self._key_store.destroy(bucket_id)
+                    await self._retention_repo.shred_bucket(bucket_id)
+                    buckets_shredded += 1
+        except Exception as exc:
+            logger.error(
+                "retention job failed after evaluating %d bucket(s), %d shredded: %s",
+                buckets_evaluated,
+                buckets_shredded,
+                exc,
+            )
+            await self._retention_repo.record_run(
+                started_at=started_at,
+                completed_at=datetime.now(UTC),
+                buckets_evaluated=buckets_evaluated,
+                buckets_shredded=buckets_shredded,
+                status="failed",
+                error_detail=str(exc),
+            )
+            raise
+
+        run_id = await self._retention_repo.record_run(
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+            buckets_evaluated=buckets_evaluated,
+            buckets_shredded=buckets_shredded,
+            status="succeeded",
+            error_detail=None,
+        )
+        return RetentionJobRunResult(
+            id=run_id,
+            buckets_evaluated=buckets_evaluated,
+            buckets_shredded=buckets_shredded,
+            status="succeeded",
+        )

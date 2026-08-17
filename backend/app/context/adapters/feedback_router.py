@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.application.dependencies import CurrentUser, get_current_user
+from app.auth.application.dependencies import CurrentUser, require_full_access
 from app.context.adapters.sqlalchemy_repository import (
     SqlAlchemyFeedbackFindingReader,
     SqlAlchemyFeedbackVerdictRepository,
@@ -44,7 +44,7 @@ def _build_use_case(session: AsyncSession) -> RecordFeedbackVerdictUseCase:
 @router.post("/api/feedback", status_code=204)
 async def submit_feedback(
     body: FeedbackRequest,
-    current_user: CurrentUser = Depends(get_current_user),
+    current_user: CurrentUser = Depends(require_full_access),
     session: AsyncSession = Depends(get_session),
 ) -> None:
     if body.finding_id is None and body.issue_id is None:

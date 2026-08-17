@@ -29,7 +29,8 @@ from sqlalchemy import text
 from app.auth.domain.password import hash_password
 from app.config import settings
 from app.db import async_session_factory, engine
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
     SqlAlchemyEventRepository,
@@ -98,7 +99,9 @@ async def _rebuild_projections() -> None:
     + `ComputeRollupsUseCase`), never a re-run of readers/scoring (those
     write `score_runs`/`findings`/`narrator_outputs` directly, not through
     these projections)."""
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with engine.begin() as conn:
         await conn.execute(text("TRUNCATE event_threads, response_pairs, rollups"))
     async with async_session_factory() as session:

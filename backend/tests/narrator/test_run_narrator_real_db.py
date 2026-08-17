@@ -12,8 +12,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import engine
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.narrator.adapters.sqlalchemy_repository import (
     SqlAlchemyClientContextRepository,
     SqlAlchemyNarratorOutputRepository,
@@ -71,7 +73,16 @@ async def test_fabricated_headline_falls_back_to_the_real_score_and_band():
         )
     await _cleanup(score_run_id)
 
-    encryption = FernetEncryption("../secrets/data.key")
+    # BucketedFernetEncryption, not the legacy FernetEncryption this file
+    # used before specs/011-production-hardening's crypto-shredding work
+    # (User Story 1) — every event body in the ledger is bucket-encrypted
+    # now, so the old single-key adapter can no longer decrypt anything on a
+    # freshly-seeded database (a real, previously-masked bug found via this
+    # feature's own clean-slate verification: the shared dev database still
+    # had pre-bucketing legacy-encrypted rows the old code happened to hit).
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with AsyncSession(engine) as session:
         use_case = NarrateScoreRunUseCase(
             llm=_FakeLLM(
@@ -105,7 +116,16 @@ async def test_exactly_one_narrator_outputs_row_per_score_run():
         pytest.skip("No score_runs row with contributions exists yet")
     await _cleanup(score_run_id)
 
-    encryption = FernetEncryption("../secrets/data.key")
+    # BucketedFernetEncryption, not the legacy FernetEncryption this file
+    # used before specs/011-production-hardening's crypto-shredding work
+    # (User Story 1) — every event body in the ledger is bucket-encrypted
+    # now, so the old single-key adapter can no longer decrypt anything on a
+    # freshly-seeded database (a real, previously-masked bug found via this
+    # feature's own clean-slate verification: the shared dev database still
+    # had pre-bucketing legacy-encrypted rows the old code happened to hit).
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with AsyncSession(engine) as session:
         repo = SqlAlchemyNarratorOutputRepository(session)
         fabricated = NarrationModelOutput(
@@ -133,7 +153,16 @@ async def test_missing_generation_model_key_fails_honestly_against_the_real_adap
     if score_run_id is None:
         pytest.skip("No score_runs row with contributions exists yet")
 
-    encryption = FernetEncryption("../secrets/data.key")
+    # BucketedFernetEncryption, not the legacy FernetEncryption this file
+    # used before specs/011-production-hardening's crypto-shredding work
+    # (User Story 1) — every event body in the ledger is bucket-encrypted
+    # now, so the old single-key adapter can no longer decrypt anything on a
+    # freshly-seeded database (a real, previously-masked bug found via this
+    # feature's own clean-slate verification: the shared dev database still
+    # had pre-bucketing legacy-encrypted rows the old code happened to hit).
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with AsyncSession(engine) as session:
         use_case = NarrateScoreRunUseCase(
             llm=AnthropicLLMAdapter("", "claude-sonnet-5"),  # empty key, real adapter

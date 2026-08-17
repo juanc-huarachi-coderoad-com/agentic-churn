@@ -22,9 +22,16 @@ BEGIN;
 -- password is a placeholder still, since no feature yet needs to log in as
 -- that user — replace before any real deployment either way.
 -- ------------------------------------------------------------
+-- ae-demo/admin-demo (specs/011-production-hardening, User Stories 2 & 4) — real
+-- Argon2id hashes of the local/demo-only passwords "agentic-demo-2026-ae" and
+-- "agentic-demo-2026-admin", generated the same way marta's was
+-- (specs/002-dashboard-shell/research.md), so both roles can actually log in and
+-- exercise require_full_access/require_admin, not just exist as inert rows.
 INSERT INTO users (id, username, password_hash, display_name, role, is_active) VALUES
     ('00000000-0000-0000-0000-000000000001', 'marta',   '$argon2id$v=19$m=65536,t=3,p=4$F5VLyj2y64Fc1s7L96wYhQ$w78e3NIpjyF+HIRpXjSrFY8CgrENRySWW4JzLwNZ1AM', 'Marta',   'cs_lead', true),
-    ('00000000-0000-0000-0000-000000000002', 'support', '$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_DEMO_ONLY', 'Support Lead', 'support_lead', true);
+    ('00000000-0000-0000-0000-000000000002', 'support', '$argon2id$v=19$m=65536,t=3,p=4$REPLACE_ME_DEMO_ONLY', 'Support Lead', 'support_lead', true),
+    ('00000000-0000-0000-0000-000000000003', 'ae-demo', '$argon2id$v=19$m=65536,t=3,p=4$qP7GsMB1HPc3Y4385/TOxg$72zHGWS3Wm97M4CkekQ9w8S9mtX3zjsUUTXSYAhuVqM', 'Priya (AE)', 'account_executive', true),
+    ('00000000-0000-0000-0000-000000000004', 'admin-demo', '$argon2id$v=19$m=65536,t=3,p=4$DsdRrtPQiyCfQoGFB248ZQ$tdssh8j8lBL/D6GbJtI0XHT24Mq9BPsT7mHjZtm9tUs', 'Sam (Admin)', 'admin', true);
 
 -- ------------------------------------------------------------
 -- Sources (data-base/02-schema-ingestion.md)
@@ -100,7 +107,11 @@ INSERT INTO finding_type_config (finding_type, base_points, confidence_floor, mi
     -- two closed categories (REQ-M5-13), mirroring escalation_language's row
     -- verbatim as the Phase 1 default (spec.md Clarifications, 2026-08-15).
     ('competitive_mention',     14.00, 0.60, 1, 14, 'v1'),
-    ('contractual_reference',   14.00, 0.60, 1, 14, 'v1');
+    ('contractual_reference',   14.00, 0.60, 1, 14, 'v1'),
+    -- Added by feature 011 (specs/011-production-hardening): the Meeting
+    -- reader's finding_type (REQ-M5-14, FR-023) — mirrored in migration
+    -- 0004_meeting_finding_type for any database that already ran this seed.
+    ('meeting_commitment',      10.00, 0.60, 1, 14, 'v1');
 
 -- ------------------------------------------------------------
 -- Playbook (data-base/08-schema-experience.md)

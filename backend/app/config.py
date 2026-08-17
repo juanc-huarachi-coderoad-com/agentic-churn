@@ -63,5 +63,26 @@ class Settings(BaseSettings):
     # generation than the readers' Haiku-class calls.
     generation_model_id: str = "claude-sonnet-5"
 
+    # Retention/crypto-shredding (specs/011-production-hardening, REQ-NFR-13/14,
+    # FR-001) — configurable per deployment since the 90-day figure is described as
+    # "pending final legal sign-off with the client" (decisions/00-open-questions-
+    # resolved.md Q5), not hardcoded.
+    retention_window_days: int = 90
+
+    # Daily key-rotation buckets for crypto-shredding (research.md Decision 1) — one
+    # Fernet key file per UTC calendar day under this directory, replacing the single
+    # static `encryption_key_path` key above for new writes. `encryption_key_path`
+    # above is kept only so any pre-migration "local-v1"-tagged row can still be
+    # decrypted (data-model.md's documented one-time manual exception).
+    data_keys_dir: str = "./secrets/data-keys"
+
+    # Observability (specs/011-production-hardening, FR-009..012) — empty means the
+    # OTel SDK initializes with a console/no-op exporter, never a hard failure
+    # (FR-012's "unaffected if the observability backend itself is unreachable").
+    # Field name matches the OTel-standard env var (`OTEL_EXPORTER_OTLP_ENDPOINT`,
+    # docker-compose.yml) exactly, so pydantic-settings' default case-insensitive
+    # env-var mapping picks it up with no alias needed.
+    otel_exporter_otlp_endpoint: str = ""
+
 
 settings = Settings()

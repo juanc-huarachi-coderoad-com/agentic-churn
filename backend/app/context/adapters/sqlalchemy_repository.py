@@ -175,13 +175,16 @@ class SqlAlchemyClientProfileRepository(ClientProfileRepositoryPort):
                 )
                 for c in profile.commitments
             ],
+            exclusions=list(profile.exclusions),
+            communication_norms=profile.communication.norms,
         )
 
     async def get_current(self) -> ProfileVersionSummary | None:
         profile = (
             await self._session.execute(
                 text(
-                    "SELECT id, version_number, client_name, renewal_date, contract_value_band "
+                    "SELECT id, version_number, client_name, renewal_date, "
+                    "contract_value_band, exclusions, communication_norms "
                     "FROM client_profile_versions WHERE is_current LIMIT 1"
                 )
             )
@@ -240,6 +243,8 @@ class SqlAlchemyClientProfileRepository(ClientProfileRepositoryPort):
                 )
                 for r in commitment_rows
             ],
+            exclusions=list(profile.exclusions or []),
+            communication_norms=profile.communication_norms,
         )
 
 

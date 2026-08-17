@@ -12,6 +12,8 @@ services:
   api:
     build: ./backend
     env_file: .env
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -19,10 +21,15 @@ services:
       # image's build context (backend/), needed by scripts/seed.py (FR-003). Not baked
       # into the image so editing seed data doesn't require a rebuild.
       - ./data-base:/data-base:ro
-      # Read-only: the Fernet key file for message-body encryption (specs/003-
-      # ingestion-and-context, REQ-M1-P4) — never baked into the image, generated
-      # once on the host per quickstart.md and mounted in.
+      # Read-only: the original single Fernet key file (specs/003-ingestion-and-
+      # context, REQ-M1-P4) — kept only so any pre-migration "local-v1"-tagged row
+      # can still be decrypted (specs/011-production-hardening data-model.md).
       - ./secrets:/app/secrets:ro
+      # Read-write: daily key-rotation bucket files (specs/011-production-hardening,
+      # research.md Decision 1) — the api process encrypts under today's bucket
+      # whenever it re-ingests events (e.g. a profile-edit replay), so it needs
+      # write access here, unlike the read-only single-key file above.
+      - ./secrets/data-keys:/app/secrets/data-keys
       # Read-only: the collector fixture and the CS lead's hand-edited client profile
       # YAML — both live outside the image's build context so editing either doesn't
       # require a rebuild (specs/003-ingestion-and-context).
@@ -40,9 +47,15 @@ services:
   worker:
     build: ./backend
     env_file: .env
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
     command: python -m app.worker
     volumes:
       - ./secrets:/app/secrets:ro
+      # Read-write: the retention job (User Story 1) is the only process that ever
+      # destroys a bucket's key file, and the absence collector/score recompute jobs
+      # running here may also be the first to create a new day's bucket key.
+      - ./secrets/data-keys:/app/secrets/data-keys
       - ./demo:/app/demo:ro
     depends_on:
       migrate:
@@ -56,6 +69,15 @@ services:
       timeout: 3s
       start_period: 5s
       retries: 3
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.111.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./docker-compose/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
 
   db:
     image: postgres:16

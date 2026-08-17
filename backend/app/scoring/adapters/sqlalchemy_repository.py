@@ -17,6 +17,9 @@ from app.scoring.application.ports import (
     FindingLifecycle,
     FindingRepositoryPort,
     FindingTypeConfig,
+    FindingTypeConfigChangeResult,
+    FindingTypeConfigWritePort,
+    FindingTypeNotFoundError,
     ProfileMultiplierContext,
     ScoreContribution,
     ScoreRun,
@@ -364,3 +367,83 @@ class SqlAlchemyCoverageCheck(CoverageCheckPort):
         if row is None:
             return False
         return bool(row.sources_read < row.sources_expected)
+
+
+class SqlAlchemyFindingTypeConfigWriter(FindingTypeConfigWritePort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def update_base_points(
+        self,
+        finding_type: str,
+        new_base_points: float,
+        changed_by_user_id: UUID,
+    ) -> FindingTypeConfigChangeResult:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT base_points FROM finding_type_config "
+                    "WHERE finding_type = :finding_type FOR UPDATE"
+                ),
+                {"finding_type": finding_type},
+            )
+        ).one_or_none()
+        if row is None:
+            raise FindingTypeNotFoundError(finding_type)
+        previous_base_points = float(row.base_points)
+
+        # `finding_type_config.version` is physically a per-row column, but every
+        # existing reader (`get_finding_type_config_version()`,
+        # `app.scoring.adapters.sqlalchemy_repository.SqlAlchemyFindingRepository`)
+        # treats it as one logical, shared value — `SELECT version FROM
+        # finding_type_config LIMIT 1`, no `ORDER BY`, relying entirely on every
+        # row already agreeing. Bumping only the changed row's version (the first
+        # version of this method) broke that invariant the moment the two values
+        # diverged — `LIMIT 1` picked an arbitrary *other*, unchanged row, so
+        # `score_runs.finding_type_config_version` silently kept reading the old
+        # value. Found for real by `tests/scoring/test_weight_recalibration_
+        # real_db.py`, not by inspection. Fixed by keeping the existing shared-
+        # version contract intact: every row's `version` moves together.
+        new_version = f"v-{uuid4().hex[:12]}"
+        await self._session.execute(
+            text("UPDATE finding_type_config SET version = :new_version"),
+            {"new_version": new_version},
+        )
+        await self._session.execute(
+            text(
+                "UPDATE finding_type_config SET base_points = :new_base_points "
+                "WHERE finding_type = :finding_type"
+            ),
+            {
+                "new_base_points": new_base_points,
+                "finding_type": finding_type,
+            },
+        )
+
+        change_id = uuid4()
+        inserted = (
+            await self._session.execute(
+                text(
+                    "INSERT INTO finding_type_config_changes "
+                    "(id, finding_type, previous_base_points, new_base_points, "
+                    "changed_by_user_id, config_version_after) "
+                    "VALUES (:id, :finding_type, :previous, :new_base_points, "
+                    ":changed_by_user_id, :new_version) "
+                    "RETURNING changed_at"
+                ),
+                {
+                    "id": change_id,
+                    "finding_type": finding_type,
+                    "previous": previous_base_points,
+                    "new_base_points": new_base_points,
+                    "changed_by_user_id": changed_by_user_id,
+                    "new_version": new_version,
+                },
+            )
+        ).one()
+        await self._session.commit()
+        return FindingTypeConfigChangeResult(
+            change_id=change_id,
+            new_config_version=new_version,
+            changed_at=inserted.changed_at,
+        )

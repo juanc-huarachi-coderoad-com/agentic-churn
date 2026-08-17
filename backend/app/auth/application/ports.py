@@ -21,6 +21,7 @@ class TokenRecord:
     user_id: UUID
     expires_at: datetime
     revoked_at: datetime | None
+    role: str | None
 
 
 class UserRepositoryPort(ABC):

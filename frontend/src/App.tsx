@@ -3,6 +3,7 @@ import { LoginPage } from './auth/login-page'
 import { ProtectedRoute } from './auth/protected-route'
 import { CoveragePage } from './coverage/coverage-page'
 import { DashboardPage } from './dashboard/dashboard-page'
+import { ProfileEditorForm } from './profile-editor/profile-editor-form'
 
 function App() {
   return (
@@ -22,6 +23,14 @@ function App() {
           element={
             <ProtectedRoute>
               <CoveragePage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfileEditorForm />
             </ProtectedRoute>
           }
         />

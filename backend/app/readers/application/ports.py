@@ -15,6 +15,7 @@ from app.readers.domain.entities import (
     CandidateTicket,
     ConfirmedBaselineWindow,
     FailedCheck,
+    MeetingTranscriptInfo,
     MessageEventInfo,
     ResponsePairInfo,
 )
@@ -80,6 +81,18 @@ class EventExistencePort(ABC):
 class QuarantineRepositoryPort(ABC):
     @abstractmethod
     async def record(self, finding_id: UUID, failed_checks: list[FailedCheck]) -> None: ...
+
+
+class MeetingTranscriptRepositoryPort(ABC):
+    @abstractmethod
+    async def list_all(self) -> list[MeetingTranscriptInfo]:
+        """Every `meeting`-type event — FR-023's fetch-time consent gate
+        (`SimulatedCollector.fetch`) already guarantees every row here came
+        from a series with documented, all-party consent; nothing in this
+        module needs to re-check `consent_documented`, there being nothing
+        left to check it against."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Commitment reader (ResponsePairRepositoryPort)

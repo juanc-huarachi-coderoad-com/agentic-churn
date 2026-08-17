@@ -16,7 +16,8 @@ from sqlalchemy import text  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.db import async_session_factory  # noqa: E402
-from app.ingestion.adapters.encryption import FernetEncryption  # noqa: E402
+from app.ingestion.adapters.encryption import BucketedFernetEncryption  # noqa: E402
+from app.ingestion.adapters.key_store import FileKeyStore  # noqa: E402
 from app.narrator.adapters.sqlalchemy_repository import (  # noqa: E402
     SqlAlchemyClientContextRepository,
     SqlAlchemyNarratorOutputRepository,
@@ -28,7 +29,9 @@ from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter  # noqa: E402
 
 
 async def run() -> None:
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with async_session_factory() as session:
         latest_run = (
             await session.execute(

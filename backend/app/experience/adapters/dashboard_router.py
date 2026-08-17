@@ -19,7 +19,9 @@ from app.experience.adapters.sqlalchemy_repository import (
     SqlAlchemyStakeholderReader,
 )
 from app.experience.application.use_cases import GetDashboardUseCase
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
+from app.observability.adapters.tracing import traced
 
 router = APIRouter()
 
@@ -109,7 +111,9 @@ async def get_dashboard(
     _current_user: CurrentUser = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> DashboardResponse:
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     use_case = GetDashboardUseCase(
         profile=SqlAlchemyClientProfileRepository(session),
         score=SqlAlchemyScoreReader(session),
@@ -119,7 +123,8 @@ async def get_dashboard(
         identity_gaps=SqlAlchemyIdentityGapReader(session),
         narrator=SqlAlchemyNarratorReadRepository(session),
     )
-    result = await use_case.execute()
+    with traced("dashboard_load"):
+        result = await use_case.execute()
 
     return DashboardResponse(
         client_header=(

@@ -23,7 +23,8 @@ from app.experience.adapters.sqlalchemy_repository import (
     SqlAlchemyScoreReader,
     SqlAlchemyStakeholderReader,
 )
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 
 _LATENCY_BUDGET_SECONDS = 3.0
@@ -34,7 +35,9 @@ _LATENCY_BUDGET_SECONDS = 3.0
     reason="ANTHROPIC_API_KEY not configured — this test needs a real model call (REQ-M9-08)",
 )
 async def test_intent_matched_question_responds_within_the_3s_budget():
-    encryption = FernetEncryption(settings.encryption_key_path)
+    encryption = BucketedFernetEncryption(
+        FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+    )
     async with AsyncSession(engine) as session:
         toolkit = AskAgentToolkit(
             ledger=SqlAlchemyLedgerQueryRepository(session, encryption),

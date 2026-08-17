@@ -38,3 +38,29 @@ def test_file_imports_no_llm_sdk(relative_path: str) -> None:
     for forbidden in _FORBIDDEN_IMPORTS:
         assert f"import {forbidden}" not in source, f"{relative_path} imports {forbidden}"
         assert f"from {forbidden}" not in source, f"{relative_path} imports from {forbidden}"
+
+
+# specs/011-production-hardening's own new files. `app/scoring/adapters/
+# weight_router.py` is a direct instance of P2's actual enforcement text
+# ("backend/app/scoring/ (M6) must never import an LLM client") — the other
+# three are outside P2's literal scope (P2 only names app/scoring/) but are
+# exactly the kind of newly-added crypto/observability infrastructure that
+# should obviously never need one either; kept in this same file as
+# defense-in-depth hygiene, not because P2/P9 mandate it for these specific
+# modules.
+_FEATURE_011_FILES = [
+    "app/scoring/adapters/weight_router.py",
+    "app/observability/adapters/tracing.py",
+    "app/ingestion/adapters/key_store.py",
+    "app/ingestion/adapters/encryption.py",
+]
+
+
+@pytest.mark.parametrize("relative_path", _FEATURE_011_FILES)
+def test_production_hardening_file_imports_no_llm_sdk(relative_path: str) -> None:
+    path = _BACKEND_ROOT / relative_path
+    assert path.is_file(), f"{relative_path} not found"
+    source = path.read_text()
+    for forbidden in _FORBIDDEN_IMPORTS:
+        assert f"import {forbidden}" not in source, f"{relative_path} imports {forbidden}"
+        assert f"from {forbidden}" not in source, f"{relative_path} imports from {forbidden}"

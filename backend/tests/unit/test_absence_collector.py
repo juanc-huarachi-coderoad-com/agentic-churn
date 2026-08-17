@@ -14,7 +14,8 @@ from datetime import datetime, timedelta
 
 from app.config import settings
 from app.db import async_session_factory
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyCommitmentLookup,
@@ -31,10 +32,11 @@ async def _far_future_as_of(session) -> datetime:
 
 
 async def test_unmet_cadence_appends_absence_event():
-    # The real, persistent deployment key (see test_replay.py's identical note) —
-    # cheap to keep consistent even though absence-event bodies aren't decrypted by
-    # anything today.
-    encryption = FernetEncryption(settings.encryption_key_path)
+    # The real, persistent deployment key store (see test_replay.py's identical
+    # note) — cheap to keep consistent even though absence-event bodies aren't
+    # decrypted by anything today.
+    key_store = FileKeyStore(settings.data_keys_dir)
+    encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
 
     async with async_session_factory() as setup_session:
         as_of = await _far_future_as_of(setup_session)
@@ -45,7 +47,7 @@ async def test_unmet_cadence_appends_absence_event():
             collector_runs=SqlAlchemyCollectorRunRepository(session),
             events=SqlAlchemyEventRepository(session),
             encryption=encryption,
-            data_key_ref="test-key",
+            key_store=key_store,
         )
         appended = await use_case.execute(as_of=as_of)
 
@@ -53,7 +55,8 @@ async def test_unmet_cadence_appends_absence_event():
 
 
 async def test_just_satisfied_cadence_appends_nothing(make_envelope):
-    encryption = FernetEncryption(settings.encryption_key_path)
+    key_store = FileKeyStore(settings.data_keys_dir)
+    encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
 
     async with async_session_factory() as session:
         as_of = await _far_future_as_of(session)
@@ -69,7 +72,7 @@ async def test_just_satisfied_cadence_appends_nothing(make_envelope):
             collector_runs=SqlAlchemyCollectorRunRepository(session),
             events=events,
             encryption=encryption,
-            data_key_ref="test-key",
+            key_store=key_store,
         )
         appended = await use_case.execute(as_of=as_of)
 

@@ -18,6 +18,7 @@ from app.readers.application.ports import (
     EventExistencePort,
     FindingRepositoryPort,
     FindingTypeConfigPort,
+    MeetingTranscriptRepositoryPort,
     MessageEventRepositoryPort,
     QuarantineRepositoryPort,
     RelationshipContextPort,
@@ -28,6 +29,7 @@ from app.readers.domain.entities import (
     CandidateTicket,
     ConfirmedBaselineWindow,
     FailedCheck,
+    MeetingTranscriptInfo,
     MessageEventInfo,
     ResponsePairInfo,
 )
@@ -254,9 +256,13 @@ class SqlAlchemyCandidateCorpusRepository(CandidateCorpusPort):
 
 class SqlAlchemyMessageEventRepository(MessageEventRepositoryPort):
     """The shared candidate corpus Tone and Intent both self-fetch from
-    (`data-model.md`) — `message`-type events (Gmail/Slack, encrypted body)
-    and `ticket_state_change`-type events (Zendesk, plain-JSONB title),
-    matching `app.experience.adapters.sqlalchemy_repository._quoted_text`'s
+    (`data-model.md`) — `message`-type events (Gmail/Slack, encrypted body),
+    `ticket_state_change`-type events (Zendesk, plain-JSONB title), and (FR-022)
+    `survey_response`-type events that actually carry a written comment
+    (`has_comment` is a plaintext `structured_payload` marker set at collection
+    time — `simulated_collector._normalize_csat`'s docstring — so a score-only
+    CSAT response never needs decrypting just to discover it has nothing to
+    read), matching `app.experience.adapters.sqlalchemy_repository._quoted_text`'s
     already-established dual-path extraction pattern (feature 006), not
     reimported cross-module — this module gets its own copy for the same
     reason `research.md`'s "no cross-module adapter import" convention
@@ -273,7 +279,9 @@ class SqlAlchemyMessageEventRepository(MessageEventRepositoryPort):
                     "SELECT id, occurred_at, stakeholder_id, structured_payload, "
                     "body_encrypted FROM events "
                     "WHERE event_type IN ('message'::event_type, "
-                    "'ticket_state_change'::event_type)"
+                    "'ticket_state_change'::event_type) "
+                    "OR (event_type = 'survey_response'::event_type "
+                    "AND (structured_payload->>'has_comment')::boolean IS TRUE)"
                 )
             )
         ).all()
@@ -293,6 +301,40 @@ class SqlAlchemyMessageEventRepository(MessageEventRepositoryPort):
                     occurred_at=r.occurred_at,
                     stakeholder_id=r.stakeholder_id,
                     text=event_text,
+                )
+            )
+        return results
+
+
+class SqlAlchemyMeetingTranscriptRepository(MeetingTranscriptRepositoryPort):
+    """`meeting`-type events only — kept separate from
+    `SqlAlchemyMessageEventRepository` (see `MeetingTranscriptInfo`'s
+    docstring for why)."""
+
+    def __init__(self, session: AsyncSession, encryption: EncryptionPort) -> None:
+        self._session = session
+        self._encryption = encryption
+
+    async def list_all(self) -> list[MeetingTranscriptInfo]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT id, occurred_at, stakeholder_id, structured_payload, "
+                    "body_encrypted FROM events WHERE event_type = 'meeting'::event_type"
+                )
+            )
+        ).all()
+        results: list[MeetingTranscriptInfo] = []
+        for r in rows:
+            if r.body_encrypted is None:
+                continue
+            results.append(
+                MeetingTranscriptInfo(
+                    event_id=r.id,
+                    occurred_at=r.occurred_at,
+                    stakeholder_id=r.stakeholder_id,
+                    series_id=r.structured_payload.get("series_id"),
+                    text=self._encryption.decrypt(r.body_encrypted),
                 )
             )
         return results

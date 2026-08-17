@@ -16,13 +16,25 @@ from app.experience.adapters.coverage_router import router as coverage_router
 from app.experience.adapters.dashboard_router import router as dashboard_router
 from app.experience.adapters.draft_router import router as draft_router
 from app.experience.adapters.evidence_router import router as evidence_router
-from app.ingestion.adapters.encryption import FernetEncryption
+from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.key_store import FileKeyStore
+from app.observability.adapters.tracing import setup_tracing
+from app.scoring.adapters.weight_router import router as weight_router
 
 # Module-level, like `engine` above — a missing/invalid encryption key file MUST fail
 # app startup, never fall back to storing plaintext (REQ-M1-P4, spec.md Edge Cases).
 # Importing app.main at all (uvicorn, or any test importing `from app.main import app`)
-# is exactly the "app startup" moment this needs to guard.
-encryption = FernetEncryption(settings.encryption_key_path)
+# is exactly the "app startup" moment this needs to guard. `BucketedFernetEncryption`
+# replaces the single-static-key `FernetEncryption` here (specs/011-production-
+# hardening, research.md Decision 1) — `FileKeyStore` creates `data_keys_dir` on
+# construction if missing, so this never fails the way a missing single key file did.
+encryption = BucketedFernetEncryption(
+    FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+)
+
+# User Story 3 — configured once, at import time, alongside the encryption setup
+# above; FR-012 guarantees this can never fail app startup (research.md Decision 6).
+setup_tracing()
 
 app = FastAPI(title="Agentic Churn API")
 
@@ -59,6 +71,7 @@ app.include_router(profile_router)
 app.include_router(ask_router)
 app.include_router(draft_router)
 app.include_router(feedback_router)
+app.include_router(weight_router)
 
 
 @app.get("/health")
