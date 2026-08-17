@@ -10,7 +10,11 @@ interface AnswerRendererProps {
 // never answers with a paragraph, only one of these fixed shapes. Every
 // branch below reads only fields the backend already computed; nothing here
 // generates or reorders anything itself (REQ-M9-03).
-export function AnswerRenderer({ answer, onOpenDraftComposer, onOpenEvidence }: AnswerRendererProps) {
+export function AnswerRenderer({
+  answer,
+  onOpenDraftComposer,
+  onOpenEvidence,
+}: AnswerRendererProps) {
   const props = answer.component_props
 
   switch (answer.component) {
@@ -59,7 +63,7 @@ function DeltaBreakdown({
       </p>
       <ul className="space-y-1">
         {causes.map((cause) => (
-          <li key={cause.finding_type}>
+          <li key={cause.score_contribution_id}>
             <button
               type="button"
               disabled={!onOpenEvidence}
@@ -131,7 +135,7 @@ function RankedIssues({
   return (
     <ol className="list-decimal space-y-1 pl-5 text-sm">
       {issues.map((issue) => (
-        <li key={issue.finding_type}>
+        <li key={issue.score_contribution_id}>
           <button
             type="button"
             disabled={!onOpenEvidence}

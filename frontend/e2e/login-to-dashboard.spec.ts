@@ -19,7 +19,10 @@ test('logging in with valid credentials reaches the dashboard shell', async ({ p
 
   await expect(page).toHaveURL(/\/dashboard$/)
   await expect(page.getByRole('heading', { name: 'Meridian Logistics' })).toBeVisible()
-  await expect(page.getByText(/still learning/i)).toBeVisible()
+  // Asserts the dashboard shell rendered, not a specific account state —
+  // the seeded account naturally progresses past "learning" over time
+  // (specs/013-dashboard-reliability-fixes, research.md Decision 3).
+  await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible()
 })
 
 test('an invalid login shows an error and stays on /login', async ({ page }) => {

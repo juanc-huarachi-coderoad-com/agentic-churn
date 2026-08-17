@@ -29,7 +29,11 @@ test('clicking a contribution bar opens the evidence panel with real evidence', 
 test('clicking a pulse event opens the evidence panel with the real quoted message', async ({
   page,
 }) => {
-  const event = page.getByText('“Slow API response”')
+  // .first(): the shared dev database can accumulate more than one event
+  // with this same quoted text over time — the click-through is still real
+  // and still opens the real evidence for whichever one matches first
+  // (specs/013-dashboard-reliability-fixes, research.md Decision 2).
+  const event = page.getByText('“Slow API response”').first()
   await event.click()
 
   const panel = page.getByRole('dialog', { name: 'Evidence trace' })
