@@ -22,9 +22,32 @@ function renderAskBar() {
   )
 }
 
+async function openAssistant() {
+  await userEvent.click(screen.getByRole('button', { name: 'Open assistant' }))
+}
+
 describe('AskBar', () => {
   beforeEach(() => {
     vi.mocked(apiFetch).mockReset()
+  })
+
+  it('starts collapsed on every mount — launcher only, no question input visible', () => {
+    renderAskBar()
+
+    expect(screen.getByRole('button', { name: 'Open assistant' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Ask a question')).not.toBeInTheDocument()
+    expect(screen.getByTestId('ask-bar').dataset.state).toBe('idle')
+  })
+
+  it('opens on demand and can be collapsed again', async () => {
+    renderAskBar()
+
+    await openAssistant()
+    expect(screen.getByLabelText('Ask a question')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse assistant' }))
+    expect(screen.queryByLabelText('Ask a question')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open assistant' })).toBeInTheDocument()
   })
 
   it('starts idle, transitions through thinking, and renders the matched component', async () => {
@@ -35,6 +58,7 @@ describe('AskBar', () => {
       }),
     )
     renderAskBar()
+    await openAssistant()
 
     expect(screen.getByTestId('ask-bar').dataset.state).toBe('idle')
 
@@ -65,6 +89,7 @@ describe('AskBar', () => {
       }),
     )
     renderAskBar()
+    await openAssistant()
 
     await userEvent.type(screen.getByLabelText('Ask a question'), 'will they cancel?')
     await userEvent.click(screen.getByRole('button', { name: /ask/i }))
@@ -73,5 +98,28 @@ describe('AskBar', () => {
       await screen.findByText("I describe today's evidence — I don't forecast."),
     ).toBeInTheDocument()
     expect(screen.getByText('Fallback answer')).toBeInTheDocument()
+  })
+
+  it('preserves the last exchange across collapse and reopen (FR-008)', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(
+      jsonResponse({
+        fallback_text: "I describe today's evidence — I don't forecast.",
+        sources: [],
+        declined_reason: 'prediction',
+      }),
+    )
+    renderAskBar()
+    await openAssistant()
+
+    await userEvent.type(screen.getByLabelText('Ask a question'), 'will they cancel?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+    expect(
+      await screen.findByText("I describe today's evidence — I don't forecast."),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Collapse assistant' }))
+    await openAssistant()
+
+    expect(screen.getByText("I describe today's evidence — I don't forecast.")).toBeInTheDocument()
   })
 })

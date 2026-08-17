@@ -10,7 +10,7 @@ export function CoverageLine({ coverage }: CoverageLineProps) {
     : '—'
 
   return (
-    <p className="mt-8 text-xs text-neutral-400">
+    <p className="mt-6 border-t border-neutral-100 pt-4 text-xs text-neutral-400">
       Reading {coverage.sources_read} of {coverage.sources_expected} sources · complete to{' '}
       {completeTo}
     </p>

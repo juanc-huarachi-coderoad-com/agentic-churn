@@ -1,5 +1,5 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan:
-`specs/011-production-hardening/plan.md`
+shell commands, and other important information, read the current plan
+at /Users/juanhuarachicoderoad/Projects/hackaton/agentic-churn/specs/012-dashboard-visual-redesign/plan.md
 <!-- SPECKIT END -->

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
 import type { Band } from './types'
 
 interface ScoreBlockProps {
@@ -14,6 +15,15 @@ const BAND_STYLES: Record<Band, string> = {
   healthy: 'bg-neutral-100 text-neutral-700',
   watch: 'bg-amber-100 text-amber-800',
   at_risk: 'bg-red-100 text-red-800',
+}
+
+// Recharts needs real color values, not Tailwind class names — these match
+// the red-500/amber-500/neutral-400 the rest of the dashboard already uses
+// for the same band.
+const BAND_CHART_COLOR: Record<Band, string> = {
+  healthy: '#a3a3a3',
+  watch: '#f59e0b',
+  at_risk: '#ef4444',
 }
 
 const ANIMATION_MS = 800
@@ -37,37 +47,46 @@ export function ScoreBlock({ score, band, trend, onClick }: ScoreBlockProps) {
   }, [score])
 
   return (
-    <button type="button" onClick={onClick} className="text-left" aria-label="Score detail">
-      <div className="flex items-baseline gap-3">
-        <span className="text-4xl font-medium tabular-nums text-neutral-900">
-          {displayed.toFixed(1)}
-        </span>
-        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BAND_STYLES[band]}`}>
-          {band.replace('_', ' ')}
-        </span>
-      </div>
-      {trend.length > 1 && <Sparkline trend={trend} />}
-    </button>
-  )
-}
+    <div>
+      <button type="button" onClick={onClick} className="text-left" aria-label="Score detail">
+        <div className="flex items-baseline gap-3">
+          <span className="text-4xl font-medium tabular-nums text-neutral-900">
+            {displayed.toFixed(1)}
+          </span>
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BAND_STYLES[band]}`}>
+            {band.replace('_', ' ')}
+          </span>
+        </div>
+      </button>
 
-// SVG-based only (constitution's Technology and Data Standards) — no chart
-// library, and not one of REQ-M8-09's forbidden chart types.
-function Sparkline({ trend }: { trend: number[] }) {
-  const min = Math.min(...trend)
-  const max = Math.max(...trend)
-  const range = max - min || 1
-  const points = trend
-    .map((value, index) => {
-      const x = (index / (trend.length - 1)) * 118 + 1
-      const y = 22 - ((value - min) / range) * 20
-      return `${x},${y}`
-    })
-    .join(' ')
-
-  return (
-    <svg width="120" height="24" className="mt-2 text-neutral-400" aria-hidden="true">
-      <polyline fill="none" stroke="currentColor" strokeWidth="1.5" points={points} />
-    </svg>
+      {/* Constitution v1.3.0 (Full-Stack Engineering §2, "UI & Styling"):
+          charts MUST use Recharts — this replaces the previous hand-rolled
+          SVG polyline sparkline. Same `trend` prop, same values, index-based
+          x-axis (no timestamps existed before and none are added). */}
+      {trend.length > 1 ? (
+        <div className="mt-3 h-24" data-testid="score-trend-chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={trend.map((value, index) => ({ index, value }))}>
+              <YAxis domain={['dataMin', 'dataMax']} hide />
+              <Tooltip
+                formatter={(value) => (value == null ? '' : Number(value).toFixed(1))}
+                labelFormatter={() => ''}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke={BAND_CHART_COLOR[band]}
+                strokeWidth={1.5}
+                fill={BAND_CHART_COLOR[band]}
+                fillOpacity={0.15}
+                isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      ) : trend.length === 1 ? (
+        <p className="mt-3 text-xs text-neutral-400">Not enough history yet</p>
+      ) : null}
+    </div>
   )
 }

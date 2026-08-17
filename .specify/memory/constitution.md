@@ -1,6 +1,48 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.2.0 → 1.3.0
+
+Rationale for 1.3.0 (MINOR): materially expanded the existing "UI & Styling" guidance
+(Full-Stack Engineering §2) with closed technology choices for icons and charts, plus an
+explicit prohibition on substituting other styling/component/icon libraries without
+approval. No principle renamed, removed, or redefined — additive, not breaking.
+
+Modified principles: none (P11 "Design system" bullet expanded to cross-reference the
+same rule, not redefined)
+
+Added principles (this amendment): none — this closes an existing section's ambiguity
+(the stack already used Tailwind/Radix/shadcn per P11 and `architecture/03-technology-
+stack.md`, and had already resolved charts to Recharts in
+`decisions/02-repo-and-tooling.md`, but neither the constitution's "UI & Styling" bullet
+nor its Technology and Data Standards summary said so explicitly, and no icon library had
+been named anywhere) rather than introducing a new governing rule.
+
+Added sections (this amendment):
+  - "Full-Stack Engineering" §2 "UI & Styling" bullet gained three sentences: icons MUST
+    use `lucide-react`; charts MUST use Recharts; standard CSS and other component/icon
+    libraries MUST NOT be used unless explicitly approved.
+  - P11 "Design system" bullet gained a cross-reference to the same rule, so the two
+    sections don't drift.
+  - "Technology and Data Standards" adopted-stack line now names `lucide-react` and
+    Recharts explicitly instead of the ambiguous "SVG-based charts only," reconciling it
+    with `decisions/02-repo-and-tooling.md`'s prior visx-vs-Recharts resolution, which the
+    constitution had never surfaced.
+
+Templates requiring updates:
+  - .specify/templates/plan-template.md, spec-template.md, tasks-template.md
+    ✅ compatible — same reasoning as prior amendments: generic structure, no
+    principle-specific language to reconcile. No edit made.
+  - .claude/skills/speckit-*.md ⚠ pending, same standing note as prior amendments — no
+    known conflict, full pass still deferred to the next amendment that touches them.
+  - architecture/03-technology-stack.md ✅ updated — "Charts" row narrowed from
+    "visx or Recharts" to Recharts only, and a new "Icons" row added naming
+    `lucide-react`, matching this amendment and the already-resolved decision doc.
+
+Follow-up TODOs: none.
+
+--- prior report (v1.1.0 → v1.2.0) ---
+
 Version change: 1.1.0 → 1.2.0
 
 Rationale for 1.2.0 (MINOR): one technology addition to the adopted stack (LangGraph,
@@ -264,7 +306,9 @@ shared code only for genuinely reusable logic.
   component interfaces are strongly typed.
 - **Design system**: Tailwind CSS + a Radix-based component system (shadcn/ui), consistent
   with the stack already adopted in `architecture/03-technology-stack.md` — shared design
-  tokens, no ad hoc styling.
+  tokens, no ad hoc styling. Icons are `lucide-react`, charts are Recharts, both closed
+  choices — no standard CSS and no other component or icon library without explicit
+  approval (Full-Stack Engineering §2, "UI & Styling").
 - **Forms & validation**: React Hook Form + Zod schemas; user input is never trusted
   unvalidated, on the client or before it reaches the API layer.
 - **Testing**: every feature ships unit + component tests; business-critical flows get
@@ -287,7 +331,7 @@ shared code only for genuinely reusable logic.
 *   **Feature-Oriented Structure:** Code MUST be organized around business capabilities (features), not technical layers (e.g., do not group all hooks or all APIs together globally).
 *   **Separation of Concerns:** UI presentation, UI behavior, server state, client state, and API communication MUST remain distinct. Business logic MUST NOT be embedded directly in UI rendering components.
 *   **State Management:** Server state MUST be managed via a dedicated tool (e.g., TanStack Query). Global client state (e.g., Zustand) MUST be used sparingly. State SHOULD live as close to its component as possible.
-*   **UI & Styling:** The application MUST use Tailwind CSS and a defined component system (e.g., shadcn/ui). Reusability SHOULD be preferred over duplication.
+*   **UI & Styling:** The application MUST use Tailwind CSS and a defined component system (e.g., shadcn/ui). Reusability SHOULD be preferred over duplication. Icons MUST use `lucide-react`. Charts MUST use Recharts. Standard CSS (plain stylesheets, CSS Modules, styled-components, etc.) and other component or icon libraries MUST NOT be used unless explicitly approved.
 *   **Forms & Validation:** All forms MUST use a management solution (e.g., React Hook Form). User input MUST be validated using a schema library (e.g., Zod) before being processed or sent to the backend.
 *   **Accessibility:** All interactive elements MUST be keyboard accessible and adhere to WCAG guidelines. Color MUST NOT be the only indicator of state.
 
@@ -318,7 +362,8 @@ Anthropic Claude — Sonnet-class for Narrator, Ask agent, and Draft composer, H
 Tone, Intent, and Meeting readers; OpenAI `text-embedding-3-small` embeddings for the
 Recurrence reader only (clustering, never a generative call); PostgreSQL 16 with JSONB
 envelope/finding payloads and `pgcrypto` column-level encryption; React 18 + TypeScript +
-Vite frontend with Tailwind/Radix and SVG-based charts only; APScheduler + Postgres
+Vite frontend with Tailwind/Radix, `lucide-react` icons, and Recharts (SVG-based) charts
+only, per `decisions/02-repo-and-tooling.md`'s visx-vs-Recharts resolution; APScheduler + Postgres
 `LISTEN/NOTIFY` for scheduling (no message broker — the scale is 50k–200k events/year per
 deployment); Docker Compose, **one stack per client deployment**, never shared
 infrastructure; pytest + `hypothesis` for testing; GitHub Actions for CI.
@@ -450,4 +495,4 @@ facing companion to this constitution — read it before touching code; where it
 mechanical enforcement detail (a `CHECK` constraint, a CI script, a foreign-key rule), that
 detail is binding, not illustrative.
 
-**Version**: 1.2.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-14
+**Version**: 1.3.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-17

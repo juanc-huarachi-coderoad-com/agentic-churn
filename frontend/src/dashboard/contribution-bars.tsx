@@ -25,29 +25,35 @@ export function ContributionBars({ bars, onSelect }: ContributionBarsProps) {
   const max = Math.max(...bars.map((bar) => Math.abs(bar.points)), 1)
 
   return (
-    <ul className="mt-6 space-y-2">
-      {bars.map((bar) => (
-        <li key={bar.score_contribution_id}>
-          <button
-            type="button"
-            onClick={() => onSelect(bar.score_contribution_id)}
-            className="flex w-full items-center gap-3 text-left"
-          >
-            <span className="w-40 truncate text-sm text-neutral-600">
-              {bar.label.replace(/_/g, ' ')}
-            </span>
-            <span className="h-2 flex-1 overflow-hidden rounded-full bg-neutral-100">
-              <span
-                className={`block h-full ${barColorClass(bar)}`}
-                style={{ width: `${(Math.abs(bar.points) / max) * 100}%` }}
-              />
-            </span>
-            <span className="w-12 text-right text-sm tabular-nums text-neutral-500">
-              {bar.points.toFixed(1)}
-            </span>
-          </button>
-        </li>
-      ))}
+    <ul className="mt-3 space-y-2">
+      {bars.map((bar) => {
+        // Display-only sign: is_positive already means "reduces risk" (see
+        // barColorClass above) — this just formats the same points value the
+        // way the mockup does ("+25"/"-8"), never a different number.
+        const signedPoints = bar.is_positive ? -Math.abs(bar.points) : Math.abs(bar.points)
+        return (
+          <li key={bar.score_contribution_id}>
+            <button
+              type="button"
+              onClick={() => onSelect(bar.score_contribution_id)}
+              className="flex w-full items-center gap-3 text-left"
+            >
+              <span className="min-w-0 flex-1 truncate text-sm text-neutral-600">
+                {bar.label.replace(/_/g, ' ')}
+              </span>
+              <span className="h-2 w-12 shrink-0 overflow-hidden rounded-full bg-neutral-100">
+                <span
+                  className={`block h-full ${barColorClass(bar)}`}
+                  style={{ width: `${(Math.abs(bar.points) / max) * 100}%` }}
+                />
+              </span>
+              <span className="w-8 shrink-0 text-right text-sm tabular-nums text-neutral-500">
+                {signedPoints > 0 ? `+${signedPoints.toFixed(0)}` : signedPoints.toFixed(0)}
+              </span>
+            </button>
+          </li>
+        )
+      })}
     </ul>
   )
 }

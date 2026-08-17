@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiFetch } from '../auth/api-client'
 import { DashboardPage } from './dashboard-page'
@@ -17,9 +18,11 @@ function jsonResponse(body: unknown): Response {
 function renderDashboard() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <DashboardPage />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={['/dashboard']}>
+      <QueryClientProvider client={queryClient}>
+        <DashboardPage />
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -70,7 +73,10 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText('Meridian Logistics')).toBeInTheDocument()
     expect(screen.getByText('85 days to renewal')).toBeInTheDocument()
-    expect(screen.getByText('broken response promise')).toBeInTheDocument()
+    // The same contribution bar now renders in both the Churn Risk Overview
+    // card's "Top risk drivers" and the Action & Draft Hub's ranked list —
+    // two visualizations of the same data, per the mockup.
+    expect(screen.getAllByText('broken response promise').length).toBeGreaterThan(0)
     expect(screen.getByText('“Slow API response”')).toBeInTheDocument()
     expect(screen.getByText('Ana Reyes')).toBeInTheDocument()
   })
@@ -117,7 +123,7 @@ describe('DashboardPage', () => {
       await screen.findByText("Email hasn't been read since Tue 09:14 — reconnect."),
     ).toBeInTheDocument()
     // The rest of the real component set still renders alongside the banner.
-    expect(screen.getByText('broken response promise')).toBeInTheDocument()
+    expect(screen.getAllByText('broken response promise').length).toBeGreaterThan(0)
   })
 
   it.each([
@@ -154,7 +160,7 @@ describe('DashboardPage', () => {
     })
     renderDashboard()
 
-    const bar = await screen.findByText('broken response promise')
+    const [bar] = await screen.findAllByText('broken response promise')
     await userEvent.click(bar)
 
     await waitFor(() => {

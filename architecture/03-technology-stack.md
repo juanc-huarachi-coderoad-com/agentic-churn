@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | **Adopted stack:** Python/FastAPI, Anthropic Claude, OpenAI embeddings, PostgreSQL, React, Docker Compose |
-| **Updated** | 2026-08-10 — revised to match the team's requested stack; see comparison below |
+| **Updated** | 2026-08-17 — Charts narrowed to Recharts only (was "visx or Recharts", already resolved in `decisions/02-repo-and-tooling.md`) and an Icons row added (`lucide-react`), per constitution v1.3.0 |
 | **Scope** | Phase 1 (`decisions/01-mvp-scope-and-phasing.md`) — everything here is sized for one-to-a-few single-client deployments, not a multi-tenant fleet |
 
 ## Comparison — first proposal vs. the requested stack
@@ -80,8 +80,9 @@ One deployment, one `.env`, one Postgres volume, one set of containers — nothi
 | Database | **PostgreSQL 16** | Spec explicitly states a relational database is sufficient (§9.4) at 50k–200k events/year; JSONB for envelope/finding payloads; `pgcrypto` for column-level encryption |
 | Background/scheduled processing | **APScheduler** (in-process, inside the `worker` container) for the hourly heartbeat, plus Postgres `LISTEN/NOTIFY` for event-triggered recompute | No message broker needed at this scale (spec §9.4: "event-sourced in shape, not in tooling") |
 | Frontend | **React 18 + TypeScript, Vite** | Component-driven UI matches the dashboard's "everything precomputed, just render" model (M8); TypeScript keeps the Ask agent's closed component-menu contract type-safe end to end |
-| UI styling | Tailwind CSS + a restrained component set (Radix primitives) | "Clinical calm" design direction (spec §11.1) is easier to keep disciplined with utility CSS than a heavy component-library aesthetic |
-| Charts | Lightweight SVG-based (visx or Recharts), sparkline + trend line only | Spec explicitly forbids ticket-volume charts, pie charts, sentiment-average lines (§11.7) |
+| UI styling | Tailwind CSS + a restrained component set (Radix primitives). No standard CSS or other component library without explicit approval (constitution, Full-Stack Engineering §2) | "Clinical calm" design direction (spec §11.1) is easier to keep disciplined with utility CSS than a heavy component-library aesthetic |
+| Icons | `lucide-react`, closed choice (constitution, Full-Stack Engineering §2) | One consistent icon set across the dashboard rather than mixed icon libraries |
+| Charts | Recharts (SVG-based), sparkline + trend line only — resolved over visx in `decisions/02-repo-and-tooling.md` | Spec explicitly forbids ticket-volume charts, pie charts, sentiment-average lines (§11.7); Recharts' declarative components fit the two fixed chart types with less custom code than visx's lower-level API |
 | Source connectors (Phase 1) | Gmail API, Zendesk API, a warehouse read connector | Per `decisions/01-mvp-scope-and-phasing.md` — Slack, CSAT, Calendar/transcripts are Phase 2 additions using the same collector interface |
 | Identity/fuzzy matching | `rapidfuzz` (Python) | Fast, dependency-light fuzzy matching for *suggesting* — never auto-resolving — identity matches |
 | Encryption (Phase 1) | `pgcrypto` column-level encryption, with the data key loaded from the deployment's `.env` file (mounted as a Docker secret, not committed) | Sufficient for Phase 1's manual-retention model (`decisions/00-open-questions-resolved.md` Q5); still gives real crypto-shredding (destroy the key file → bodies unrecoverable, event skeleton survives) |
