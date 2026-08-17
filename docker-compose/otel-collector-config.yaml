@@ -1,6 +1,6 @@
 # Minimal OTel Collector config for User Story 3 (observability) — logs every
 # received span to stdout via `docker compose logs otel-collector`. No external
-# backend required; a real deployment can swap the `logging` exporter for a hosted
+# backend required; a real deployment can swap the `debug` exporter for a hosted
 # one without any application-code change (FR-009..012 only require the app emit
 # OTLP, not which backend eventually reads it).
 receivers:
@@ -12,11 +12,11 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 exporters:
-  logging:
+  debug:
     verbosity: normal
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      exporters: [logging]
+      exporters: [debug]
