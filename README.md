@@ -109,6 +109,10 @@ signal-collector fixture lives at `demo/fixtures/meridian-week.json`. See
 profile versioning, hash-chain/business-hours arithmetic, `SimulatedCollector` runs
 (idempotency, identity resolution, redaction), and absence detection.
 
+For interactive exploration, `demo-wara/` (see `demo-wara/INSTALL.md`) is the
+official, richer demo dataset — the Meridian files above remain in place
+unmodified, since the automated test suite reads them directly.
+
 ## Score Engine (Phase 4)
 
 Findings are still hand-authored/fixture-seeded here — no reader module exists yet

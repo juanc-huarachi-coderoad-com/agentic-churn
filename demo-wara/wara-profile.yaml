@@ -1,0 +1,55 @@
+# Wara — fictitious e-commerce/retail client profile for the demo environment.
+# This file mirrors the format of demo/client-profile.yaml and is loaded via
+# POST /api/profile/reload (which re-reads CLIENT_PROFILE_PATH from .env).
+#
+# Stakeholders use real email addresses but are fictitious people.
+# No canonical files (demo/client-profile.yaml, data-base/11-seed-data.sql,
+# demo/fixtures/meridian-week.json) are modified by this demo.
+client: Wara
+renewal_date: 2026-11-15
+contract_value_band: strategic
+
+business_goals:
+  - reduce cart abandonment by 15% in Q4
+
+stakeholders:
+  - id: stk_juan
+    name: Juan Huarachi
+    role: CTO
+    influence: sponsor
+    signs_renewal: true
+    identifiers: [juan.huarachi.sanchez@gmail.com]
+  - id: stk_fernando
+    name: Fernando Juarez
+    role: Dev Lead
+    influence: daily_user
+    identifiers: [fujuca510@gmail.com]
+
+product_areas:
+  - key: checkout_api
+    criticality: critical
+  - key: inventory_sync
+    criticality: standard
+
+commitments:
+  - type: first_response
+    priority: P1
+    threshold_business_hours: 4
+  - type: recurring_sync
+    cadence: weekly
+
+communication:
+  working_hours: 08:00-18:00
+  timezone: America/Lima
+  languages: [es, en]
+  norms: >
+    Fast-paced e-commerce team. Short messages are normal, not hostile.
+    Formality rises in board-level discussions and renewal conversations.
+
+exclusions:
+  - legal_threads
+  - commercial_negotiation
+
+history:
+  - date: 2025-11-28
+    event: Black Friday peak — checkout_api latency spike, improvement plan agreed with Juan

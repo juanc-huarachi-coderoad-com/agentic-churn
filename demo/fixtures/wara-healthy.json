@@ -1,0 +1,608 @@
+[
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-001",
+    "occurred_at": "2026-07-03T10:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Hi team, checking in on the checkout_api roadmap. Happy with the progress so far."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-002",
+    "occurred_at": "2026-07-10T11:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Thanks for the update on ticket #201. The payment reconciliation fix unblocked our ops team."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-003",
+    "occurred_at": "2026-07-17T09:30:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Quick note — the weekly sync was productive. Let's keep the cadence going."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-004",
+    "occurred_at": "2026-07-24T14:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Hi — looping in Fernando on the inventory_sync integration questions, he'll follow up from his side."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-005",
+    "occurred_at": "2026-07-31T10:15:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Any news on the catalog pricing module? No rush, just planning our Q4."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-006",
+    "occurred_at": "2026-08-07T16:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Thanks for the heads up on the deployment window, that works for us."
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w23",
+    "occurred_at": "2026-06-07T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w24",
+    "occurred_at": "2026-06-14T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w25",
+    "occurred_at": "2026-06-21T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 3
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w26",
+    "occurred_at": "2026-06-28T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w27",
+    "occurred_at": "2026-07-05T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w28",
+    "occurred_at": "2026-07-12T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 0
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w29",
+    "occurred_at": "2026-07-19T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w30",
+    "occurred_at": "2026-07-26T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-001",
+    "occurred_at": "2026-07-10T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 9
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-002",
+    "occurred_at": "2026-07-24T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 9
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-003",
+    "occurred_at": "2026-08-07T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 8
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-001",
+    "occurred_at": "2026-07-15T10:00:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "checking the checkout_api integration, all looking good on our side"
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-002",
+    "occurred_at": "2026-07-18T11:00:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "quick one — the inventory_sync export job ran clean overnight"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-201-created",
+    "occurred_at": "2026-07-09T09:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 201,
+    "title": "checkout_api slow response on peak hours",
+    "product_area": "checkout_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-201-resolved",
+    "occurred_at": "2026-07-09T11:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 201,
+    "title": "checkout_api slow response on peak hours",
+    "product_area": "checkout_api",
+    "state": "resolved"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-202-created",
+    "occurred_at": "2026-07-20T10:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 202,
+    "title": "inventory_sync export format",
+    "product_area": "inventory_sync",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-202-resolved",
+    "occurred_at": "2026-07-20T13:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 202,
+    "title": "inventory_sync export format",
+    "product_area": "inventory_sync",
+    "state": "resolved"
+  },
+  {
+    "source_type": "calendar",
+    "source_native_id": "wara-calendar-qbr-w25",
+    "occurred_at": "2026-06-19T15:00:00-05:00",
+    "attendee": "juan.huarachi.sanchez@gmail.com",
+    "series_id": "wara-qbr",
+    "consent_documented": true,
+    "transcript": "Juan: Q2 checkout_api roadmap review, on track. Fernando: inventory_sync batch jobs stable, no concerns."
+  },
+  {
+    "source_type": "calendar",
+    "source_native_id": "wara-calendar-qbr-w29",
+    "occurred_at": "2026-07-17T15:00:00-05:00",
+    "attendee": "juan.huarachi.sanchez@gmail.com",
+    "series_id": "wara-qbr",
+    "consent_documented": true,
+    "transcript": "Juan: checkout_api roadmap on track. Fernando: integration testing next week, no blockers."
+  },
+  {
+    "source_type": "calendar",
+    "source_native_id": "wara-calendar-qbr-w31",
+    "occurred_at": "2026-07-31T15:00:00-05:00",
+    "attendee": "juan.huarachi.sanchez@gmail.com",
+    "series_id": "wara-qbr",
+    "consent_documented": true,
+    "transcript": "Juan: checkout_api performance holding steady ahead of Q4 prep. Fernando: wrapping up integration testing, on schedule."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b01",
+    "occurred_at": "2026-04-24T09:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Hi team, kicking off Q2 with the checkout_api roadmap review. Feeling good about the direction."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b02",
+    "occurred_at": "2026-05-01T10:30:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Quick thanks for turning around the inventory_sync question so fast last week."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b03",
+    "occurred_at": "2026-05-08T11:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Sync went well today. Appreciate the transparency on the sprint planning."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b04",
+    "occurred_at": "2026-05-15T09:45:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "No blockers on our end this week — checkout_api is running smoothly."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b05",
+    "occurred_at": "2026-05-22T14:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Following up on the pricing module timeline, no rush, just tracking it internally."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b06",
+    "occurred_at": "2026-05-29T10:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Great call today, team. Looking forward to the next milestone."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b07",
+    "occurred_at": "2026-06-05T11:15:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Thanks for the quick fix on the reporting dashboard, that saved us a headache."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b08",
+    "occurred_at": "2026-06-12T09:30:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Checking in — anything you need from our side for the Q3 planning doc?"
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b09",
+    "occurred_at": "2026-06-19T15:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Appreciate the heads-up on the maintenance window, we'll plan around it."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-b10",
+    "occurred_at": "2026-06-26T10:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Solid week overall. checkout_api metrics look healthy on our dashboards too."
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-b01",
+    "occurred_at": "2026-06-10T10:00:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "morning! inventory_sync batch job finished early today, nice"
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-b02",
+    "occurred_at": "2026-06-17T11:30:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "checkout_api load test numbers look solid, sharing in the doc"
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-b03",
+    "occurred_at": "2026-06-24T09:15:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "quick heads up — deploying a small patch to inventory_sync this afternoon"
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-b04",
+    "occurred_at": "2026-07-01T10:00:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "all green on our dashboards this morning"
+  },
+  {
+    "source_type": "slack",
+    "source_native_id": "wara-slack-b05",
+    "occurred_at": "2026-07-08T14:00:00-05:00",
+    "from": "fujuca510@gmail.com",
+    "text": "checkout_api integration tests passing, ready for next phase"
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w15",
+    "occurred_at": "2026-04-12T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w16",
+    "occurred_at": "2026-04-19T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w17",
+    "occurred_at": "2026-04-26T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 0
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w18",
+    "occurred_at": "2026-05-03T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w19",
+    "occurred_at": "2026-05-10T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w20",
+    "occurred_at": "2026-05-17T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 3
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w21",
+    "occurred_at": "2026-05-24T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w22",
+    "occurred_at": "2026-05-31T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w15",
+    "occurred_at": "2026-04-12T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w16",
+    "occurred_at": "2026-04-19T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w17",
+    "occurred_at": "2026-04-26T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w18",
+    "occurred_at": "2026-05-03T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 0
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w19",
+    "occurred_at": "2026-05-10T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": -2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w20",
+    "occurred_at": "2026-05-17T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w21",
+    "occurred_at": "2026-05-24T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 3
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w22",
+    "occurred_at": "2026-05-31T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w23",
+    "occurred_at": "2026-06-07T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 0
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w24",
+    "occurred_at": "2026-06-14T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w25",
+    "occurred_at": "2026-06-21T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": -2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w26",
+    "occurred_at": "2026-06-28T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w27",
+    "occurred_at": "2026-07-05T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": -1
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w28",
+    "occurred_at": "2026-07-12T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 2
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w29",
+    "occurred_at": "2026-07-19T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 0
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-inventory-w30",
+    "occurred_at": "2026-07-26T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "inventory_sync",
+    "value_delta_pct": 1
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-b01",
+    "occurred_at": "2026-05-08T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 9
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-b02",
+    "occurred_at": "2026-05-29T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 8
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-b03",
+    "occurred_at": "2026-06-19T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 9
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-203-created",
+    "occurred_at": "2026-06-11T09:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 203,
+    "title": "payment webhook retries stuck in queue",
+    "product_area": "checkout_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-203-resolved",
+    "occurred_at": "2026-06-11T12:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 203,
+    "title": "payment webhook retries stuck in queue",
+    "product_area": "checkout_api",
+    "state": "resolved"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-205-created",
+    "occurred_at": "2026-06-25T10:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 205,
+    "title": "warehouse barcode scanner mismatch on SKU lookup",
+    "product_area": "inventory_sync",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-205-resolved",
+    "occurred_at": "2026-06-25T13:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 205,
+    "title": "warehouse barcode scanner mismatch on SKU lookup",
+    "product_area": "inventory_sync",
+    "state": "resolved"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-206-created",
+    "occurred_at": "2026-07-16T09:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 206,
+    "title": "checkout promo code stacking edge case",
+    "product_area": "checkout_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-206-resolved",
+    "occurred_at": "2026-07-16T12:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 206,
+    "title": "checkout promo code stacking edge case",
+    "product_area": "checkout_api",
+    "state": "resolved"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-208-created",
+    "occurred_at": "2026-08-04T10:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 208,
+    "title": "abandoned cart recovery emails delayed",
+    "product_area": "checkout_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-208-resolved",
+    "occurred_at": "2026-08-04T13:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 208,
+    "title": "abandoned cart recovery emails delayed",
+    "product_area": "checkout_api",
+    "state": "resolved"
+  }
+]

@@ -1,0 +1,126 @@
+[
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-201-reopened",
+    "occurred_at": "2026-08-14T08:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 201,
+    "title": "checkout_api slow response on peak hours",
+    "reopen_count": 1,
+    "product_area": "checkout_api",
+    "state": "reopened"
+  },
+  {
+    "source_type": "warehouse",
+    "source_native_id": "wara-usage-checkout-w33",
+    "occurred_at": "2026-08-17T00:00:00-05:00",
+    "metric": "weekly_active_usage",
+    "product_area": "checkout_api",
+    "value_delta_pct": -22
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-007",
+    "occurred_at": "2026-08-17T09:14:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Need an update on the checkout_api fix today. Board briefing Thursday."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-008",
+    "occurred_at": "2026-08-17T10:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Looking at VTEX as an alternative platform — can we discuss roadmap commitments?"
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-009",
+    "occurred_at": "2026-08-17T10:30:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "We need to revisit our SLA and the service agreement before the next billing cycle."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-010",
+    "occurred_at": "2026-08-17T11:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Discount and renewal price for the next period need internal review."
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-004",
+    "occurred_at": "2026-08-17T12:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 6,
+    "comment": "Support has been slower, and the checkout_api issues are affecting our peak sales."
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-204-created",
+    "occurred_at": "2026-08-17T13:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 204,
+    "title": "inventory_sync export timeout",
+    "product_area": "inventory_sync",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-204-resolved",
+    "occurred_at": "2026-08-17T14:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 204,
+    "title": "inventory_sync export timeout",
+    "product_area": "inventory_sync",
+    "state": "resolved"
+  },
+  {
+    "source_type": "calendar",
+    "source_native_id": "wara-calendar-qbr-w33",
+    "occurred_at": "2026-08-17T15:00:00-05:00",
+    "attendee": "juan.huarachi.sanchez@gmail.com",
+    "series_id": "wara-qbr",
+    "consent_documented": true,
+    "transcript": "Juan: We need the checkout_api fix before the board review. Fernando: Engineering will prioritize the root cause, ETA end of next week."
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-207-created",
+    "occurred_at": "2026-08-15T09:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 207,
+    "title": "inventory_sync low stock alert threshold misconfigured",
+    "product_area": "inventory_sync",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-207-resolved",
+    "occurred_at": "2026-08-15T12:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 207,
+    "title": "inventory_sync low stock alert threshold misconfigured",
+    "product_area": "inventory_sync",
+    "state": "resolved"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-209-created",
+    "occurred_at": "2026-08-16T10:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 209,
+    "title": "checkout_api discount code validation lag",
+    "product_area": "checkout_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-209-resolved",
+    "occurred_at": "2026-08-16T13:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 209,
+    "title": "checkout_api discount code validation lag",
+    "product_area": "checkout_api",
+    "state": "resolved"
+  }
+]
