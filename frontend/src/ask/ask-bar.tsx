@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Icon } from '../components/ui/icon'
 import { postAsk } from './api'
 import { AnswerRenderer } from './components/answer-renderer'
-import { isComponentResponse } from './types'
+import { isAnsweredResponse } from './types'
 
 type AskBarState = 'idle' | 'thinking' | 'answered'
 
@@ -85,7 +85,7 @@ export function AskBar({ onOpenDraftComposer, onOpenEvidence }: AskBarProps) {
               </p>
             )}
             {mutation.data &&
-              (isComponentResponse(mutation.data) ? (
+              (isAnsweredResponse(mutation.data) ? (
                 <AnswerRenderer
                   answer={mutation.data}
                   onOpenDraftComposer={onOpenDraftComposer}

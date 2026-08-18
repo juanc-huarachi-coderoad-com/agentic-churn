@@ -2,34 +2,44 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnswerRenderer } from './answer-renderer'
-import type { AskComponentResponse } from '../types'
+import type { AskAnsweredResponse } from '../types'
 
 // specs/013-dashboard-reliability-fixes — real backend data can legitimately
 // contain multiple causes with the same finding_type (two separate
 // broken_response_promise findings); each row must still render distinctly
 // and key by its own unique score_contribution_id, not the repeatable
 // finding_type (research.md Decision 1).
-const DUPLICATE_FINDING_TYPE_ANSWER: AskComponentResponse = {
+//
+// specs/014-ask-agent-response-formats — the answered response is now a
+// `parts` sequence; component_only responses are always exactly one
+// component part carrying this same data (Decision 5's backward-
+// compatibility guarantee).
+const DUPLICATE_FINDING_TYPE_ANSWER: AskAnsweredResponse = {
   intent: 'score_delta',
-  component: 'delta_breakdown',
-  component_props: {
-    score: 85.6,
-    band: 'at_risk',
-    causes: [
-      {
-        finding_type: 'broken_response_promise',
-        points: 30.6,
-        is_positive: false,
-        score_contribution_id: 'contribution-1',
+  parts: [
+    {
+      type: 'component',
+      component: 'delta_breakdown',
+      component_props: {
+        score: 85.6,
+        band: 'at_risk',
+        causes: [
+          {
+            finding_type: 'broken_response_promise',
+            points: 30.6,
+            is_positive: false,
+            score_contribution_id: 'contribution-1',
+          },
+          {
+            finding_type: 'broken_response_promise',
+            points: 40.0,
+            is_positive: false,
+            score_contribution_id: 'contribution-2',
+          },
+        ],
       },
-      {
-        finding_type: 'broken_response_promise',
-        points: 40.0,
-        is_positive: false,
-        score_contribution_id: 'contribution-2',
-      },
-    ],
-  },
+    },
+  ],
 }
 
 describe('AnswerRenderer — DeltaBreakdown', () => {

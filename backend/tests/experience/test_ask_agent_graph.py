@@ -12,9 +12,17 @@ from app.experience.adapters.ask_agent_graph import (
     AskAgentToolkit,
     ClassifyOutput,
     Intent,
+    LangGraphAskAgent,
+    ResponseMode,
+    TextGenerationOutput,
     build_ask_agent_graph,
 )
-from app.experience.domain.entities import CommitmentStatusRecord, ContributionRecord
+from app.experience.domain.entities import (
+    CommitmentStatusRecord,
+    ComponentPart,
+    ContributionRecord,
+    TextPart,
+)
 from app.readers.application.ports import LLMPort
 from app.readers.domain.entities import ConfirmedBaselineWindow, MessageEventInfo
 
@@ -22,12 +30,33 @@ T = TypeVar("T")
 
 
 class _FakeLLM(LLMPort):
-    def __init__(self, intent: Intent, subject_hint: str | None = None) -> None:
+    """specs/014-ask-agent-response-formats — dispatches on `schema` so the
+    same fake can stand in for both the classify call (`ClassifyOutput`)
+    and the text-generation call (`TextGenerationOutput`), matching how the
+    real graph makes two separate `generate_structured` calls."""
+
+    def __init__(
+        self,
+        intent: Intent,
+        subject_hint: str | None = None,
+        response_mode: ResponseMode = ResponseMode.COMPONENT_ONLY,
+        text_markdown: str | Exception | None = None,
+    ) -> None:
         self._intent = intent
         self._subject_hint = subject_hint
+        self._response_mode = response_mode
+        self._text_markdown = text_markdown
 
     async def generate_structured(self, prompt: str, schema: type[T]) -> T:
-        return ClassifyOutput(intent=self._intent, subject_hint=self._subject_hint)  # type: ignore[return-value]
+        if schema is TextGenerationOutput:
+            if isinstance(self._text_markdown, Exception):
+                raise self._text_markdown
+            return TextGenerationOutput(markdown=self._text_markdown or "")  # type: ignore[return-value]
+        return ClassifyOutput(  # type: ignore[return-value]
+            intent=self._intent,
+            subject_hint=self._subject_hint,
+            response_mode=self._response_mode,
+        )
 
 
 class _FakeLedger:
@@ -173,6 +202,35 @@ def _build_graph(
         narrator or _FakeNarrator(),
         coverage or _FakeCoverage(),
         ask_queries or _FakeAskQueries(),
+    )
+
+
+def _build_agent(
+    llm: LLMPort,
+    *,
+    ledger: Any = None,
+    findings: Any = None,
+    score: Any = None,
+    stakeholders: Any = None,
+    narrator: Any = None,
+    coverage: Any = None,
+    ask_queries: Any = None,
+) -> LangGraphAskAgent:
+    """specs/014-ask-agent-response-formats — mirrors `_build_graph`, but
+    returns the `LangGraphAskAgent` wrapper so `.answer()`'s `parts`
+    assembly (not just the raw graph state) can be asserted against."""
+    toolkit = AskAgentToolkit(
+        ledger=ledger or _FakeLedger(),
+        findings=findings or _FakeFindings(),
+        score=score or _FakeScore(),
+        stakeholders=stakeholders or _FakeStakeholders(),
+    )
+    return LangGraphAskAgent(
+        llm=llm,
+        toolkit=toolkit,
+        narrator=narrator or _FakeNarrator(),
+        coverage=coverage or _FakeCoverage(),
+        ask_queries=ask_queries or _FakeAskQueries(),
     )
 
 
@@ -367,3 +425,148 @@ async def test_every_terminal_node_logs_exactly_one_ask_queries_row():
     assert len(ask_queries.logged) == 1
     assert ask_queries.logged[0]["declined_reason"] == "prediction"
     assert ask_queries.logged[0]["matched_intent"] is None
+
+
+# ---------------------------------------------------------------------------
+# specs/014-ask-agent-response-formats — response_mode / text generation /
+# fact-check / hybrid (User Stories 1 and 3)
+# ---------------------------------------------------------------------------
+
+
+async def test_text_only_response_produces_a_single_text_part_no_component():
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            response_mode=ResponseMode.TEXT_ONLY,
+            text_markdown="The score is 61.0, which is at_risk.",
+        ),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    result = await agent.answer("why does this matter?", asked_by_user_id=uuid4())
+
+    assert result.response_mode == "text_only"
+    assert len(result.parts) == 1
+    assert isinstance(result.parts[0], TextPart)
+    assert result.parts[0].markdown == "The score is 61.0, which is at_risk."
+
+
+async def test_hybrid_response_produces_text_then_component_from_one_snapshot():
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            response_mode=ResponseMode.HYBRID,
+            text_markdown="The score is 61.0, which is at_risk.",
+        ),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    result = await agent.answer(
+        "what's driving this and what should I do?", asked_by_user_id=uuid4()
+    )
+
+    assert result.response_mode == "hybrid"
+    assert len(result.parts) == 2
+    assert isinstance(result.parts[0], TextPart)
+    assert isinstance(result.parts[1], ComponentPart)
+    assert result.parts[1].component == "delta_breakdown"
+    # FR-008 — text and component agree because both came from the same
+    # already-fetched component_props, never a second, separate fetch.
+    assert result.parts[1].component_props["score"] == 61.0
+
+
+async def test_component_only_stays_a_single_component_part_unchanged():
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(Intent.SCORE_DELTA, response_mode=ResponseMode.COMPONENT_ONLY),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    result = await agent.answer("why did the score go up?", asked_by_user_id=uuid4())
+
+    assert result.response_mode == "component_only"
+    assert len(result.parts) == 1
+    assert isinstance(result.parts[0], ComponentPart)
+    assert result.parts[0].component == "delta_breakdown"
+    assert result.parts[0].component_props["score"] == 61.0
+
+
+async def test_sentence_with_unverifiable_claim_is_dropped_not_shown():
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            response_mode=ResponseMode.TEXT_ONLY,
+            # The first sentence is real (61.0 is the actual score). The
+            # second invents a stakeholder name and number nothing in
+            # component_props supports — must be dropped, never shown.
+            text_markdown=(
+                "The score is 61.0. Fabricatington personally called the CEO 823 times about this."
+            ),
+        ),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    result = await agent.answer("why does this matter?", asked_by_user_id=uuid4())
+
+    assert len(result.parts) == 1
+    markdown = result.parts[0].markdown  # type: ignore[union-attr]
+    assert "61.0" in markdown
+    assert "Fabricatington" not in markdown
+    assert "823" not in markdown
+
+
+async def test_text_generation_failure_degrades_to_component_only():
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            response_mode=ResponseMode.TEXT_ONLY,
+            text_markdown=TimeoutError("simulated LLM timeout"),
+        ),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    result = await agent.answer("why does this matter?", asked_by_user_id=uuid4())
+
+    # Never an empty parts list, never a raised exception reaching the
+    # caller — a real, complete component is what the CS manager sees.
+    assert len(result.parts) == 1
+    assert isinstance(result.parts[0], ComponentPart)
+    assert result.parts[0].component == "delta_breakdown"
+
+
+async def test_a_response_with_no_survivable_text_also_degrades_to_component_only():
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            response_mode=ResponseMode.TEXT_ONLY,
+            # Every claim in this sentence is unverifiable — nothing
+            # survives the fact-check, never an empty text part.
+            text_markdown="Completely Madeupname said the score is 999.9.",
+        ),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    result = await agent.answer("why does this matter?", asked_by_user_id=uuid4())
+
+    assert len(result.parts) == 1
+    assert isinstance(result.parts[0], ComponentPart)
+
+
+async def test_component_only_is_the_default_response_mode_logged():
+    ask_queries = _FakeAskQueries()
+    run = _ScoreRun(score=61.0, band="at_risk")
+    agent = _build_agent(
+        _FakeLLM(Intent.SCORE_DELTA),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+        ask_queries=ask_queries,
+    )
+    await agent.answer("why did the score go up?", asked_by_user_id=uuid4())
+
+    assert ask_queries.logged[0]["response_mode"] == "component_only"
+
+
+async def test_decline_and_fallback_log_no_response_mode():
+    ask_queries = _FakeAskQueries()
+    agent = _build_agent(_FakeLLM(Intent.PREDICTION), ask_queries=ask_queries)
+    await agent.answer("will they cancel?", asked_by_user_id=uuid4())
+
+    assert ask_queries.logged[0]["response_mode"] is None

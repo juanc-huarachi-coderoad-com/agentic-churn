@@ -4,7 +4,7 @@ Spec §12.4–12.5, §15. This document is the engineering contract for every LL
 
 ## Rule 1 — Structured output everywhere
 
-Every model call returns a schema-constrained JSON object, never free prose as a scoring/decision artifact. Prose is generated **once**, at the very end, inside the Narrator/Draft composer, and is itself mechanically checked before display (see Rule 4).
+Every model call returns a schema-constrained JSON object, never free prose as a scoring/decision artifact. Prose is generated only in three places — the Narrator, the Draft composer, and the Ask agent's `text_only`/`hybrid` responses (`specs/014-ask-agent-response-formats`) — and is itself mechanically checked before display in every one of them (see Rule 4). The Ask agent's own choice of response format (`component_only` / `text_only` / `hybrid`) is itself a schema-constrained field on the same classify call that already decides `intent` — never a free judgment made outside a structured-output call.
 
 ```mermaid
 flowchart LR
@@ -35,7 +35,7 @@ Client text (emails, chats, tickets, transcripts) is **untrusted data**, never i
 
 ## Rule 4 — No new facts (mechanical, not aspirational)
 
-Both the Narrator (M7) and Draft composer (M10) run a deterministic post-generation check before any output reaches a screen:
+The Narrator (M7), Draft composer (M10), and the Ask agent's (M9) `text_only`/`hybrid` responses each run a deterministic post-generation check before any output reaches a screen. The Ask agent's check reuses the Narrator's own `fact_check()` function directly (a domain-to-domain import, constitution P8) — not a second, independently-maintained implementation of the same rule:
 
 1. Extract every number, name, date, and claim from the generated text.
 2. Verify each one exists verbatim (or as a direct derivation, e.g. a computed delta) in the structured input that was given to the model.
@@ -58,7 +58,8 @@ This is what makes "model hallucination" (spec §15 risk table) structurally dif
 | Intent reader | Haiku-class | None | `{category: enum, confidence: float, cited_event_ids: [uuid]}` |
 | Meeting reader | Haiku-class | None | `{commitments: [{who, what, by_when, source_segment}], confidence: float}` |
 | Narrator | Sonnet-class | None (reads structured findings only) | `{headline: string, reasons: [{text, points, evidence_ids}], actions: [{text, owner, due_date, playbook_id}]}` |
-| Ask agent | Sonnet-class | Read-only lookup tools (query ledger, query findings, query score_runs) | `{intent: enum, component: enum, component_props: object}` or `{fallback_text: string, sources: [uuid]}` |
+| Ask agent (classify) | Sonnet-class | Read-only lookup tools (query ledger, query findings, query score_runs) | `{intent: enum, subject_hint: string\|null, response_mode: enum}` or (decline/fallback) `{fallback_text: string, sources: [uuid]}` |
+| Ask agent (text generation, `text_only`/`hybrid` only) | Sonnet-class | None (reads the same already-fetched `component_props` the classify step's matched intent produced — no new tool call) | `{markdown: string}`, mechanically fact-checked (Rule 4) before being attached to the response as a `parts` entry alongside/instead of the rendered component |
 | Draft composer | Sonnet-class | None (reads evidence + profile only) | `{draft_text: string, tone_variant: enum, evidence_ids: [uuid]}` |
 
 ## What must never appear in a prompt

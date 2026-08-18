@@ -1,4 +1,6 @@
 // specs/008-narrator-and-ask-agent — contracts/ask.md, architecture/07-api-spec.md.
+// specs/014-ask-agent-response-formats — the answered response is now an
+// ordered `parts` sequence instead of one flat component shape.
 
 export type AskComponentType =
   | 'delta_breakdown'
@@ -10,10 +12,22 @@ export type AskComponentType =
   | 'filtered_timeline'
   | 'draft_handoff'
 
-export interface AskComponentResponse {
-  intent: string
+export interface TextPart {
+  type: 'text'
+  markdown: string
+}
+
+export interface ComponentResponsePart {
+  type: 'component'
   component: AskComponentType
   component_props: Record<string, unknown>
+}
+
+export type ResponsePart = TextPart | ComponentResponsePart
+
+export interface AskAnsweredResponse {
+  intent: string
+  parts: ResponsePart[]
 }
 
 export type DeclinedReason =
@@ -25,8 +39,8 @@ export interface AskFallbackResponse {
   declined_reason: DeclinedReason | null
 }
 
-export type AskResponse = AskComponentResponse | AskFallbackResponse
+export type AskResponse = AskAnsweredResponse | AskFallbackResponse
 
-export function isComponentResponse(response: AskResponse): response is AskComponentResponse {
-  return 'component' in response
+export function isAnsweredResponse(response: AskResponse): response is AskAnsweredResponse {
+  return 'parts' in response
 }

@@ -492,6 +492,8 @@ CREATE TABLE ask_queries (
     question_text       TEXT NOT NULL,
     matched_intent      TEXT,
     rendered_component  TEXT,
+    response_mode       TEXT,  -- 'component_only'|'text_only'|'hybrid'; NULL for decline/fallback rows
+                                -- (specs/014-ask-agent-response-formats)
     declined_reason     declined_reason,
     response_time_ms    INTEGER,
     asked_by_user_id    UUID NOT NULL REFERENCES users(id),

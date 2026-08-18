@@ -1,23 +1,58 @@
-import type { AskComponentResponse } from '../types'
+import { MarkdownText } from './markdown-text'
+import type { AskAnsweredResponse, ComponentResponsePart } from '../types'
 
 interface AnswerRendererProps {
-  answer: AskComponentResponse
+  answer: AskAnsweredResponse
   onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
   onOpenEvidence?: (scoreContributionId: string) => void
 }
 
-// One renderer per closed-set component type (REQ-M9-02) — the Ask agent
-// never answers with a paragraph, only one of these fixed shapes. Every
-// branch below reads only fields the backend already computed; nothing here
-// generates or reorders anything itself (REQ-M9-03).
+// specs/014-ask-agent-response-formats — an answered response is now an
+// ordered `parts` sequence: one part for component_only/text_only, two
+// (text then component) for hybrid. Each part renders independently, in
+// order; nothing here reorders or merges parts (REQ-M9-03's discipline,
+// extended).
 export function AnswerRenderer({
   answer,
   onOpenDraftComposer,
   onOpenEvidence,
 }: AnswerRendererProps) {
-  const props = answer.component_props
+  return (
+    <div className="space-y-4">
+      {answer.parts.map((part, index) =>
+        part.type === 'text' ? (
+          <MarkdownText key={index} markdown={part.markdown} />
+        ) : (
+          <GenerativeUIComponent
+            key={index}
+            part={part}
+            onOpenDraftComposer={onOpenDraftComposer}
+            onOpenEvidence={onOpenEvidence}
+          />
+        ),
+      )}
+    </div>
+  )
+}
 
-  switch (answer.component) {
+interface GenerativeUIComponentProps {
+  part: ComponentResponsePart
+  onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+  onOpenEvidence?: (scoreContributionId: string) => void
+}
+
+// One renderer per closed-set component type (REQ-M9-02) — the Ask agent
+// never answers a component part with a paragraph, only one of these fixed
+// shapes. Every branch below reads only fields the backend already
+// computed; nothing here generates or reorders anything itself (REQ-M9-03).
+function GenerativeUIComponent({
+  part,
+  onOpenDraftComposer,
+  onOpenEvidence,
+}: GenerativeUIComponentProps) {
+  const props = part.component_props
+
+  switch (part.component) {
     case 'delta_breakdown':
       return <DeltaBreakdown props={props} onOpenEvidence={onOpenEvidence} />
     case 'baseline_comparison':

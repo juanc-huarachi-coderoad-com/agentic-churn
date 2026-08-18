@@ -1,6 +1,57 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.3.0 → 1.4.0
+
+Rationale for 1.4.0 (MINOR): AI Safety Rules 1 and 4's component inventory gains a third
+prose-generating location (the Ask agent's `text_only`/`hybrid` responses,
+`specs/014-ask-agent-response-formats`), governed by the same mechanical fact-check
+already required of the Narrator and Draft composer — reusing that exact mechanism
+(`fact_check()`, a domain-to-domain import), not inventing a parallel one. The resilience-
+budgets paragraph gains a corresponding new row for the Ask agent's two-LLM-call
+`text_only`/`hybrid` path, distinct from its unchanged `component_only` budget. No
+principle renamed, removed, or redefined — additive, not breaking; this specific extension
+was anticipated and flagged (not discovered as a surprise) in the feature's own spec.md
+Assumptions and plan.md Complexity Tracking before this amendment was written.
+
+Modified principles: none (Development Workflow & Quality Gates → AI safety rules 1 and 4,
+and the Resilience budgets paragraph, expanded — not principles, and not redefined)
+
+Added principles (this amendment): none — this is a scoped extension of an existing rule's
+stated inventory (which components generate prose, and what their timing budget is), fully
+accountable to the AI safety rules that already existed, not a new governing rule. See
+`specs/014-ask-agent-response-formats/plan.md`'s Constitution Check and Complexity Tracking
+for the full evaluation of why this extension is necessary and safe.
+
+Added sections (this amendment):
+  - "Development Workflow & Quality Gates" → AI safety rules: Rule 1 now names the Ask
+    agent's `text_only`/`hybrid` responses as the third place this codebase generates
+    prose (previously only Narrator/Draft composer), and notes the response-format
+    decision is itself schema-constrained, not a free judgment; Rule 4 extends its
+    fact-check requirement to that same third location, explicit that it reuses the
+    Narrator's `fact_check()` directly rather than a second implementation.
+  - "Resilience budgets" paragraph: the prior single "Ask agent 2.5s with no retry" clause
+    is now explicitly `component_only`'s budget (unchanged), with a new, separate
+    `text_only`/`hybrid` text-generation cap (15s, hard-enforced via `asyncio.wait_for`,
+    not just documented — the number itself came from live-testing against the real model
+    during this feature's implementation, not a planning-time estimate; degrades to
+    `component_only` on failure) alongside it.
+
+Templates requiring updates:
+  - .specify/templates/plan-template.md, spec-template.md, tasks-template.md
+    ✅ compatible — same reasoning as prior amendments: generic structure, no
+    principle-specific language to reconcile. No edit made.
+  - .claude/skills/speckit-*.md ⚠ pending, same standing note as prior amendments — no
+    known conflict, full pass still deferred to the next amendment that touches them.
+  - architecture/04-ai-safety-and-model-usage.md ✅ updated in the same change — model-call
+    inventory table gains the Ask agent's third output shape.
+  - architecture/06-error-handling.md ✅ updated in the same change — new resilience-budget
+    row, matching this amendment's wording exactly.
+
+Follow-up TODOs: none.
+
+--- prior report (v1.2.0 → v1.3.0) ---
+
 Version change: 1.2.0 → 1.3.0
 
 Rationale for 1.3.0 (MINOR): materially expanded the existing "UI & Styling" guidance
@@ -406,7 +457,12 @@ level, not just the row level.
 every LLM call — Tone, Intent, Meeting readers; Narrator; Ask agent; Draft composer):
 
 1. **Structured output everywhere** — every model call returns a schema-constrained JSON
-   object; prose is generated once, at the end, and mechanically checked before display.
+   object; prose is generated only in the Narrator, the Draft composer, and the Ask agent's
+   `text_only`/`hybrid` responses (`specs/014-ask-agent-response-formats`) — never as a
+   scoring/decision artifact anywhere else — and is mechanically checked before display in
+   every one of those three places (Rule 4). The Ask agent's own response-format decision
+   (`component_only` vs `text_only` vs `hybrid`) is itself a schema-constrained field on the
+   same classify call that already decides `intent` — never a free judgment.
 2. **Prompt injection defense is architectural, not prompt-level** — client text is
    untrusted data, never instructions. Interpreters have zero tools and zero side effects;
    output is validated against closed enumerations; a finding can never become an
@@ -418,8 +474,10 @@ every LLM call — Tone, Intent, Meeting readers; Narrator; Ask agent; Draft com
 3. **Confidence is first-class** — `confidence` and `magnitude` are separate fields, never
    conflated; abstention is a valid, expected output, never a low-confidence guess.
 4. **No new facts, mechanically checked** — every number, name, date, and claim in
-   Narrator/Draft composer output is verified against the structured input before display;
-   any unverifiable sentence is dropped entirely, never silently rephrased.
+   Narrator/Draft composer/Ask agent (`text_only`/`hybrid`) output is verified against the
+   structured input before display; any unverifiable sentence is dropped entirely, never
+   silently rephrased. The Ask agent's check reuses the Narrator's own `fact_check()`
+   directly (a domain-to-domain import, not a second implementation of the same rule).
 5. **Versioned prompts** — every prompt template is version-controlled; a run records which
    prompt version produced each output; changing a prompt is a replayable, measurable event,
    never an untracked live string edit.
@@ -429,9 +487,20 @@ timeout and bounded retry policy sized to keep the pipeline inside its latency t
 Tone/Intent/Meeting readers 8s × 2 retries (abstain on exhaustion, never quarantined —
 nothing was produced to quarantine); Narrator 10s × 1 retry (falls back to a deterministic,
 non-LLM headline built from the scoring engine's own output if every generated sentence
-fails its fact-check); Ask agent 2.5s with no retry (a retry would already blow its 3s
-budget — falls back to plain text immediately); Draft composer 10s × 1 retry (fails
-visibly, never a partial or silently-empty draft). A malformed webhook payload is captured
+fails its fact-check); Ask agent `component_only` 2.5s with no retry (a retry would already blow its 3s
+budget — falls back to plain text immediately); Ask agent `text_only`/`hybrid` adds a
+second call, the text generation step, capped at a hard 15s via `asyncio.wait_for` — not
+just documentation, an enforced ceiling in code (`specs/014-ask-agent-response-formats`;
+found necessary by live-testing against the real model during that feature's own
+implementation: the shared `LLMPort` adapter's own internal 3-attempt retry meant this
+call was actually unbounded before the explicit cap was added, and a real run without it
+took 72s; asking the model for a short, 2-4 sentence answer — both better chat UX and
+faster to generate — brought real generation down to ~7-8s typical, so 15s is real
+tail-latency headroom, not a guess). Degrades to a `component_only`-shaped response if this
+second call fails or times out, never a partial or corrupted Markdown fragment; the
+classify call's own timeout/retry behavior is unchanged, governed by the same shared
+adapter policy it always has been. Draft composer 10s × 1 retry (fails visibly, never a
+partial or silently-empty draft). A malformed webhook payload is captured
 in `ingestion_failures`, never crashes a collector or silently vanishes — one bad payload
 never stops the rest of a sync. A sustained quarantine/abstention rate above 50% over a
 rolling 24 hours raises an internal ops alert (an engineering signal, never surfaced to a CS
@@ -495,4 +564,4 @@ facing companion to this constitution — read it before touching code; where it
 mechanical enforcement detail (a `CHECK` constraint, a CI script, a foreign-key rule), that
 detail is binding, not illustrative.
 
-**Version**: 1.3.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-17
+**Version**: 1.4.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-17

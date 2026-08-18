@@ -18,6 +18,7 @@ from app.experience.domain.entities import (
     GeneratedDraft,
     IssueEvidenceRecord,
     NarratorSummaryRecord,
+    ResponsePart,
     UsageComparisonRecord,
 )
 from app.readers.domain.entities import ConfirmedBaselineWindow, MessageEventInfo
@@ -70,9 +71,7 @@ class ScoreReadPort(ABC):
     async def list_contributions(self, score_run_id: UUID) -> list[ContributionRecord]: ...
 
     @abstractmethod
-    async def get_contribution(
-        self, score_contribution_id: UUID
-    ) -> ContributionRecord | None: ...
+    async def get_contribution(self, score_contribution_id: UUID) -> ContributionRecord | None: ...
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +98,7 @@ class FindingReadPort(ABC):
         ...
 
     @abstractmethod
-    async def get_commitment_comparison(
-        self, event_id: UUID
-    ) -> CommitmentComparisonRecord | None:
+    async def get_commitment_comparison(self, event_id: UUID) -> CommitmentComparisonRecord | None:
         """`response_pairs` joined on the cited event — the Commitment dispatch
         case's baseline/current source."""
         ...
@@ -330,13 +327,16 @@ class AskQueryRepositoryPort(ABC):
         question_text: str,
         matched_intent: str | None,
         rendered_component: str | None,
+        response_mode: str | None,
         declined_reason: str | None,
         response_time_ms: int,
         asked_by_user_id: UUID,
     ) -> None:
         """One `ask_queries` row per graph run, regardless of which terminal
         node fired — the dataset REQ-M9's ~90% intent-coverage measurement
-        reads from (FR-023)."""
+        reads from (FR-023). `response_mode` is `None` for decline/fallback
+        rows (specs/014-ask-agent-response-formats, mirrors
+        `rendered_component`'s existing `None`-for-fallback convention)."""
         ...
 
 
@@ -358,9 +358,15 @@ class AskAgentState(TypedDict, total=False):
     asked_by_user_id: UUID
     intent: str | None
     subject_hint: str | None
+    response_mode: str | None
+    """specs/014-ask-agent-response-formats — `component_only` | `text_only`
+    | `hybrid`, decided by the same classify call as `intent`."""
     tool_results: dict[str, Any]
     component: str | None
     component_props: dict[str, Any] | None
+    generated_text: str | None
+    """specs/014-ask-agent-response-formats — the fact-checked Markdown, if
+    `response_mode` called for one and generation/fact-check succeeded."""
     fallback_text: str | None
     sources: tuple[UUID, ...]
     declined_reason: str | None
@@ -370,11 +376,16 @@ class AskAgentState(TypedDict, total=False):
 @dataclass(frozen=True)
 class AskAgentResult:
     intent: str | None
-    component: str | None
-    component_props: dict[str, Any] | None
+    parts: tuple[ResponsePart, ...]
+    """specs/014-ask-agent-response-formats — the answered response, as an
+    ordered sequence of text/component parts. Empty when this is a
+    decline/fallback result."""
     fallback_text: str | None
     sources: tuple[UUID, ...]
     declined_reason: str | None
+    response_mode: str | None
+    """specs/014-ask-agent-response-formats — for `ask_queries` logging.
+    `None` for decline/fallback results."""
     response_time_ms: int
 
 

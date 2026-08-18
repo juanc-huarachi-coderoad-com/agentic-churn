@@ -71,8 +71,13 @@ describe('AskBar', () => {
     resolveFetch(
       jsonResponse({
         intent: 'score_delta',
-        component: 'delta_breakdown',
-        component_props: { score: 61.0, band: 'at_risk', causes: [] },
+        parts: [
+          {
+            type: 'component',
+            component: 'delta_breakdown',
+            component_props: { score: 61.0, band: 'at_risk', causes: [] },
+          },
+        ],
       }),
     )
 

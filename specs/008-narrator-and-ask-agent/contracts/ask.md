@@ -1,5 +1,11 @@
 # Contract: Ask agent
 
+> **Superseded for the answered-response shape**: `specs/014-ask-agent-response-formats/
+> contracts/ask.md` is the current source of truth for `POST /api/ask`'s *answered* response
+> — `AskComponentResponse`'s flat shape below is replaced by an `AskAnsweredResponse`
+> carrying an ordered `parts` list (text and/or component parts). The decline/fallback
+> response (`AskFallbackResponse`) documented below is unchanged and still authoritative.
+
 `architecture/07-api-spec.md` already defines `POST /api/ask`'s request/
 response schemas (`AskRequest`, `AskComponentResponse`, `AskFallbackResponse`)
 — not re-specified here. This feature is the first to actually implement the

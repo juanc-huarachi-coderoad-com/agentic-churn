@@ -3,6 +3,14 @@ time stays under 3s for an intent-matched question (REQ-M9-08). Run
 separately from `test_ask_agent_graph.py`'s fake-backed branch-coverage
 tests, since this one needs the real network round trip those deliberately
 avoid (`tests/strategy.md`).
+
+specs/014-ask-agent-response-formats, research.md Decision 3: this budget
+only applies to `component_only` responses (unchanged). `text_only`/
+`hybrid` responses make a second LLM call and get their own, larger budget
+— asserted separately below, branched on `result.response_mode` since which
+mode a real model picks for a given question is not itself pinned down by
+this test (that's `_classify_prompt`'s job, exercised by the fake-backed
+tests in `test_ask_agent_graph.py`).
 """
 
 import time
@@ -27,7 +35,8 @@ from app.ingestion.adapters.encryption import BucketedFernetEncryption
 from app.ingestion.adapters.key_store import FileKeyStore
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 
-_LATENCY_BUDGET_SECONDS = 3.0
+_COMPONENT_ONLY_LATENCY_BUDGET_SECONDS = 3.0
+_TEXT_OR_HYBRID_LATENCY_BUDGET_SECONDS = 8.0
 
 
 @pytest.mark.skipif(
@@ -57,5 +66,10 @@ async def test_intent_matched_question_responds_within_the_3s_budget():
         result = await agent.answer("why did the score go up?", asked_by_user_id=uuid4())
         elapsed = time.monotonic() - started
 
-    assert elapsed < _LATENCY_BUDGET_SECONDS
-    assert result.response_time_ms < _LATENCY_BUDGET_SECONDS * 1000
+    budget = (
+        _COMPONENT_ONLY_LATENCY_BUDGET_SECONDS
+        if result.response_mode == "component_only"
+        else _TEXT_OR_HYBRID_LATENCY_BUDGET_SECONDS
+    )
+    assert elapsed < budget
+    assert result.response_time_ms < budget * 1000

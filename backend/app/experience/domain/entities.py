@@ -143,6 +143,33 @@ class NarratorSummaryRecord:
     actions: tuple[dict[str, object], ...]
 
 
+@dataclass(frozen=True)
+class TextPart:
+    """specs/014-ask-agent-response-formats — one Markdown-text part of an
+    answered Ask agent response. Already fact-checked (research.md Decision
+    4) before construction — never built from an unverified sentence."""
+
+    kind: Literal["text"]
+    markdown: str
+
+
+@dataclass(frozen=True)
+class ComponentPart:
+    """One structured-component part of an answered Ask agent response —
+    the same closed set of 8 component types the route already renders
+    today, unchanged."""
+
+    kind: Literal["component"]
+    component: str
+    component_props: dict[str, object]
+
+
+ResponsePart = TextPart | ComponentPart
+"""An answered response is an ordered sequence of these — one part for
+`component_only`/`text_only`, two (text then component) for `hybrid`
+(research.md Decision 5)."""
+
+
 # ---------------------------------------------------------------------------
 # Draft composer (M10) — specs/009-draft-composer. `VerifiedFactSet`/
 # `FactCheckResult` are NOT redefined here — imported from

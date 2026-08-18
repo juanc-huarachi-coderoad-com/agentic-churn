@@ -156,12 +156,12 @@ paths:
             schema: { $ref: '#/components/schemas/AskRequest' }
       responses:
         '200':
-          description: Either a rendered component or a marked fallback (REQ-M9-04)
+          description: Either an answered response (component/text/hybrid parts, specs/014-ask-agent-response-formats) or a marked fallback (REQ-M9-04)
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/AskComponentResponse'
+                  - $ref: '#/components/schemas/AskAnsweredResponse'
                   - $ref: '#/components/schemas/AskFallbackResponse'
   /api/drafts:
     post:
@@ -392,6 +392,9 @@ components:
       properties:
         question: { type: string }
 
+    # Superseded by AskAnsweredResponse below (specs/014-ask-agent-response-formats) — this
+    # flat shape is kept only as the historical record of what feature 008 shipped; every
+    # current consumer reads AskAnsweredResponse.parts[0] for the equivalent data.
     AskComponentResponse:
       type: object
       required: [intent, component, component_props]
@@ -399,6 +402,26 @@ components:
         intent: { type: string }
         component: { type: string, enum: [delta_breakdown, baseline_comparison, stakeholder_cards, ranked_issues, action_checklist, commitments_status, filtered_timeline, draft_handoff] }
         component_props: { type: object, description: "For component=draft_handoff: {issue_id, stakeholder_id} — feature 009's draft composer consumes this later (specs/008-narrator-and-ask-agent, Clarifications)" }
+
+    # specs/014-ask-agent-response-formats — the current answered-response shape. An
+    # ordered `parts` list: for response_mode=component_only (unchanged default), `parts`
+    # is always exactly one component part, byte-identical to what AskComponentResponse
+    # above returned. See specs/014-ask-agent-response-formats/contracts/ask.md.
+    AskAnsweredResponse:
+      type: object
+      required: [intent, parts]
+      properties:
+        intent: { type: string }
+        parts:
+          type: array
+          items:
+            type: object
+            required: [type]
+            properties:
+              type: { type: string, enum: [text, component] }
+              markdown: { type: string, description: "present iff type=text; already fact-checked before this response is constructed" }
+              component: { type: string, enum: [delta_breakdown, baseline_comparison, stakeholder_cards, ranked_issues, action_checklist, commitments_status, filtered_timeline, draft_handoff], description: "present iff type=component" }
+              component_props: { type: object, description: "present iff type=component" }
 
     AskFallbackResponse:
       type: object

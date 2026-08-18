@@ -292,9 +292,7 @@ class SqlAlchemyFindingReader(FindingReadPort):
             for r in rows
         ]
 
-    async def get_commitment_comparison(
-        self, event_id: UUID
-    ) -> CommitmentComparisonRecord | None:
+    async def get_commitment_comparison(self, event_id: UUID) -> CommitmentComparisonRecord | None:
         row = (
             await self._session.execute(
                 text(
@@ -411,8 +409,7 @@ class SqlAlchemyCoverageReader(CoveragePort):
         rows = (
             await self._session.execute(
                 text(
-                    "SELECT source_type, display_name, status, last_successful_sync_at "
-                    "FROM sources"
+                    "SELECT source_type, display_name, status, last_successful_sync_at FROM sources"
                 )
             )
         ).all()
@@ -451,9 +448,7 @@ class SqlAlchemyCoverageReader(CoveragePort):
             )
         ).all()
         groups = {
-            _SIGNAL_TYPE_GROUPS[r.source_type]
-            for r in rows
-            if r.source_type in _SIGNAL_TYPE_GROUPS
+            _SIGNAL_TYPE_GROUPS[r.source_type] for r in rows if r.source_type in _SIGNAL_TYPE_GROUPS
         }
         return len(groups)
 
@@ -697,6 +692,7 @@ class SqlAlchemyAskQueryRepository(AskQueryRepositoryPort):
         question_text: str,
         matched_intent: str | None,
         rendered_component: str | None,
+        response_mode: str | None,
         declined_reason: str | None,
         response_time_ms: int,
         asked_by_user_id: UUID,
@@ -704,15 +700,16 @@ class SqlAlchemyAskQueryRepository(AskQueryRepositoryPort):
         await self._session.execute(
             text(
                 "INSERT INTO ask_queries (question_text, matched_intent, rendered_component, "
-                "declined_reason, response_time_ms, asked_by_user_id) "
+                "response_mode, declined_reason, response_time_ms, asked_by_user_id) "
                 "VALUES (:question_text, :matched_intent, :rendered_component, "
-                "CAST(:declined_reason AS declined_reason), :response_time_ms, "
-                ":asked_by_user_id)"
+                ":response_mode, CAST(:declined_reason AS declined_reason), "
+                ":response_time_ms, :asked_by_user_id)"
             ),
             {
                 "question_text": question_text,
                 "matched_intent": matched_intent,
                 "rendered_component": rendered_component,
+                "response_mode": response_mode,
                 "declined_reason": declined_reason,
                 "response_time_ms": response_time_ms,
                 "asked_by_user_id": asked_by_user_id,
