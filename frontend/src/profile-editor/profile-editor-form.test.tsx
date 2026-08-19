@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiFetch } from '../auth/api-client'
 import { ProfileEditorForm } from './profile-editor-form'
@@ -16,9 +17,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 function renderForm() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ProfileEditorForm />
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={['/profile']}>
+      <QueryClientProvider client={queryClient}>
+        <ProfileEditorForm />
+      </QueryClientProvider>
+    </MemoryRouter>,
   )
 }
 
@@ -27,9 +30,7 @@ const CURRENT_PROFILE = {
   client_name: 'Meridian Logistics',
   renewal_date: '2026-11-08',
   contract_value_band: 'strategic',
-  stakeholders: [
-    { name: 'Ana Reyes', role: 'CTO', influence: 'sponsor', signs_renewal: true },
-  ],
+  stakeholders: [{ name: 'Ana Reyes', role: 'CTO', influence: 'sponsor', signs_renewal: true }],
   product_areas: [{ key: 'tracking_api', criticality: 'critical' }],
   commitments: [{ type: 'first_response', threshold_business_hours: 4.0 }],
   exclusions: ['legal_threads'],

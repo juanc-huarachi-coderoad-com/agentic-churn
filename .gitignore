@@ -32,7 +32,7 @@ build/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
-coverage/
+frontend/coverage/
 playwright-report/
 test-results/
 frontend/.vite/
