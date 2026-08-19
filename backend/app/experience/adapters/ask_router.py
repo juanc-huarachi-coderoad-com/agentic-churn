@@ -5,11 +5,12 @@ implementation of this route — `architecture/07-api-spec.md` has documented
 its schema since before this feature existed.
 """
 
+import json
 from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.application.dependencies import CurrentUser, require_full_access
@@ -34,8 +35,20 @@ from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 router = APIRouter()
 
 
+class HistoryTurn(BaseModel):
+    """specs/017-assistant-chat-conversation, data-model.md — a prior
+    `/api/ask` exchange resent verbatim by the client as conversation
+    context. `answer` is deliberately untyped (`dict[str, Any]`): it is
+    never re-validated as a strict response shape, only serialized back
+    into `classify_intent`'s prompt as data (research.md Decisions 2–3)."""
+
+    question: str
+    answer: dict[str, Any]
+
+
 class AskRequest(BaseModel):
     question: str
+    history: list[HistoryTurn] = Field(default_factory=list)
 
 
 class ResponsePartSchema(BaseModel):
@@ -65,6 +78,26 @@ class AskFallbackResponse(BaseModel):
     declined_reason: str | None = None
 
 
+_MAX_HISTORY_TURNS = 5
+_MAX_HISTORY_ANSWER_CHARS = 4000
+"""specs/017-assistant-chat-conversation, research.md Decision 2 — Zero
+Trust: the server independently caps accepted history, both in count and
+per-entry size, regardless of what the client already enforced."""
+
+
+def _bounded_history(history: list[HistoryTurn]) -> list[dict[str, Any]]:
+    bounded: list[dict[str, Any]] = []
+    for turn in history[-_MAX_HISTORY_TURNS:]:
+        answer_json = json.dumps(turn.answer, default=str)
+        answer = (
+            turn.answer
+            if len(answer_json) <= _MAX_HISTORY_ANSWER_CHARS
+            else {"fallback_text": "(answer omitted — too large)"}
+        )
+        bounded.append({"question": turn.question, "answer": answer})
+    return bounded
+
+
 @router.post("/api/ask", response_model=AskAnsweredResponse | AskFallbackResponse)
 async def ask(
     request: AskRequest,
@@ -90,7 +123,11 @@ async def ask(
             ask_queries=SqlAlchemyAskQueryRepository(session),
         )
 
-        result = await agent.answer(request.question, asked_by_user_id=current_user.user_id)
+        result = await agent.answer(
+            request.question,
+            asked_by_user_id=current_user.user_id,
+            history=_bounded_history(request.history),
+        )
 
     if result.parts:
         parts: list[ResponsePartSchema] = []

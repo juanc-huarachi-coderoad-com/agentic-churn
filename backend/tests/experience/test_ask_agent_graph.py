@@ -59,6 +59,21 @@ class _FakeLLM(LLMPort):
         )
 
 
+class _TrackingLLM(LLMPort):
+    """specs/017-assistant-chat-conversation — wraps a `_FakeLLM`, recording
+    every `generate_structured` call's `(prompt, schema)` so tests can
+    assert whether `classify_intent` was skipped entirely (small talk) and
+    inspect what history-derived context actually reached a given prompt."""
+
+    def __init__(self, inner: _FakeLLM) -> None:
+        self._inner = inner
+        self.calls: list[tuple[str, type]] = []
+
+    async def generate_structured(self, prompt: str, schema: type[T]) -> T:
+        self.calls.append((prompt, schema))
+        return await self._inner.generate_structured(prompt, schema)
+
+
 class _FakeLedger:
     def __init__(
         self,
@@ -234,9 +249,19 @@ def _build_agent(
     )
 
 
-async def _run(graph: Any, question: str = "a question?") -> dict[str, Any]:
+async def _run(
+    graph: Any,
+    question: str = "a question?",
+    *,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return await graph.ainvoke(
-        {"question": question, "asked_by_user_id": uuid4(), "started_at": 0.0}
+        {
+            "question": question,
+            "asked_by_user_id": uuid4(),
+            "started_at": 0.0,
+            "history": history or [],
+        }
     )
 
 
@@ -570,3 +595,126 @@ async def test_decline_and_fallback_log_no_response_mode():
     await agent.answer("will they cancel?", asked_by_user_id=uuid4())
 
     assert ask_queries.logged[0]["response_mode"] is None
+
+
+# ---------------------------------------------------------------------------
+# specs/017-assistant-chat-conversation — small talk fast path (User Story 3)
+# ---------------------------------------------------------------------------
+
+
+async def test_greeting_returns_fixed_reply_without_calling_classify():
+    llm = _TrackingLLM(_FakeLLM(Intent.NONE))
+    graph = _build_graph(llm)
+    result = await _run(graph, "hi")
+    assert result["declined_reason"] is None
+    assert result.get("component") is None
+    assert "fallback_text" in result
+    assert llm.calls == []
+
+
+async def test_thanks_returns_fixed_reply_without_calling_classify():
+    llm = _TrackingLLM(_FakeLLM(Intent.NONE))
+    graph = _build_graph(llm)
+    result = await _run(graph, "thanks so much!")
+    assert result["declined_reason"] is None
+    assert llm.calls == []
+
+
+async def test_capabilities_question_returns_fixed_reply_without_calling_classify():
+    llm = _TrackingLLM(_FakeLLM(Intent.NONE))
+    graph = _build_graph(llm)
+    result = await _run(graph, "what can you help with?")
+    assert result["declined_reason"] is None
+    assert llm.calls == []
+
+
+async def test_smalltalk_replies_are_a_small_fixed_set_not_freshly_generated():
+    """Two different greeting phrasings get the exact same reply — a fixed
+    string, not model output (research.md Decision 4)."""
+    first = await _run(_build_graph(_TrackingLLM(_FakeLLM(Intent.NONE))), "hi")
+    second = await _run(_build_graph(_TrackingLLM(_FakeLLM(Intent.NONE))), "hello there")
+    assert first["fallback_text"] == second["fallback_text"]
+
+
+async def test_smalltalk_word_boundary_does_not_false_match_inside_a_real_question():
+    """"hi" must not false-match inside a real question just because "hi" is
+    a substring of another word (e.g. "history")."""
+    llm = _TrackingLLM(_FakeLLM(Intent.TIMELINE, subject_hint="Diego"))
+    graph = _build_graph(
+        llm, stakeholders=_FakeStakeholders([_Stakeholder("Diego Marín")])
+    )
+    result = await _run(graph, "show me Diego's history")
+    assert len(llm.calls) == 1
+    assert result["component"] == "filtered_timeline"
+
+
+async def test_non_smalltalk_question_still_reaches_classify_intent_unchanged():
+    llm = _TrackingLLM(_FakeLLM(Intent.SCORE_DELTA))
+    run = _ScoreRun()
+    graph = _build_graph(llm, score=_FakeScore(latest=run, contributions=[_contribution()]))
+    result = await _run(graph, "why did the score go up?")
+    assert result["component"] == "delta_breakdown"
+    assert len(llm.calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# specs/017-assistant-chat-conversation — conversation memory (User Story 4)
+# ---------------------------------------------------------------------------
+
+
+def _history_entry(question: str, *, fallback_text: str = "an earlier answer") -> dict[str, Any]:
+    return {
+        "question": question,
+        "answer": {"fallback_text": fallback_text, "sources": [], "declined_reason": "unclear"},
+    }
+
+
+async def test_history_reaches_classify_prompt_but_not_generate_text_prompt():
+    run = _ScoreRun()
+    llm = _TrackingLLM(
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            response_mode=ResponseMode.TEXT_ONLY,
+            text_markdown="A short answer.",
+        )
+    )
+    graph = _build_graph(llm, score=_FakeScore(latest=run, contributions=[_contribution()]))
+    history = [_history_entry("why did the score drop last week?")]
+
+    await _run(graph, "what about this week?", history=history)
+
+    assert len(llm.calls) == 2
+    classify_prompt, _ = llm.calls[0]
+    generate_text_prompt, _ = llm.calls[1]
+    assert "why did the score drop last week?" in classify_prompt
+    assert "why did the score drop last week?" not in generate_text_prompt
+
+
+async def test_history_longer_than_5_entries_is_truncated_to_the_5_most_recent():
+    llm = _TrackingLLM(_FakeLLM(Intent.NONE))
+    graph = _build_graph(llm)
+    history = [_history_entry(f"old question {i}") for i in range(8)]
+
+    await _run(graph, "current question", history=history)
+
+    classify_prompt, _ = llm.calls[0]
+    for i in range(3):
+        assert f"old question {i}" not in classify_prompt
+    for i in range(3, 8):
+        assert f"old question {i}" in classify_prompt
+
+
+async def test_unrelated_history_does_not_corrupt_the_current_question_or_its_intent():
+    """spec.md FR-010 / US4 Acceptance Scenario 2 — a self-contained question
+    unrelated to prior turns must still be answered correctly, using its own
+    text and its own (fake, but representative) intent resolution."""
+    run = _ScoreRun()
+    llm = _TrackingLLM(_FakeLLM(Intent.TOP_RISK))
+    graph = _build_graph(llm, score=_FakeScore(latest=run, contributions=[_contribution()]))
+    history = [_history_entry("who has gone quiet?", fallback_text="Nobody has gone quiet.")]
+
+    result = await _run(graph, "what is the biggest risk right now?", history=history)
+
+    classify_prompt, _ = llm.calls[0]
+    assert "what is the biggest risk right now?" in classify_prompt
+    assert result["component"] == "ranked_issues"

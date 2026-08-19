@@ -44,3 +44,24 @@ export type AskResponse = AskAnsweredResponse | AskFallbackResponse
 export function isAnsweredResponse(response: AskResponse): response is AskAnsweredResponse {
   return 'parts' in response
 }
+
+// specs/017-assistant-chat-conversation — data-model.md's HistoryTurn: a prior
+// `/api/ask` exchange resent verbatim as conversation context. `answer` is
+// never re-derived, just what a previous postAsk() call already returned.
+export interface HistoryTurn {
+  question: string
+  answer: AskResponse
+}
+
+// specs/017-assistant-chat-conversation — data-model.md's Turn: one
+// question/answer exchange in the frontend-only, in-memory transcript
+// (research.md Decision 1 — component state, not a global store).
+export type TurnStatus = 'pending' | 'answered' | 'error'
+
+export interface Turn {
+  id: string
+  question: string
+  status: TurnStatus
+  response: AskResponse | null
+  error: string | null
+}

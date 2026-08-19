@@ -377,6 +377,11 @@ class AskAgentState(TypedDict, total=False):
     sources: tuple[UUID, ...]
     declined_reason: str | None
     started_at: float
+    history: list[dict[str, Any]]
+    """specs/017-assistant-chat-conversation — up to the 5 most recent prior
+    `{question, answer}` turns, already validated/truncated by the router
+    (Zero Trust). Read only by `classify_intent`'s prompt (research.md
+    Decision 3) — never reaches `generate_text`."""
 
 
 @dataclass(frozen=True)
@@ -397,7 +402,13 @@ class AskAgentResult:
 
 class AskAgentPort(ABC):
     @abstractmethod
-    async def answer(self, question: str, *, asked_by_user_id: UUID) -> AskAgentResult: ...
+    async def answer(
+        self,
+        question: str,
+        *,
+        asked_by_user_id: UUID,
+        history: list[dict[str, Any]] | None = None,
+    ) -> AskAgentResult: ...
 
 
 # ---------------------------------------------------------------------------
