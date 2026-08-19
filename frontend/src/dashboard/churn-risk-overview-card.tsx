@@ -48,12 +48,15 @@ export function ChurnRiskOverviewCard({
         </span>
       </CardHeader>
 
-      <div className="mt-4">
+      {/* mt-6 (was mt-4): the larger, band-colored score treatment (FR-009)
+          needs more breathing room above it than the previous 4xl number
+          did. */}
+      <div className="mt-6">
         <ScoreBlock score={score} band={band} trend={trend} onClick={onScoreClick} />
       </div>
 
       {bars.length > 0 && (
-        <div className="mt-6 border-t border-neutral-100 pt-4">
+        <div className="mt-8 border-t border-neutral-100 pt-4">
           <p className="text-xs tracking-wide text-neutral-400 uppercase">Top risk drivers</p>
           <ContributionBars bars={bars} onSelect={onSelect} />
         </div>

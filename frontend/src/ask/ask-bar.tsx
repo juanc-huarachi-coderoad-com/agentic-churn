@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { Sparkles, X } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { Icon } from '../components/ui/icon'
 import { postAsk } from './api'
@@ -17,14 +17,15 @@ interface AskBarProps {
 // Never recomputes anything itself — every answer is exactly what POST
 // /api/ask returned.
 //
-// specs/012-dashboard-visual-redesign (FR-007, Clarifications 2026-08-17):
-// presented as a floating, collapsible component instead of an always-
-// present bottom bar — starts collapsed on every mount. `isOpen` is local
-// UI-only state; the mutation itself (and therefore the current exchange)
-// lives in this same component regardless of isOpen, so collapsing and
-// reopening never discards it (FR-008).
+// specs/016-dashboard-mockup-v2-refinement (FR-004, SC-007): a permanently
+// docked, already-expanded panel in column 1, directly below the AURA risk
+// indicator — supersedes 012's floating, collapse-by-default launcher
+// (research.md Decision 5's sibling change, spec.md Assumptions). No
+// isOpen/launcher state exists anymore; the mutation (and therefore the
+// current exchange) lives in this same always-mounted component, so
+// scrolling or interacting elsewhere on the dashboard never discards it
+// (Acceptance Scenario 2).
 export function AskBar({ onOpenDraftComposer, onOpenEvidence }: AskBarProps) {
-  const [isOpen, setIsOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const mutation = useMutation({ mutationFn: postAsk })
 
@@ -40,40 +41,22 @@ export function AskBar({ onOpenDraftComposer, onOpenEvidence }: AskBarProps) {
     mutation.mutate(question)
   }
 
-  if (!isOpen) {
-    return (
-      <div data-state={state} data-testid="ask-bar">
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open assistant"
-          className="fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-neutral-900 text-white shadow-lg hover:bg-neutral-800"
-        >
-          <Icon icon={Sparkles} size={22} aria-hidden={false} />
-        </button>
-      </div>
-    )
-  }
-
   return (
     <div
-      className="fixed right-6 bottom-6 z-40 flex max-h-[32rem] w-96 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-xl"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm"
       data-state={state}
       data-testid="ask-bar"
     >
-      <div className="flex items-center justify-between border-b border-neutral-100 px-4 py-3">
-        <span className="flex items-center gap-2 text-sm font-medium text-neutral-900">
-          <Icon icon={Sparkles} size={16} className="text-neutral-500" />
-          Aura Assistant
-        </span>
-        <button
-          type="button"
-          onClick={() => setIsOpen(false)}
-          aria-label="Collapse assistant"
-          className="text-neutral-400 hover:text-neutral-600"
+      <div className="flex items-center gap-2 border-b border-neutral-100 px-4 py-3">
+        <Icon icon={Sparkles} size={16} className="text-neutral-500" />
+        <span className="text-sm font-medium text-neutral-900">Aura Assistant</span>
+        <span
+          className="ml-auto flex items-center gap-1.5 text-xs text-neutral-400"
+          aria-hidden="true"
         >
-          <Icon icon={X} size={18} aria-hidden={false} />
-        </button>
+          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+          Online
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">

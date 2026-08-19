@@ -50,6 +50,17 @@ describe('EvidencePanel', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('renders inside the shared Radix Dialog primitive, not the old right-docked panel (FR-013)', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(jsonResponse(WORKED_EXAMPLE))
+    renderPanel('ba87c77f-e21f-45af-9705-533138e948bf')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Evidence trace' })
+    expect(dialog).toBeInTheDocument()
+    // The backdrop is components/ui/dialog.tsx's DialogOverlay, not the
+    // previous hand-rolled `fixed inset-0 ... flex justify-end` <div>.
+    expect(screen.getByTestId('dialog-overlay')).toBeInTheDocument()
+  })
+
   it('renders the worked example: comparison, what-changed, quotes, arithmetic', async () => {
     vi.mocked(apiFetch).mockResolvedValue(jsonResponse(WORKED_EXAMPLE))
     renderPanel('ba87c77f-e21f-45af-9705-533138e948bf')

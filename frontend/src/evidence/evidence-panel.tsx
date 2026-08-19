@@ -1,3 +1,4 @@
+import { Dialog, DialogContent, DialogOverlay } from '../components/ui/dialog'
 import { useEvidence } from './use-evidence'
 import { type Verdict, useFeedback } from './use-feedback'
 
@@ -15,6 +16,11 @@ const VERDICTS: { verdict: Verdict; label: string }[] = [
 // Client-side overlay on the same /dashboard route, not a route change
 // (research.md's Decision — "opens from any number," base/...md §11.4).
 // No Ask bar here (feature 008's job).
+//
+// specs/016-dashboard-mockup-v2-refinement (FR-013, research.md Decision 2):
+// renders through the shared Radix Dialog primitive — centered, backdrop-
+// dismissible, focus-trapped, Esc-to-close — instead of the previous
+// hand-rolled right-docked `<div>`. All inner content/hooks unchanged.
 export function EvidencePanel({ scoreContributionId, onClose }: EvidencePanelProps) {
   const { data, isLoading, isError } = useEvidence(scoreContributionId)
   const feedback = useFeedback(scoreContributionId)
@@ -24,13 +30,9 @@ export function EvidencePanel({ scoreContributionId, onClose }: EvidencePanelPro
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/20" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-label="Evidence trace"
-        className="h-full w-full max-w-md overflow-y-auto border-l border-neutral-200 bg-white p-6 shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogOverlay />
+      <DialogContent aria-label="Evidence trace">
         <button type="button" onClick={onClose} className="text-sm text-neutral-500">
           Close
         </button>
@@ -112,7 +114,7 @@ export function EvidencePanel({ scoreContributionId, onClose }: EvidencePanelPro
             )}
           </>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

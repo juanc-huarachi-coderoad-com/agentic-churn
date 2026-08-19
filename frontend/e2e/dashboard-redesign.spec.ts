@@ -27,12 +27,15 @@ test('the sidebar navigates to Coverage and highlights it as active (FR-001/FR-0
   await expect(page).toHaveURL(/\/coverage$/)
 })
 
-test('the floating assistant starts collapsed and preserves its exchange across collapse (US3)', async ({
+// specs/016-dashboard-mockup-v2-refinement (FR-004, SC-007) supersedes the
+// floating, collapse-by-default launcher this test used to cover — the
+// Assistant is now a permanently docked, already-expanded panel in column 1.
+test('the docked assistant is already expanded and usable with zero clicks, and keeps its exchange (FR-004)', async ({
   page,
 }) => {
-  // FR-007: collapsed launcher only on load — no question input visible yet.
-  await expect(page.getByLabel('Ask a question')).not.toBeVisible()
-  await page.getByRole('button', { name: 'Open assistant' }).click()
+  // No launcher anywhere — ready to accept a message immediately on load.
+  await expect(page.getByRole('button', { name: 'Open assistant' })).not.toBeVisible()
+  await expect(page.getByLabel('Ask a question')).toBeVisible()
 
   await page.getByLabel('Ask a question').fill('why is the score high?')
   await page.getByRole('button', { name: /ask/i }).click()
@@ -40,9 +43,8 @@ test('the floating assistant starts collapsed and preserves its exchange across 
     timeout: 15_000,
   })
 
-  // FR-008: collapsing and reopening must not discard the exchange.
-  await page.getByRole('button', { name: 'Collapse assistant' }).click()
-  await expect(page.getByLabel('Ask a question')).not.toBeVisible()
-  await page.getByRole('button', { name: 'Open assistant' }).click()
+  // Interacting elsewhere on the dashboard must never reset the exchange —
+  // there is no collapse state left to reset it (Acceptance Scenario 2).
+  await page.getByRole('heading', { name: 'The Signal Stream' }).click()
   await expect(page.getByTestId('ask-bar')).toHaveAttribute('data-state', 'answered')
 })

@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { Dialog, DialogContent, DialogOverlay } from '../components/ui/dialog'
 import { DraftCheckFailedError, copyDraft, logDraftAsSent, postDraft } from './api'
 import type { ToneVariant } from './types'
 
@@ -67,13 +68,9 @@ export function DraftComposerPanel({ issueId, stakeholderId, onClose }: DraftCom
   const checkFailed = generate.isError && generate.error instanceof DraftCheckFailedError
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-neutral-900/20" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-label="Draft composer"
-        className="h-full w-full max-w-md overflow-y-auto border-l border-neutral-200 bg-white p-6 shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogOverlay />
+      <DialogContent aria-label="Draft composer">
         <button type="button" onClick={onClose} className="text-sm text-neutral-500">
           Close
         </button>
@@ -136,7 +133,7 @@ export function DraftComposerPanel({ issueId, stakeholderId, onClose }: DraftCom
                 anywhere in this product (REQ-M10-P1). */}
           </>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

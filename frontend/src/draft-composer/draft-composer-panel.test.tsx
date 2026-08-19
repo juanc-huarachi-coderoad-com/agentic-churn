@@ -30,6 +30,25 @@ describe('DraftComposerPanel', () => {
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
   })
 
+  it('renders inside the shared Radix Dialog primitive, not the old right-docked panel (FR-013)', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(
+      jsonResponse({
+        id: 'draft-1',
+        draft_text: 'Ana — we took 19 hours to respond; we promised 4.',
+        tone_variant: 'direct',
+        evidence_event_ids: ['evt-2'],
+        checks_passed: true,
+      }),
+    )
+    renderPanel()
+
+    const dialog = await screen.findByRole('dialog', { name: 'Draft composer' })
+    expect(dialog).toBeInTheDocument()
+    // The backdrop is components/ui/dialog.tsx's DialogOverlay, not the
+    // previous hand-rolled `fixed inset-0 ... flex justify-end` <div>.
+    expect(screen.getByTestId('dialog-overlay')).toBeInTheDocument()
+  })
+
   it('generates on mount and switching tone tabs issues a new request', async () => {
     vi.mocked(apiFetch).mockResolvedValue(
       jsonResponse({

@@ -106,6 +106,9 @@ class PulseEventResult:
     severity: str
     quoted_text: str | None
     score_contribution_id: UUID
+    event_type: str
+    """specs/016-dashboard-mockup-v2-refinement FR-006 — passed through
+    verbatim from `PulseEventRecord.event_type` (research.md Decision 1)."""
 
 
 @dataclass(frozen=True)
@@ -252,6 +255,7 @@ class GetDashboardUseCase:
                     ),
                     quoted_text=p.quoted_text,
                     score_contribution_id=p.score_contribution_id,
+                    event_type=p.event_type,
                 )
                 for p in pulse_records
             ]

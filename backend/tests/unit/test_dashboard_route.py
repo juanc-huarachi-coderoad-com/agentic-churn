@@ -103,6 +103,18 @@ async def test_dashboard_pulse_timeline_cites_real_events_with_serif_quotes(clie
     body = response.json()
     for event in body["pulse_timeline"]:
         assert event["severity"] in {"info", "watch", "at_risk"}
+        # specs/016-dashboard-mockup-v2-refinement FR-005, FR-005a, FR-006,
+        # contracts/dashboard.md — the real, already-stored event type, read
+        # verbatim, never translated/re-derived by the backend.
+        assert event["event_type"] in {
+            "message",
+            "ticket_state_change",
+            "usage_measurement",
+            "survey_response",
+            "meeting",
+            "absence",
+            "crm_change",
+        }
         # score_contribution_id (an addition beyond architecture/07-api-spec.md's
         # originally-drafted PulseEvent shape) makes every pulse event clickable
         # through to evidence (FR-007).

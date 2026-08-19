@@ -34,9 +34,12 @@ export function ActionDraftHub({ bars, onSelect }: ActionDraftHubProps) {
               <button
                 type="button"
                 onClick={() => onSelect(bar.score_contribution_id)}
-                className="flex w-full items-center gap-3 rounded-md border border-neutral-200 p-3 text-left transition-colors hover:border-neutral-300"
+                className="group flex w-full items-center gap-3 rounded-md border border-neutral-200 p-3 text-left transition-all duration-150 hover:border-neutral-300 hover:bg-neutral-50 hover:shadow-sm"
               >
-                <span className="w-5 shrink-0 text-sm tabular-nums text-neutral-400">
+                <span
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs tabular-nums text-neutral-500 transition-transform duration-150 group-hover:scale-110"
+                  aria-hidden="true"
+                >
                   {index + 1}
                 </span>
                 <span className="min-w-0 flex-1">

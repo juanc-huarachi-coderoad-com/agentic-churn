@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Area, AreaChart, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { BAND_CHART_COLOR } from './band-colors'
 import type { Band } from './types'
 
 interface ScoreBlockProps {
@@ -15,15 +16,6 @@ const BAND_STYLES: Record<Band, string> = {
   healthy: 'bg-neutral-100 text-neutral-700',
   watch: 'bg-amber-100 text-amber-800',
   at_risk: 'bg-red-100 text-red-800',
-}
-
-// Recharts needs real color values, not Tailwind class names — these match
-// the red-500/amber-500/neutral-400 the rest of the dashboard already uses
-// for the same band.
-const BAND_CHART_COLOR: Record<Band, string> = {
-  healthy: '#a3a3a3',
-  watch: '#f59e0b',
-  at_risk: '#ef4444',
 }
 
 const ANIMATION_MS = 800
@@ -50,7 +42,11 @@ export function ScoreBlock({ score, band, trend, onClick }: ScoreBlockProps) {
     <div>
       <button type="button" onClick={onClick} className="text-left" aria-label="Score detail">
         <div className="flex items-baseline gap-3">
-          <span className="text-4xl font-medium tabular-nums text-neutral-900">
+          {/* FR-009: large, prominent, band-colored score treatment. */}
+          <span
+            data-testid="score-value"
+            className="text-6xl font-semibold tabular-nums text-neutral-900"
+          >
             {displayed.toFixed(1)}
           </span>
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BAND_STYLES[band]}`}>
@@ -62,12 +58,22 @@ export function ScoreBlock({ score, band, trend, onClick }: ScoreBlockProps) {
       {/* Constitution v1.3.0 (Full-Stack Engineering §2, "UI & Styling"):
           charts MUST use Recharts — this replaces the previous hand-rolled
           SVG polyline sparkline. Same `trend` prop, same values, index-based
-          x-axis (no timestamps existed before and none are added). */}
+          x-axis (no timestamps existed before and none are added).
+          FR-010 (research.md Decision 7): both axes are labeled and visible
+          without hovering — the X axis surfaces the same zero-based sequence
+          index already used as the chart's dataKey; the Y axis gets a real,
+          %-suffixed tick label instead of being hidden. */}
       {trend.length > 1 ? (
-        <div className="mt-3 h-24" data-testid="score-trend-chart">
+        <div className="mt-3 h-32" data-testid="score-trend-chart">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={trend.map((value, index) => ({ index, value }))}>
-              <YAxis domain={['dataMin', 'dataMax']} hide />
+              <XAxis dataKey="index" tick={{ fontSize: 10 }} tickLine={false} />
+              <YAxis
+                domain={['dataMin', 'dataMax']}
+                tick={{ fontSize: 10 }}
+                tickFormatter={(value) => `${Number(value).toFixed(0)}%`}
+                width={36}
+              />
               <Tooltip
                 formatter={(value) => (value == null ? '' : Number(value).toFixed(1))}
                 labelFormatter={() => ''}

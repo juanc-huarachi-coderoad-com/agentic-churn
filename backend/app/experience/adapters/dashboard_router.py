@@ -48,6 +48,7 @@ class ContributionBar(BaseModel):
 class PulseEvent(BaseModel):
     event_id: UUID
     occurred_at: datetime
+    event_type: str
     severity: str
     quoted_text: str | None
     score_contribution_id: UUID
@@ -160,6 +161,7 @@ async def get_dashboard(
             PulseEvent(
                 event_id=p.event_id,
                 occurred_at=p.occurred_at,
+                event_type=p.event_type,
                 severity=p.severity,
                 quoted_text=p.quoted_text,
                 score_contribution_id=p.score_contribution_id,

@@ -134,6 +134,12 @@ class PulseEventRecord:
     pulse event ... clickable through to evidence" requirement; an additive
     extension, not a contradiction (the same kind of addition `state`/`message`
     already are on `DashboardResponse`, feature 002)."""
+    event_type: str
+    """specs/016-dashboard-mockup-v2-refinement FR-006, data-model.md — the
+    real `events.event_type` value, read verbatim from an already-existing
+    column never selected here before. The frontend, not the backend, maps
+    this to a display label/icon (research.md Decision 1, mirrors how
+    `severity` already works)."""
 
 
 class PulseEventPort(ABC):

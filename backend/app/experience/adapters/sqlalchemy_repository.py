@@ -209,10 +209,10 @@ class SqlAlchemyPulseEventReader(PulseEventPort):
             await self._session.execute(
                 text(
                     "SELECT event_id, occurred_at, structured_payload, body_encrypted, "
-                    "finding_type, is_positive, score_contribution_id FROM ("
+                    "finding_type, is_positive, score_contribution_id, event_type FROM ("
                     "  SELECT DISTINCT ON (e.id) e.id AS event_id, e.occurred_at, "
                     "    e.structured_payload, e.body_encrypted, f.finding_type, "
-                    "    sc.is_positive, sc.id AS score_contribution_id "
+                    "    sc.is_positive, sc.id AS score_contribution_id, e.event_type "
                     "  FROM score_contributions sc "
                     "  JOIN findings f ON f.id = sc.finding_id "
                     "  JOIN events e ON e.id = ANY(f.cited_event_ids) "
@@ -231,6 +231,7 @@ class SqlAlchemyPulseEventReader(PulseEventPort):
                 finding_type=r.finding_type,
                 is_positive=r.is_positive,
                 score_contribution_id=r.score_contribution_id,
+                event_type=r.event_type,
             )
             for r in rows
         ]

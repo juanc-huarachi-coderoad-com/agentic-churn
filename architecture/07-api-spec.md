@@ -292,6 +292,7 @@ components:
       properties:
         event_id: { type: string, format: uuid }
         occurred_at: { type: string, format: date-time }
+        event_type: { type: string, enum: [message, ticket_state_change, usage_measurement, survey_response, meeting, absence, crm_change], description: "specs/016-dashboard-mockup-v2-refinement FR-006 — the real, already-stored events.event_type value, read verbatim, never translated or re-derived by the backend." }
         severity: { type: string, enum: [info, watch, at_risk] }
         quoted_text: { type: string, nullable: true }
 

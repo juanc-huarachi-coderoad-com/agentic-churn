@@ -32,9 +32,23 @@ export interface ContributionBar {
   is_positive: boolean
 }
 
+// specs/016-dashboard-mockup-v2-refinement, data-model.md — the closed,
+// 7-value `events.event_type` enum, surfaced through the API for the first
+// time (FR-006). No 8th value is representable at the type level (P10 —
+// no speculative extensibility for a category the product doesn't have).
+export type SignalType =
+  | 'message'
+  | 'ticket_state_change'
+  | 'usage_measurement'
+  | 'survey_response'
+  | 'meeting'
+  | 'absence'
+  | 'crm_change'
+
 export interface PulseEvent {
   event_id: string
   occurred_at: string
+  event_type: SignalType
   severity: 'info' | 'watch' | 'at_risk'
   quoted_text: string | null
   score_contribution_id: string
