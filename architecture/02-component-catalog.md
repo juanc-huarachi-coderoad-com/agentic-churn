@@ -31,6 +31,18 @@ Detailed responsibility, interface, and technology mapping for every component i
 | **Interface in** | Client profile commitments/cadences; ledger latest-contact projection |
 | **Interface out** | `absence` event type → Event ledger |
 
+### Audio collector (M1b, specs/019-meeting-audio-ingestion)
+
+| | |
+|---|---|
+| **Owns** | Discovering, transcribing, and discarding meeting recordings for a series with active, documented consent |
+| **Must never** | Collect a recording for a series without an active consent record; persist audio content anywhere, at any point; guess a speaker's identity below its confidence floor |
+| **Technology class** | Deterministic collection code + one structured-output LLM call (speaker attribution only — never a scoring or decision artifact) |
+| **Tech** | `AudioCollector` (implements the same `Collector` interface as M1 above) — Google Drive API discovery/download, OpenAI Whisper transcription, `pyannote.audio` diarization, then one `LLMPort.generate_structured()` call (the same Anthropic adapter M5's readers already use) matching diarized speaker labels against the account's stakeholder roster, confidence-gated (`architecture/06-error-handling.md`'s resilience budget) |
+| **Interface in** | `meeting_series_consent` audit table (gate, checked every cycle); client-profile stakeholder roster (candidate names for attribution) |
+| **Interface out** | `Envelope` objects → Event ledger, identical shape to the existing example-text meeting transcript path (zero downstream changes) |
+| **Key algorithm** | Idempotency checked *before* download/transcription (not only before persistence) — the load-bearing fix that keeps a scheduled poll from re-transcribing an already-processed recording every cycle |
+
 ### Event ledger (M2)
 
 | | |
@@ -162,6 +174,8 @@ Detailed responsibility, interface, and technology mapping for every component i
 | Function | AI? |
 |---|---|
 | Collecting, storing, timing, counting | No |
+| Audio collector (M1b) — discovery, transcription, consent gate | No |
+| Audio collector (M1b) — speaker attribution only (specs/019-meeting-audio-ingestion) | **Yes — one structured-output LLM call, confidence-gated, never a scoring artifact** |
 | Commitment, usage, absence, relationship readers | No |
 | Recurrence clustering | Embeddings only, no generative call |
 | Tone, intent, meeting readers | **Yes — structured-output LLM** |

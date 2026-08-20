@@ -316,9 +316,27 @@ class RunCollectorUseCase:
         *,
         window_start: datetime,
         window_end: datetime,
+        trigger: str,
         fail_sources: frozenset[str] = frozenset(),
     ) -> CollectorRunResult:
-        raw_items = await collector.fetch(window_start, window_end)
+        # specs/019-meeting-audio-ingestion, research.md Decision 5 — `fetch()` is
+        # wrapped rather than left to propagate: `AudioCollector` is the first
+        # `Collector` whose `fetch()` can genuinely raise (an invalid/expired Drive
+        # token, a network error), and an uncaught exception here would crash the
+        # whole run before a single `collector_runs` row is written — silent,
+        # indistinguishable from "nothing new" to anything downstream. `raw_items`
+        # becomes `[]` on failure so every source this run expected still gets a
+        # real, honest `collector_runs`/`coverage_reports` row recording the failure,
+        # exactly like the pre-existing `fail_sources` test seam already does for a
+        # simulated per-source failure — both are unified below into the same
+        # `failed_source_types` set, one recording code path for either origin.
+        fetch_error: str | None = None
+        try:
+            raw_items = await collector.fetch(window_start, window_end)
+        except Exception as exc:
+            raw_items = []
+            fetch_error = str(exc)
+
         # `fetch()` returns items in occurred_at order (Collector's docstring) — that
         # global order MUST be preserved all the way to `events.append()`, since the
         # hash chain requires appends in occurred_at order across the WHOLE run, not
@@ -332,14 +350,34 @@ class RunCollectorUseCase:
         envelopes = [collector.normalize(item) for item in raw_items]
         profile = await self._profile_context.get_current()
 
-        # The three Phase 1 sources are always expected; a Post-MVP source
-        # only joins `source_types` (and therefore `coverage_reports.
-        # sources_expected`) when this run's own envelopes actually contain
-        # it — see `_POST_MVP_SOURCE_TYPES`'s docstring for why.
-        present_post_mvp = [
-            s for s in self._POST_MVP_SOURCE_TYPES if any(e.source_type == s for e in envelopes)
-        ]
-        source_types = self._MVP_SOURCE_TYPES + tuple(present_post_mvp)
+        if collector.mvp_sources_always_expected:
+            # `SimulatedCollector`'s own case, unchanged from before this feature:
+            # the three Phase 1 sources are always expected; a Post-MVP source only
+            # joins `source_types` (and therefore `coverage_reports.sources_
+            # expected`) when this run's own envelopes actually contain it — see
+            # `_POST_MVP_SOURCE_TYPES`'s docstring for why.
+            present_post_mvp = [
+                s
+                for s in self._POST_MVP_SOURCE_TYPES
+                if any(e.source_type == s for e in envelopes)
+            ]
+            source_types = self._MVP_SOURCE_TYPES + tuple(present_post_mvp)
+        else:
+            # A dedicated, single-purpose collector (e.g. `AudioCollector`) has no
+            # such ambiguity — its own declared `source_type` is always expected,
+            # simply because it's the collector that was asked to run, never
+            # inferred from this cycle's envelope presence (Collector.
+            # mvp_sources_always_expected's docstring). Always non-empty, so the
+            # "every source failed" fallback below never indexes an empty tuple.
+            source_types = (collector.source_type,)
+
+        # Unifies both failure origins — a real `fetch()` exception (every expected
+        # source failed, since nothing was fetched at all) and the pre-existing
+        # `fail_sources` simulated-failure test seam — into one set, recorded through
+        # the exact same code below rather than two parallel branches.
+        failed_source_types = set(fail_sources)
+        if fetch_error is not None:
+            failed_source_types |= set(source_types)
 
         run_id_by_source: dict[str, UUID] = {}
         emitted_by_source: dict[str, int] = dict.fromkeys(source_types, 0)
@@ -355,18 +393,23 @@ class RunCollectorUseCase:
             )
             run_id = await self._runs.start_run(
                 source_id=source_id,
-                trigger="manual",
+                trigger=trigger,
                 window_start=window_start,
                 window_end=window_end,
             )
             run_id_by_source[source_type] = run_id
 
-            if source_type in fail_sources:
+            if source_type in failed_source_types:
+                error_message = (
+                    fetch_error
+                    if fetch_error is not None
+                    else f"{source_type} source unreachable (simulated failure)"
+                )
                 await self._runs.finish_run(
                     run_id=run_id,
                     envelopes_emitted=0,
                     duplicates_skipped=0,
-                    error=f"{source_type} source unreachable (simulated failure)",
+                    error=error_message,
                 )
                 gap_reasons.append(f"{source_type} unreachable")
             else:
@@ -375,7 +418,7 @@ class RunCollectorUseCase:
         latest_occurred_at = window_start
         for envelope in envelopes:
             source_type = envelope.source_type
-            if source_type in fail_sources or source_type not in run_id_by_source:
+            if source_type in failed_source_types or source_type not in run_id_by_source:
                 continue
             run_id = run_id_by_source[source_type]
 
@@ -425,7 +468,7 @@ class RunCollectorUseCase:
 
         latest_run_id: UUID | None = None
         for source_type in source_types:
-            if source_type in fail_sources:
+            if source_type in failed_source_types:
                 continue
             run_id = run_id_by_source[source_type]
             latest_run_id = run_id

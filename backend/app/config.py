@@ -84,5 +84,19 @@ class Settings(BaseSettings):
     # env-var mapping picks it up with no alias needed.
     otel_exporter_otlp_endpoint: str = ""
 
+    # Meeting audio ingestion (specs/019-meeting-audio-ingestion, research.md
+    # Decision 9) — the scheduled poll's cadence, configurable per deployment like
+    # every other timing knob above.
+    audio_poll_interval_hours: int = 4
+
+    # Google Drive OAuth (research.md Decision 6) — a per-deployment file secret,
+    # sibling to encryption_key_path/data_keys_dir above, never committed
+    # (`secrets/` is gitignored wholesale). No safe default for the client
+    # id/secret, same honest-failure discipline as openai_api_key/anthropic_api_key.
+    google_drive_token_path: str = "./secrets/google-drive-token.json"
+    google_drive_root_folder_id: str = ""
+    google_drive_client_id: str = ""
+    google_drive_client_secret: str = ""
+
 
 settings = Settings()

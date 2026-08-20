@@ -4,11 +4,17 @@ specs/003-ingestion-and-context registered the first real scheduled job: the abs
 collector (REQ-M1-06). specs/004-score-engine adds the second: the score recompute
 heartbeat (REQ-M6-24) — recency/ageing changes with time alone, so the score must
 recompute hourly even with zero new evidence. specs/011-production-hardening adds the
-third: the daily retention/crypto-shredding job (FR-001). Run with:
+third: the daily retention/crypto-shredding job (FR-001). specs/019-meeting-audio-
+ingestion adds the fourth: the meeting-audio collector, on its own configurable
+interval (research.md Decision 9) — the first job whose `RunCollectorUseCase.execute()`
+call can genuinely fail (an invalid/expired Drive token), which is exactly why that
+method gained a real `try/except` and a caller-supplied `trigger` rather than a
+hard-coded literal (research.md Decision 5's correction). Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
     uv run python -m app.worker --run-once retention
+    uv run python -m app.worker --run-once audio
 """
 
 import argparse
@@ -16,21 +22,34 @@ import asyncio
 import logging
 import signal
 import time
+from datetime import UTC, datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import settings
 from app.db import async_session_factory, shredder_session_factory
+from app.ingestion.adapters.audio_collector import AudioCollector
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.google_drive_client import GoogleDriveClient
+from app.ingestion.adapters.google_drive_token_store import GoogleDriveTokenStore
 from app.ingestion.adapters.key_store import FileKeyStore
+from app.ingestion.adapters.pyannote_diarization import diarize
 from app.ingestion.adapters.sqlalchemy_repositories import (
+    SqlAlchemyClientProfileContext,
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyCommitmentLookup,
     SqlAlchemyEventRepository,
+    SqlAlchemyMeetingSeriesConsentRepository,
     SqlAlchemyRetentionJobRepository,
 )
-from app.ingestion.application.use_cases import DetectAbsenceUseCase, RunRetentionUseCase
+from app.ingestion.adapters.whisper_transcription import WhisperTranscriptionAdapter
+from app.ingestion.application.use_cases import (
+    DetectAbsenceUseCase,
+    RunCollectorUseCase,
+    RunRetentionUseCase,
+)
 from app.observability.adapters.tracing import setup_tracing, traced
+from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 from app.scoring.adapters.sqlalchemy_repository import (
     SqlAlchemyClientProfileMultipliers,
     SqlAlchemyCoverageCheck,
@@ -112,10 +131,64 @@ async def _retain() -> None:
     )
 
 
+def _run_audio_collector() -> None:
+    asyncio.run(_collect_audio())
+
+
+async def _collect_audio() -> None:
+    # specs/019-meeting-audio-ingestion — a second, independent collector run
+    # alongside the absence collector above, never merged into it (research.md
+    # Decision 1). `trigger="poll"` here, `trigger="manual"` at the
+    # `POST /api/meeting-audio/refresh` endpoint — both now real, caller-
+    # supplied values (research.md Decision 5's correction), not the
+    # previously hard-coded `"manual"` literal every `RunCollectorUseCase`
+    # call used to record regardless of how it was actually triggered.
+    with traced("audio_collector"):
+        key_store = FileKeyStore(settings.data_keys_dir)
+        encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
+        async with async_session_factory() as session:
+            collector = AudioCollector(
+                drive=GoogleDriveClient(
+                    token_store=GoogleDriveTokenStore(
+                        settings.google_drive_token_path,
+                        settings.google_drive_client_id,
+                        settings.google_drive_client_secret,
+                    ),
+                    root_folder_id=settings.google_drive_root_folder_id,
+                ),
+                transcriber=WhisperTranscriptionAdapter(
+                    openai_api_key=settings.openai_api_key,
+                    llm=AnthropicLLMAdapter(settings.anthropic_api_key, settings.reader_model_id),
+                    diarize=diarize,
+                ),
+                consent=SqlAlchemyMeetingSeriesConsentRepository(session),
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                profile_context=SqlAlchemyClientProfileContext(session),
+            )
+            use_case = RunCollectorUseCase(
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                events=SqlAlchemyEventRepository(session),
+                profile_context=SqlAlchemyClientProfileContext(session),
+                encryption=encryption,
+                key_store=key_store,
+            )
+            now = datetime.now(UTC)
+            result = await use_case.execute(
+                collector, window_start=now, window_end=now, trigger="poll"
+            )
+    logger.info(
+        "audio collector: envelopes_emitted=%d duplicates_skipped=%d coverage_report_id=%s",
+        result.envelopes_emitted,
+        result.duplicates_skipped,
+        result.coverage_report_id,
+    )
+
+
 _RUN_ONCE_JOBS = {
     "absence": _run_absence_detection,
     "score": _run_score_recompute,
     "retention": _run_retention,
+    "audio": _run_audio_collector,
 }
 
 
@@ -143,10 +216,20 @@ def main() -> None:
     scheduler.add_job(_run_absence_detection, "interval", hours=1, id="absence_collector")
     scheduler.add_job(_run_score_recompute, "interval", hours=1, id="score_recompute")
     scheduler.add_job(_run_retention, "interval", days=1, id="retention_job")
+    # specs/019-meeting-audio-ingestion, research.md Decision 9 — its own
+    # configurable interval, not tied to the hourly heartbeat above.
+    scheduler.add_job(
+        _run_audio_collector,
+        "interval",
+        hours=settings.audio_poll_interval_hours,
+        id="audio_collector",
+    )
     scheduler.start()
     logger.info(
         "worker started — absence collector and score recompute on the hourly "
-        "heartbeat, retention job on the daily heartbeat"
+        "heartbeat, retention job on the daily heartbeat, audio collector every "
+        "%d hour(s)",
+        settings.audio_poll_interval_hours,
     )
 
     running = True

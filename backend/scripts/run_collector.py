@@ -22,6 +22,7 @@ from app.ingestion.adapters.sqlalchemy_repositories import (  # noqa: E402
     SqlAlchemyClientProfileContext,
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyEventRepository,
+    SqlAlchemyMeetingSeriesConsentRepository,
 )
 from app.ingestion.application.use_cases import ReplayUseCase, RunCollectorUseCase  # noqa: E402
 from app.observability.adapters.tracing import traced  # noqa: E402
@@ -41,11 +42,14 @@ async def run(source: str) -> None:
             encryption=encryption,
             key_store=key_store,
         )
-        collector = SimulatedCollector(Path(settings.collector_fixture_path))
+        collector = SimulatedCollector(
+            Path(settings.collector_fixture_path),
+            consent=SqlAlchemyMeetingSeriesConsentRepository(session),
+        )
         window_end = datetime.now(UTC)
         with traced("collector_run"):
             result = await use_case.execute(
-                collector, window_start=window_end, window_end=window_end
+                collector, window_start=window_end, window_end=window_end, trigger="manual"
             )
         print(
             f"envelopes_emitted={result.envelopes_emitted} "

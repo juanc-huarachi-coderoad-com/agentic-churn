@@ -16,6 +16,8 @@ from app.experience.adapters.coverage_router import router as coverage_router
 from app.experience.adapters.dashboard_router import router as dashboard_router
 from app.experience.adapters.draft_router import router as draft_router
 from app.experience.adapters.evidence_router import router as evidence_router
+from app.ingestion.adapters.audio_refresh_router import router as audio_refresh_router
+from app.ingestion.adapters.consent_router import router as consent_router
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
 from app.ingestion.adapters.key_store import FileKeyStore
 from app.observability.adapters.tracing import setup_tracing
@@ -72,6 +74,8 @@ app.include_router(ask_router)
 app.include_router(draft_router)
 app.include_router(feedback_router)
 app.include_router(weight_router)
+app.include_router(consent_router)
+app.include_router(audio_refresh_router)
 
 
 @app.get("/health")

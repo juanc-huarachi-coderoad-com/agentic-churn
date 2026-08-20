@@ -31,6 +31,7 @@ from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyEventRepository,
+    SqlAlchemyMeetingSeriesConsentRepository,
 )
 from app.ingestion.application.use_cases import ComputeRollupsUseCase, RunCollectorUseCase
 from app.readers.adapters.sqlalchemy_repository import (
@@ -57,9 +58,26 @@ async def _build_fixture(tmp_path: Path, suffix: str, session, source: Path = _F
         item["occurred_at"] = (datetime.fromisoformat(item["occurred_at"]) + offset).isoformat()
         if "ticket_number" in item:
             item["ticket_number"] += ticket_offset
+        # specs/019-meeting-audio-ingestion, Decision 3's compatibility note —
+        # same reasoning as test_simulated_collector.py's identical suffixing.
+        if "series_id" in item:
+            item["series_id"] = f"{item['series_id']}-{suffix}"
     fixture_path = tmp_path / "fixture.json"
     fixture_path.write_text(json.dumps(items))
     return fixture_path
+
+
+async def _seed_consent_user() -> uuid.UUID:
+    user_id = uuid.uuid4()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, display_name, role, is_active) "
+                "VALUES (:id, :username, 'x', 'Consent Seed User', 'cs_lead'::user_role, true)"
+            ),
+            {"id": user_id, "username": f"consent-seed-{user_id.hex[:8]}"},
+        )
+    return user_id
 
 
 async def _run_collector(tmp_path, suffix, source: Path = _FIXTURE):
@@ -67,9 +85,25 @@ async def _run_collector(tmp_path, suffix, source: Path = _FIXTURE):
         fixture_path = await _build_fixture(tmp_path, suffix, floor_session, source=source)
     key_store = FileKeyStore(settings.data_keys_dir)
     encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
-    collector = SimulatedCollector(fixture_path)
     now = datetime.now(UTC)
     async with async_session_factory() as session:
+        consent = SqlAlchemyMeetingSeriesConsentRepository(session)
+        if source == _FIXTURE:
+            # research.md Decision 3 — seeds the real consent audit table for
+            # the one series this fixture's own `consent_documented` field
+            # marks as consented; `meridian-standup` is deliberately never
+            # seeded (FR-003's "no decision = never collected").
+            # `_PHASE1_ONLY_FIXTURE` has no calendar items at all, so nothing
+            # to seed for that branch.
+            user_id = await _seed_consent_user()
+            await consent.record(
+                series_id=f"meridian-qbr-{suffix}",
+                status="granted",
+                all_parties_confirmed=True,
+                documented_by_user_id=user_id,
+                note=None,
+            )
+        collector = SimulatedCollector(fixture_path, consent=consent)
         use_case = RunCollectorUseCase(
             collector_runs=SqlAlchemyCollectorRunRepository(session),
             events=SqlAlchemyEventRepository(session),
@@ -77,7 +111,7 @@ async def _run_collector(tmp_path, suffix, source: Path = _FIXTURE):
             encryption=encryption,
             key_store=key_store,
         )
-        return await use_case.execute(collector, window_start=now, window_end=now)
+        return await use_case.execute(collector, window_start=now, window_end=now, trigger="manual")
 
 
 async def test_post_mvp_sources_are_expected_in_coverage(tmp_path):
@@ -153,8 +187,8 @@ async def test_consented_transcript_reaches_the_meeting_reader_corpus(tmp_path):
         transcripts = await SqlAlchemyMeetingTranscriptRepository(session, encryption).list_all()
 
     series_ids = {t.series_id for t in transcripts}
-    assert "meridian-qbr" in series_ids
-    assert "meridian-standup" not in series_ids
+    assert f"meridian-qbr-{suffix}" in series_ids
+    assert f"meridian-standup-{suffix}" not in series_ids
 
 
 async def test_csat_score_reaches_the_usage_readers_rollups(tmp_path):

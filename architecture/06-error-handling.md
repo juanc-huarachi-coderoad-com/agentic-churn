@@ -16,6 +16,21 @@ Every reader call and every generation call gets a fixed timeout and a bounded r
 
 Tone and Intent run in parallel (`sequences/01-sequence-signal-to-score.md`), so their worst cases don't stack — the pipeline's total worst case is bounded by the slower of the two plus the fixed downstream steps (gate, scoring, narrator), which is what keeps a worst-case run inside REQ-NFR-02's 60s hard ceiling even when a retry fires.
 
+## Meeting audio ingestion — resilience budget (specs/019-meeting-audio-ingestion)
+
+A background/on-demand collection cycle (`AudioCollector`, scheduled poll or manual refresh), not a request inside the 40s dashboard-load budget above — a single long recording is allowed to take minutes, not seconds, without threatening any user-facing latency target. The two failure shapes are handled differently, matching FR-012/FR-013:
+
+| Caller | Per-attempt timeout | Retries | On exhaustion |
+|---|---|---|---|
+| Google Drive API (list/download) | Client library default (no custom override) | Client library default | A genuine auth failure raises `GoogleDriveAuthenticationError` immediately (no retry — an expired/revoked token doesn't fix itself on a second attempt); any other Drive error propagates as a whole-cycle failure, caught by `RunCollectorUseCase.execute()`'s `try/except` (research.md Decision 5) |
+| OpenAI Whisper transcription (one recording) | 300s (5 min), no `asyncio`-level retry beyond the OpenAI SDK's own built-in transport retries | 0 additional | Per-item failure (FR-013) — logged, that recording skipped, the cycle continues |
+| Speaker-diarization pass (`pyannote.audio`, one recording) | 300s (5 min) | 0 | Per-item failure (FR-013), same as above — a diarization timeout doesn't distinguish itself from a transcription timeout at the `AudioCollector.fetch()` level, both are simply "this item failed" |
+| Speaker-name-matching LLM call (`WhisperTranscriptionAdapter._match_speakers`) | Reuses the Tone/Intent/Meeting readers' existing 8s × 2 retries budget above verbatim (the same `AnthropicLLMAdapter`, no separate adapter or policy) | 2 | Falls back to every speaker staying unattributed (`"Unknown Speaker"`) — never blocks the transcript, never a guessed name (FR-007) |
+
+**Not yet live-tested against a real recording** (this sandboxed implementation environment has no real Google Drive/OpenAI Whisper access) — the 300s figures above are a documented, deliberately generous initial estimate (OpenAI's Whisper API commonly processes well inside that window; `pyannote.audio` on CPU-only hardware is the more realistic risk of running long for a lengthy recording), not a number arrived at by observing real timings the way the Ask agent's 15s cap was (that budget's own row, above, is the precedent this one should eventually match). Recalibrate once a real deployment has run this against actual meeting recordings — the same follow-up `specs/019-meeting-audio-ingestion/plan.md`'s Constitution Check already flags.
+
+A whole-cycle failure (Drive auth) freezes the score at its last value via the existing coverage/degrade mechanism (`specs/004-score-engine` FR-011) — see that spec's own resilience treatment; this table only covers the ingestion-side call budgets, not the scoring-side freeze behavior they feed into.
+
 ## Dead-letter handling for invalid envelopes
 
 A malformed webhook payload (source sends something that doesn't parse, or is missing a required field) must never crash a collector or silently vanish. It also can't become a `raw_envelopes` row — that table's columns are `NOT NULL` by design (`data-base/10-ddl-appendix.md`), so a genuinely unparseable payload has nowhere valid to land.

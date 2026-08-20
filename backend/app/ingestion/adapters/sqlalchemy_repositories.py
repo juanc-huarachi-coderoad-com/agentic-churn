@@ -30,6 +30,8 @@ from app.ingestion.application.ports import (
     EventRecord,
     EventRepositoryPort,
     EventThreadRow,
+    MeetingSeriesConsentRecord,
+    MeetingSeriesConsentRepositoryPort,
     NewEvent,
     ProductAreaRecord,
     RecurringCommitment,
@@ -267,7 +269,10 @@ class SqlAlchemyClientProfileContext(ClientProfileContextPort):
 
         stakeholder_rows = (
             await self._session.execute(
-                text("SELECT id, identifiers FROM stakeholders WHERE profile_version_id = :pv"),
+                text(
+                    "SELECT id, name, identifiers FROM stakeholders "
+                    "WHERE profile_version_id = :pv"
+                ),
                 {"pv": profile.id},
             )
         ).all()
@@ -292,7 +297,7 @@ class SqlAlchemyClientProfileContext(ClientProfileContextPort):
         return ClientProfileContext(
             profile_version_id=profile.id,
             stakeholders=tuple(
-                StakeholderIdentity(id=r.id, identifiers=tuple(r.identifiers))
+                StakeholderIdentity(id=r.id, name=r.name, identifiers=tuple(r.identifiers))
                 for r in stakeholder_rows
             ),
             product_areas=tuple(
@@ -387,6 +392,26 @@ class SqlAlchemyCollectorRunRepository(CollectorRunRepositoryPort):
                 "duplicates_skipped = :dup, error = :error, finished_at = now() WHERE id = :id"
             ),
             {"emitted": envelopes_emitted, "dup": duplicates_skipped, "error": error, "id": run_id},
+        )
+        # specs/019-meeting-audio-ingestion, FR-012/FR-014 — found while
+        # implementing this feature's own degraded-source display: `sources.
+        # status` (`'connected'`/`'degraded'`/`'disconnected'`) had never
+        # been written by anything past `get_or_create_source()`'s initial
+        # `'connected'` default, for any of the six sources that existed
+        # before this feature — `GET /api/coverage`'s per-source status was
+        # always a static value, never a real signal. This makes the column
+        # self-healing for every collector (not audio-specific), the
+        # smallest fix that makes FR-014's "consistent with how the system
+        # already handles any other source's coverage gap" claim actually
+        # true rather than aspirational.
+        await self._session.execute(
+            text(
+                "UPDATE sources SET status = "
+                "(CASE WHEN (:error)::text IS NULL THEN 'connected' ELSE 'degraded' END)"
+                "::source_status "
+                "WHERE id = (SELECT source_id FROM collector_runs WHERE id = :id)"
+            ),
+            {"error": error, "id": run_id},
         )
         await self._session.commit()
 
@@ -606,3 +631,98 @@ class SqlAlchemyRetentionJobRepository(RetentionJobRepositoryPort):
         )
         await self._session.commit()
         return run_id
+
+
+class MeetingSeriesConsentValidationError(ValueError):
+    """Raised at this adapter boundary — never lets a `status="granted"` row
+    with `all_parties_confirmed=False` reach the database, matching
+    `data-model.md`'s validation rule. The `meeting_series_consent_granted_
+    requires_all_parties` CHECK constraint (migration 0006) is defense in
+    depth behind this, not the only guard."""
+
+
+class SqlAlchemyMeetingSeriesConsentRepository(MeetingSeriesConsentRepositoryPort):
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def is_active(self, series_id: str) -> bool:
+        row = (
+            await self._session.execute(
+                text(
+                    "SELECT status FROM meeting_series_consent "
+                    "WHERE series_id = :series_id "
+                    "ORDER BY documented_at DESC, id DESC LIMIT 1"
+                ),
+                {"series_id": series_id},
+            )
+        ).one_or_none()
+        return row is not None and row.status == "granted"
+
+    async def record(
+        self,
+        *,
+        series_id: str,
+        status: str,
+        all_parties_confirmed: bool,
+        documented_by_user_id: UUID,
+        note: str | None,
+    ) -> MeetingSeriesConsentRecord:
+        if status == "granted" and not all_parties_confirmed:
+            raise MeetingSeriesConsentValidationError(
+                "Consent cannot be granted without confirming all parties consented."
+            )
+        record_id = uuid4()
+        row = (
+            await self._session.execute(
+                text(
+                    "INSERT INTO meeting_series_consent "
+                    "(id, series_id, status, all_parties_confirmed, "
+                    "documented_by_user_id, note) "
+                    "VALUES (:id, :series_id, (:status)::meeting_series_consent_status, "
+                    ":all_parties_confirmed, :documented_by_user_id, :note) "
+                    "RETURNING documented_at"
+                ),
+                {
+                    "id": record_id,
+                    "series_id": series_id,
+                    "status": status,
+                    "all_parties_confirmed": all_parties_confirmed,
+                    "documented_by_user_id": documented_by_user_id,
+                    "note": note,
+                },
+            )
+        ).one()
+        await self._session.commit()
+        return MeetingSeriesConsentRecord(
+            id=record_id,
+            series_id=series_id,
+            status=status,
+            all_parties_confirmed=all_parties_confirmed,
+            documented_by_user_id=documented_by_user_id,
+            documented_at=row.documented_at,
+            note=note,
+        )
+
+    async def list_current(self) -> list[MeetingSeriesConsentRecord]:
+        rows = (
+            await self._session.execute(
+                text(
+                    "SELECT DISTINCT ON (series_id) id, series_id, status, "
+                    "all_parties_confirmed, documented_by_user_id, documented_at, note "
+                    "FROM meeting_series_consent "
+                    "ORDER BY series_id, documented_at DESC, id DESC"
+                )
+            )
+        ).all()
+        return [
+            MeetingSeriesConsentRecord(
+                id=r.id,
+                series_id=r.series_id,
+                status=r.status,
+                all_parties_confirmed=r.all_parties_confirmed,
+                documented_by_user_id=r.documented_by_user_id,
+                documented_at=r.documented_at,
+                note=r.note,
+            )
+            for r in rows
+        ]

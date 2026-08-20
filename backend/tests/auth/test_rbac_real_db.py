@@ -81,6 +81,12 @@ _WRITE_ROUTES = [
     ),
     ("POST", f"/api/drafts/{_DUMMY_ID}/copy", None),
     ("POST", f"/api/drafts/{_DUMMY_ID}/log-as-sent", None),
+    # specs/019-meeting-audio-ingestion, FR-016 — same RBAC boundary.
+    (
+        "POST",
+        "/api/meeting-audio/consent",
+        {"series_id": "rbac-smoke-test", "status": "granted", "all_parties_confirmed": True},
+    ),
 ]
 
 _READ_ONLY_ROUTES = [
@@ -88,6 +94,7 @@ _READ_ONLY_ROUTES = [
     ("GET", f"/api/evidence/{_DUMMY_ID}"),
     ("GET", "/api/coverage"),
     ("GET", "/api/profile"),
+    ("GET", "/api/meeting-audio/consent"),
 ]
 
 

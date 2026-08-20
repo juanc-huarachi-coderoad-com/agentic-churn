@@ -9,7 +9,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from app.ingestion.adapters.meeting_envelope import (
+    MEETING_SOURCE_DISPLAY_NAME,
+    MEETING_SOURCE_TYPE,
+    build_meeting_envelope,
+)
 from app.ingestion.application.collector import Collector
+from app.ingestion.application.ports import MeetingSeriesConsentRepositoryPort
 from app.ingestion.domain.envelope import Envelope
 
 _SOURCE_DISPLAY_NAMES = {
@@ -18,7 +24,7 @@ _SOURCE_DISPLAY_NAMES = {
     "warehouse": "Meridian — Product usage",
     "slack": "Meridian — Chat",
     "csat": "Meridian — CSAT/NPS",
-    "transcripts": "Meridian — Calendar/transcripts",
+    MEETING_SOURCE_TYPE: MEETING_SOURCE_DISPLAY_NAME,
 }
 
 
@@ -116,26 +122,13 @@ def _normalize_csat(item: dict[str, Any]) -> Envelope:
 
 
 def _normalize_calendar(item: dict[str, Any]) -> Envelope:
-    # `source_type="transcripts"` (the enum value), not the fixture's own
-    # `"calendar"` dispatch key — `sources.source_type` is looked up as a
-    # singleton per value (`get_or_create_source`), and `"calendar"` is
-    # already claimed by `DetectAbsenceUseCase.ABSENCE_SOURCE_TYPE` for its
-    # internally-generated absence events. `source_type` (data-base/10-ddl-
-    # appendix.md's enum) deliberately carries both `calendar` and
-    # `transcripts` as distinct values for exactly this reason.
-    return Envelope(
-        source_type="transcripts",
+    return build_meeting_envelope(
         source_native_id=item["source_native_id"],
         occurred_at=datetime.fromisoformat(item["occurred_at"]),
-        identity_status="unresolved",
-        resolved_stakeholder_id=None,
-        redacted_fields=[],
-        payload_text=item["transcript"],
-        structured_payload={
-            "participant": item["attendee"],
-            "series_id": item["series_id"],
-            "consent_documented": item["consent_documented"],
-        },
+        transcript=item["transcript"],
+        attendee=item["attendee"],
+        series_id=item["series_id"],
+        consent_documented=item["consent_documented"],
     )
 
 
@@ -151,30 +144,45 @@ _NORMALIZERS = {
 
 class SimulatedCollector(Collector):
     source_type = "simulated"
+    mvp_sources_always_expected = True
 
-    def __init__(self, fixture_path: Path) -> None:
+    def __init__(self, fixture_path: Path, consent: MeetingSeriesConsentRepositoryPort) -> None:
         self._fixture_path = fixture_path
+        self._consent = consent
 
     async def fetch(self, window_start: datetime, window_end: datetime) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = json.loads(self._fixture_path.read_text())
-        # FR-023: "THE SYSTEM SHALL NEVER collect a transcript for a series
-        # lacking [documented, all-party] consent" — stronger than "the
-        # Meeting reader abstains on it" (confirmed against
+        # FR-023/FR-003: "THE SYSTEM SHALL NEVER collect a transcript for a
+        # series lacking [documented, all-party] consent" — stronger than
+        # "the Meeting reader abstains on it" (confirmed against
         # tests/ingestion/test_post_mvp_sources_real_db.py's own assertion of
         # zero `raw_envelopes` rows for a non-consented series): a
         # non-consented calendar item is dropped here, before normalize()
         # ever builds an Envelope for it, so it never reaches insert_envelope
         # at all — not merely a MeetingReader-side abstention.
-        items = [
-            item
-            for item in items
-            if item["source_type"] != "calendar" or item.get("consent_documented") is True
-        ]
+        #
+        # specs/019-meeting-audio-ingestion, research.md Decision 3: this gate
+        # now checks the real, auditable `meeting_series_consent` table via
+        # `self._consent.is_active()` — the same port `AudioCollector` checks
+        # — instead of trusting the fixture's own `consent_documented`
+        # boolean directly. That field stays in the fixture and in
+        # `structured_payload` (`build_meeting_envelope`) as descriptive
+        # metadata only; it is never the enforcement point. This means the
+        # demo's own `SimulatedCollector` path now exercises the real
+        # consent-then-collect flow end to end, not a second, parallel
+        # trust-the-fixture mechanism.
+        filtered: list[dict[str, Any]] = []
+        for item in items:
+            if item["source_type"] == "calendar" and not await self._consent.is_active(
+                item["series_id"]
+            ):
+                continue
+            filtered.append(item)
         # Chronological order is a hard requirement of the hash chain (see
         # EventRepositoryPort.append's docstring) — the fixture's own array order
         # deliberately isn't sorted (item 2 occurs before item 1), to prove this sort
         # is load-bearing rather than an accident of fixture authoring.
-        return sorted(items, key=lambda item: item["occurred_at"])
+        return sorted(filtered, key=lambda item: item["occurred_at"])
 
     def normalize(self, raw_item: dict[str, Any]) -> Envelope:
         return _NORMALIZERS[raw_item["source_type"]](raw_item)

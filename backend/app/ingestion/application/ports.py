@@ -178,6 +178,14 @@ class EventRepositoryPort(ABC):
 class StakeholderIdentity:
     id: UUID
     identifiers: tuple[str, ...]
+    # specs/019-meeting-audio-ingestion — `AudioCollector`/
+    # `WhisperTranscriptionAdapter` need a real, human-readable name (not an
+    # `identifiers` entry, which is an email/username string meant for exact
+    # lookup) to match against conversational context when attributing a
+    # diarized speaker segment. Added here rather than a second port, since
+    # `stakeholders.name` already exists and every other `ClientProfileContext`
+    # consumer can simply ignore the field (additive, non-breaking).
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -342,6 +350,60 @@ class RetentionJobRepositoryPort(ABC):
         ...
 
 
+# ---------------------------------------------------------------------------
+# Meeting series consent (specs/019-meeting-audio-ingestion, FR-004/FR-005)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MeetingSeriesConsentRecord:
+    id: UUID
+    series_id: str
+    status: str
+    all_parties_confirmed: bool
+    documented_by_user_id: UUID
+    documented_at: datetime
+    note: str | None
+
+
+class MeetingSeriesConsentRepositoryPort(ABC):
+    """Gates meeting audio collection (`AudioCollector`/`SimulatedCollector`,
+    research.md Decision 3) and backs the consent audit-trail endpoints
+    (`consent_router.py`). Insert-only — "current status" is always the
+    latest row per `series_id` (data-model.md's query pattern)."""
+
+    @abstractmethod
+    async def is_active(self, series_id: str) -> bool:
+        """True only if `series_id`'s latest consent row has `status ==
+        'granted'` — false for a series with no consent decision at all,
+        exactly the same outcome as a series whose latest decision was a
+        revocation (spec.md's Edge Cases: "no decision" and "revoked" are
+        treated identically)."""
+        ...
+
+    @abstractmethod
+    async def record(
+        self,
+        *,
+        series_id: str,
+        status: str,
+        all_parties_confirmed: bool,
+        documented_by_user_id: UUID,
+        note: str | None,
+    ) -> MeetingSeriesConsentRecord:
+        """Inserts one new consent-decision row. Never updates an existing
+        row — a revocation or re-grant is always a new row (research.md
+        Decision 4)."""
+        ...
+
+    @abstractmethod
+    async def list_current(self) -> list[MeetingSeriesConsentRecord]:
+        """One row per `series_id` that has ever had a consent decision —
+        each one's latest row, per data-model.md's query pattern. A series
+        with no decision ever recorded does not appear here."""
+        ...
+
+
 __all__ = [
     "ClientProfileContext",
     "ClientProfileContextPort",
@@ -354,6 +416,8 @@ __all__ = [
     "EventRepositoryPort",
     "EventThreadRow",
     "KeyStorePort",
+    "MeetingSeriesConsentRecord",
+    "MeetingSeriesConsentRepositoryPort",
     "NewEvent",
     "ProductAreaRecord",
     "RecurringCommitment",

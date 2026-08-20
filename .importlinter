@@ -27,6 +27,19 @@ forbidden_modules =
     openai
     app.readers.adapters
 
+[importlinter:contract:ingestion-application-purity]
+name = Ingestion application layer depends on ports, never concrete external-API SDKs
+type = forbidden
+source_modules =
+    app.ingestion.application
+forbidden_modules =
+    anthropic
+    openai
+    googleapiclient
+    google
+    pyannote
+    app.ingestion.adapters
+
 [importlinter:contract:global-dependency-rule]
 name = No module's domain or application package imports its own adapters package
 type = layers

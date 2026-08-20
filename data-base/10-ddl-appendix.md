@@ -118,6 +118,28 @@ CREATE TABLE raw_envelopes (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- specs/019-meeting-audio-ingestion — the auditable, append-only consent gate
+-- for meeting audio ingestion. One row per consent decision (grant or revoke)
+-- per meeting series; never updated in place. "Current status" for a
+-- series_id is always its latest row by documented_at. The CHECK enforces
+-- FR-005's all-party rule at the database level, not only the application
+-- boundary (same defense-in-depth precedent as findings.cited_event_ids).
+CREATE TYPE meeting_series_consent_status AS ENUM ('granted', 'revoked');
+
+CREATE TABLE meeting_series_consent (
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    series_id               TEXT NOT NULL,
+    status                  meeting_series_consent_status NOT NULL,
+    all_parties_confirmed   BOOLEAN NOT NULL,
+    documented_by_user_id   UUID NOT NULL REFERENCES users(id),
+    documented_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    note                    TEXT,
+    CONSTRAINT meeting_series_consent_granted_requires_all_parties
+        CHECK (status != 'granted' OR all_parties_confirmed)
+);
+CREATE INDEX idx_meeting_series_consent_series_id
+    ON meeting_series_consent (series_id, documented_at DESC);
+
 -- ============================================================
 -- 03 · Event ledger
 -- ============================================================
