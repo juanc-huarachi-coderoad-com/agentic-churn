@@ -138,9 +138,7 @@ export function DashboardPage() {
             )}
           </div>
 
-          {data.score_block && (
-            <AuraRiskOrb score={data.score_block.score} band={data.score_block.band} />
-          )}
+          {data.score_block && <AuraRiskOrb band={data.score_block.band} />}
 
           <AskBar onOpenDraftComposer={openDraftComposer} onOpenEvidence={openEvidence} />
         </section>

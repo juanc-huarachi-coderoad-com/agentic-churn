@@ -1,1 +1,17 @@
 @import 'tailwindcss';
+
+@theme {
+  /* AURA orb heartbeat (specs/020-aura-orb-heartbeat/research.md Decision 1) —
+     slow and subtle so it reads as alive, not mechanical. */
+  --animate-aura-pulse: aura-pulse 4s ease-in-out infinite;
+
+  @keyframes aura-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.045);
+    }
+  }
+}
