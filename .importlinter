@@ -37,7 +37,7 @@ forbidden_modules =
     openai
     googleapiclient
     google
-    pyannote
+    pyannoteai
     app.ingestion.adapters
 
 [importlinter:contract:global-dependency-rule]

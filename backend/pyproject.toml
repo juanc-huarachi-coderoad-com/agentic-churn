@@ -19,7 +19,7 @@ dependencies = [
     "openai>=1.109.1",
     "opentelemetry-exporter-otlp>=1.29.0",
     "opentelemetry-sdk>=1.29.0",
-    "pyannote-audio>=3.3",
+    "pyannoteai-sdk>=0.4.0",
     "pydantic-settings>=2.15.0",
     "pyyaml>=6.0.2",
     "slowapi>=0.1.10",
@@ -71,7 +71,7 @@ module = "hdbscan.*"
 ignore_missing_imports = true
 
 # specs/019-meeting-audio-ingestion — none of googleapiclient/google-auth/
-# pyannote.audio ship inline types or a py.typed marker.
+# pyannoteai-sdk ship inline types or a py.typed marker.
 [[tool.mypy.overrides]]
 module = "googleapiclient.*"
 ignore_missing_imports = true
@@ -89,7 +89,7 @@ module = "google_auth_oauthlib.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "pyannote.*"
+module = "pyannoteai.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

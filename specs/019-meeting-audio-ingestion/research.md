@@ -210,6 +210,41 @@ commitments, which is most of this feature's value (a commitment's weight in sco
 this feature's scope (P10); an off-the-shelf diarization pass is an implementation-level choice
 for `/speckit-tasks`, not a scope decision for this plan.
 
+**Correction (deployment build-size finding) — diarization pass moved to the pyannote.ai hosted
+API**: `T001`/`tasks.md` originally pinned the off-the-shelf diarization pass to `pyannote-audio`
+run locally (`pyannote_diarization.py`, a `Pipeline.from_pretrained(...)` call). Deploying this
+feature showed the deployed image ballooning to ~20GB — not from the pretrained model weights
+(a few hundred MB, downloaded at runtime, never baked into the image) but from `pyannote-audio`'s
+own dependency closure: it pulls in PyTorch, and PyTorch on Linux pulls in the full NVIDIA CUDA
+wheel set (`nvidia-cuda-nvrtc`, `cuda-bindings`, etc. — `uv.lock` shows several of these alone
+exceeding 40–90MB compressed each) even though this deployment has no GPU and never uses one.
+Revised decision: `pyannote_diarization.py`'s `diarize()` calls the **pyannote.ai hosted API**
+(`pyannoteai-sdk` — already a transitive dependency of `pyannote-audio` itself, so this swaps an
+existing indirect dependency to a direct one rather than introducing a new library) instead of
+running a pipeline locally. This removes PyTorch and its CUDA closure from the image entirely.
+
+**Consequences accepted**: (1) `diarize()` is no longer a pure-local, network-free call — it now
+uploads the recording to pyannote.ai's own temporary storage (auto-deleted within 24h per their
+API) and polls a hosted job to completion. This is the same category of third-party exposure the
+Whisper transcription call already accepts for this same audio (both send audio to a hosted API
+under the account's own consent gate, research.md Decision 4/`spec.md` User Story 2) — not a new
+kind of risk this feature didn't already carry. (2) The call is now network- and poll-bound
+rather than CPU-bound; `WhisperTranscriptionAdapter.transcribe()` wraps it in `asyncio.to_thread`
+(`whisper_transcription.py`) so a long diarization job can no longer stall the FastAPI event loop
+for concurrent requests (notably the on-demand manual-refresh endpoint, User Story 3) the way an
+inline blocking call would — `AudioCollector.fetch()`'s own per-item timeout/isolation behavior
+(FR-013) is otherwise unchanged. (3) Requires a `PYANNOTEAI_API_KEY` (honest-empty-default,
+`config.py`), the same pattern `openai_api_key`/`anthropic_api_key` already use.
+
+**Alternatives considered**: A CPU-only PyTorch build (`--extra-index-url
+https://download.pytorch.org/whl/cpu`) — rejected: still bundles PyTorch itself (hundreds of MB)
+and the rest of `pyannote-audio`'s scientific-Python dependency chain (scipy, pytorch-lightning,
+torchaudio), a smaller image but not a materially different architecture, and this deployment has
+no local-inference requirement to justify carrying that weight at all. Keeping the local pipeline
+and accepting the large image — rejected: 20GB is a real deployment blocker (registry push/pull
+time, cold-start time, hosting cost), not a cosmetic concern, for a feature whose own `spec.md`
+Assumptions frame it as needing to be demoable within the project's existing timeline.
+
 ## Decision 8 — audio never touches persistent storage
 
 **Decision**: `AudioCollector` downloads each Drive file's bytes into memory (or, for larger

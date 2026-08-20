@@ -24,6 +24,7 @@ whether to trust a match (P2's "model interprets, code calculates" split,
 applied at the ingestion boundary).
 """
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from io import BytesIO
@@ -161,7 +162,17 @@ class WhisperTranscriptionAdapter:
         if not whisper_segments:
             return TranscriptionResult(text="", primary_speaker_name=None)
 
-        diarization_segments = self._diarize(audio_bytes)
+        # `research.md` Decision 7's correction: `self._diarize` now calls the
+        # pyannote.ai hosted API (network I/O plus a blocking poll loop with its
+        # own internal sleeps), not a local CPU-bound pyannote.audio pipeline —
+        # `to_thread` keeps that off the event loop, so it can no longer stall
+        # the FastAPI server for concurrent requests (e.g. the on-demand
+        # manual-refresh endpoint, US3) the way a blocking call inline here
+        # would. `asyncio.wait_for` around the caller still can't cancel the
+        # underlying thread mid-call — the same documented limitation
+        # `AudioCollector.fetch()`'s own comment already accepts, just with a
+        # network-bound call in place of a CPU-bound one now.
+        diarization_segments = await asyncio.to_thread(self._diarize, audio_bytes)
         labeled = _assign_speakers(whisper_segments, diarization_segments)
         grouped = _group_by_speaker(labeled)
 

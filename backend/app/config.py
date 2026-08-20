@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     # honestly at the adapter (spec.md's Edge Cases), never a silent skip.
     openai_api_key: str = ""
 
+    # Meeting audio ingestion's diarization provider (specs/019-meeting-audio-
+    # ingestion, research.md Decision 7's correction) — the pyannote.ai hosted API,
+    # not a locally-run pyannote.audio/PyTorch pipeline (that pipeline's PyTorch
+    # dependency alone dragged the deployed image to ~20GB via its CUDA wheel
+    # closure). Same honest-empty-default discipline as openai_api_key above.
+    pyannoteai_api_key: str = ""
+
     # Tone/Intent readers' model provider (specs/007-model-findings,
     # decisions/02-repo-and-tooling.md) — no safe default for the key, same
     # honest-failure discipline as openai_api_key above.

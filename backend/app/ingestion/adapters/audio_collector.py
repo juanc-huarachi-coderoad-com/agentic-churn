@@ -131,11 +131,13 @@ class AudioCollector(Collector):
                 # handling.md`'s "Meeting audio ingestion" budget) — bounds
                 # the Whisper API call reliably (it has real `await` points
                 # `wait_for` can act on); the diarization pass inside
-                # `transcribe()` is a synchronous, CPU-bound `pyannote.audio`
-                # call with no `await` point of its own, so a wait_for
-                # around it can only report the timeout once that call
-                # finally returns, not preempt it mid-call — a known,
-                # documented limitation, not a false "hard ceiling" claim.
+                # `transcribe()` calls the pyannote.ai hosted API
+                # (research.md Decision 7's correction) via `asyncio.to_thread`
+                # (`whisper_transcription.py`), so `wait_for` cancelling this
+                # coroutine no longer blocks *other* concurrent work on the
+                # event loop, but it still can't kill the background thread
+                # mid-call — a known, documented limitation, not a false
+                # "hard ceiling" claim.
                 stats.failed += 1
                 logger.exception(
                     "meeting audio item failed, skipped (FR-013): series=%s file=%s",

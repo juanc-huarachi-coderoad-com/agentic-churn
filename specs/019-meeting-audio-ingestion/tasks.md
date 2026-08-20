@@ -45,7 +45,10 @@ them.
 
 - [X] T001 Add `google-api-python-client`, `google-auth`, `google-auth-oauthlib`, and a
       diarization library (`research.md` Decision 7 — pin the specific package here) to
-      `backend/pyproject.toml`; run the project's lockfile update command
+      `backend/pyproject.toml`; run the project's lockfile update command. **Amended** (`research.md`
+      Decision 7's "deployment build-size finding" correction): the diarization library is
+      `pyannoteai-sdk` (pyannote.ai hosted API), not a locally-run `pyannote-audio` — the local
+      pipeline's PyTorch/CUDA dependency closure alone drove the deployed image to ~20GB
 - [X] T002 [P] Add new settings to `backend/app/config.py`: `audio_poll_interval_hours: int = 4`,
       `google_drive_token_path: str = "./secrets/google-drive-token.json"`,
       `google_drive_root_folder_id: str = ""`, `google_drive_client_id: str = ""`,
