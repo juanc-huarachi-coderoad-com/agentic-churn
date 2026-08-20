@@ -58,10 +58,15 @@ export interface HistoryTurn {
 // (research.md Decision 1 — component state, not a global store).
 export type TurnStatus = 'pending' | 'answered' | 'error'
 
+// specs/021-chat-component-redesign — data-model.md: questionSentAt is set once,
+// at creation, and never null; respondedAt is null exactly while status is
+// 'pending', set the moment status becomes 'answered' or 'error'.
 export interface Turn {
   id: string
   question: string
   status: TurnStatus
   response: AskResponse | null
   error: string | null
+  questionSentAt: string
+  respondedAt: string | null
 }

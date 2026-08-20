@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiFetch } from '../auth/api-client'
@@ -387,5 +387,97 @@ describe('AskBar', () => {
     await screen.findByText('Hi! I can help with things like why the score changed.')
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /open the draft composer/i })).not.toBeInTheDocument()
+  })
+
+  // specs/021-chat-component-redesign — User Story 1 (T002)
+  it('shows a sender icon and label for a human question and, once answered, for the assistant answer (US1)', async () => {
+    vi.mocked(apiFetch).mockResolvedValue(
+      jsonResponse({ fallback_text: 'answer text', sources: [], declined_reason: 'unclear' }),
+    )
+    renderAskBar()
+
+    await askAndAwaitAnswer('why did the score go up?')
+
+    const turn = screen.getByTestId('turn')
+    expect(within(turn).getByText('Human')).toBeInTheDocument()
+    expect(within(turn).getByTestId('sender-icon-human')).toBeInTheDocument()
+
+    await screen.findByText('answer text')
+    expect(within(turn).getByText('AURA Assistant')).toBeInTheDocument()
+    expect(within(turn).getByTestId('sender-icon-assistant')).toBeInTheDocument()
+  })
+
+  // specs/021-chat-component-redesign — User Story 1 (T002)
+  it('shows no sender icon/label for the assistant side while pending or errored (US1)', async () => {
+    let resolveFetch!: (response: Response) => void
+    vi.mocked(apiFetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    renderAskBar()
+
+    await userEvent.type(screen.getByLabelText('Ask a question'), 'pending question')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    const pendingTurn = await screen.findByTestId('turn')
+    // The human question side still shows its identity row even while pending.
+    expect(within(pendingTurn).getByText('Human')).toBeInTheDocument()
+    expect(within(pendingTurn).queryByText('AURA Assistant')).not.toBeInTheDocument()
+    expect(within(pendingTurn).queryByTestId('sender-icon-assistant')).not.toBeInTheDocument()
+
+    resolveFetch(new Response(null, { status: 500 }))
+    await screen.findByText(
+      "That's taking longer than it should — try again, or check the dashboard directly.",
+    )
+    expect(within(pendingTurn).queryByText('AURA Assistant')).not.toBeInTheDocument()
+    expect(within(pendingTurn).queryByTestId('sender-icon-assistant')).not.toBeInTheDocument()
+  })
+
+  // specs/021-chat-component-redesign — User Story 2 (T006)
+  it('shows a 12-hour AM/PM timestamp next to each sender label once resolved, and none while pending/error (US2)', async () => {
+    let resolveFetch!: (response: Response) => void
+    vi.mocked(apiFetch).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+    renderAskBar()
+
+    await userEvent.type(screen.getByLabelText('Ask a question'), 'what time is it?')
+    await userEvent.click(screen.getByRole('button', { name: /ask/i }))
+
+    const turn = await screen.findByTestId('turn')
+    const timeRegex = /\d{1,2}:\d{2}\s?(AM|PM)/i
+
+    // Human side already has a timestamp as soon as the question is sent.
+    expect(within(turn).getByTestId('human-identity-row').textContent).toMatch(timeRegex)
+    // Assistant side has no timestamp yet — nothing has been sent back.
+    expect(within(turn).queryByTestId('assistant-identity-row')).not.toBeInTheDocument()
+
+    resolveFetch(
+      jsonResponse({ fallback_text: 'here is the time', sources: [], declined_reason: 'unclear' }),
+    )
+    await screen.findByText('here is the time')
+
+    expect(within(turn).getByTestId('assistant-identity-row').textContent).toMatch(timeRegex)
+  })
+
+  // specs/021-chat-component-redesign — User Story 3 (T012)
+  it('renders a short human question and a long multi-paragraph assistant answer together without error (US3)', async () => {
+    const longAnswer = Array.from({ length: 5 }, (_, i) => `Paragraph ${i + 1} of a long answer.`).join(
+      '\n\n',
+    )
+    vi.mocked(apiFetch).mockResolvedValue(
+      jsonResponse({ fallback_text: longAnswer, sources: [], declined_reason: 'unclear' }),
+    )
+    renderAskBar()
+
+    await askAndAwaitAnswer('short question')
+
+    expect(await screen.findByText(/Paragraph 1 of a long answer\./)).toBeInTheDocument()
+    const turn = screen.getByTestId('turn')
+    expect(within(turn).getByText('Human')).toBeInTheDocument()
+    expect(within(turn).getByText('AURA Assistant')).toBeInTheDocument()
   })
 })
