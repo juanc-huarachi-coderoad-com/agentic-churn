@@ -176,6 +176,10 @@ class _FakeAskQueries:
 
 
 def _contribution(finding_type: str = "broken_response_promise", points: float = -39.0):
+    # `issue_id` is deliberately left at its `None` default — real accounts
+    # never populate it (`issues`/`finding_issue_map` are fixture-only data
+    # with no live writer, 2026-08-21 amendment), and a fake that always set
+    # it here previously masked that gap from this very test suite.
     return ContributionRecord(
         id=uuid4(),
         finding_id=uuid4(),
@@ -190,7 +194,6 @@ def _contribution(finding_type: str = "broken_response_promise", points: float =
         recency=1,
         damping=1,
         rank_within_issue_factor=1,
-        issue_id=uuid4(),
     )
 
 
@@ -377,7 +380,7 @@ async def test_write_to_stakeholder_produces_a_handoff_not_an_inline_answer():
     result = await _run(graph)
     assert result["component"] == "draft_handoff"
     assert result["component_props"]["stakeholder_id"] is not None
-    assert result["component_props"]["issue_id"] is not None
+    assert result["component_props"]["score_contribution_id"] is not None
 
 
 async def test_unknown_person_produces_a_fallback_not_a_guess():

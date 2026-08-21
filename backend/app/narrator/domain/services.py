@@ -12,6 +12,20 @@ import re
 from app.narrator.domain.entities import FactCheckResult, VerifiedFactSet
 
 _NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+)?")
+_TRAILING_LIST_MARKER_PATTERN = re.compile(r"(?:^|\n)\s*\d+\.\s*$")
+"""A Markdown ordered-list marker ("1. ", "2. ") sitting on its own line
+always becomes the tail of a `fact_check` sentence fragment, never its head
+— `verify_facts`' sentence splitter (`app/experience/domain/services.py`)
+treats the marker's own period-plus-whitespace as a sentence boundary, same
+as it would treat a genuine "...we promised 4. Engineering is on it" split.
+The two are told apart by what precedes the digit: a list marker is always
+right after a newline/line-start (Markdown syntax), a real sentence-ending
+number is always preceded by more prose on the same line — found live: a
+draft composer generation was rejected for numbering its own steps ("1.
+Retrieve...", "2. Confirm...") as if "1", "2", "3" were invented numeric
+facts. Scoped narrowly to that trailing-newline case so a genuine number
+that happens to end a sentence (the "promised 4." case above) is never
+affected."""
 _PROPER_NOUN_PATTERN = re.compile(r"\b[A-Z][a-zA-Z]+(?:\s[A-Z][a-zA-Z]+)*\b")
 """ASCII-only by construction: Python's `\\b` is Unicode-aware, so a name
 containing a non-ASCII letter (e.g. "Marín") never satisfies the trailing
@@ -104,12 +118,40 @@ def fact_check(sentence: str, facts: VerifiedFactSet) -> FactCheckResult:
     verified set with a few extra harmless names is safe; a generated
     sentence with a false-positive *name* is not (`architecture/
     04-ai-safety-and-model-usage.md` Rule 4's "no new facts" is the side
-    that must fail closed, not the side that must fail open)."""
-    numbers = frozenset(_NUMBER_PATTERN.findall(sentence))
+    that must fail closed, not the side that must fail open).
+
+    A Markdown ordered-list marker on its own line ("1. ", "2. ") is
+    stripped before number-extraction — see `_TRAILING_LIST_MARKER_PATTERN`
+    — since it is punctuation, not a claimed numeric fact.
+
+    The leading-word exclusion strips it from a longer match too, not just
+    an exact one-word match — `_PROPER_NOUN_PATTERN` is greedy over runs of
+    capitalized words, so a sentence opening with a real, verified name
+    ("Hi Fernando," / "Dear Ana,") gets extracted as one glued two-word
+    candidate ("Hi Fernando"), which then matches nothing in `facts.names`
+    even though the name alone would (found live: a draft composer
+    generation was rejected for exactly this — the model's own greeting
+    line, not an invented name). Stripping only the leading token — never
+    discarding the whole match — keeps the real name a candidate so it
+    still gets checked against `facts.names` normally."""
+    numbers = frozenset(
+        _NUMBER_PATTERN.findall(_TRAILING_LIST_MARKER_PATTERN.sub("", sentence))
+    )
     all_names = _PROPER_NOUN_PATTERN.findall(sentence)
     leading_word = sentence.split(" ", 1)[0].rstrip(".,;:!?") if sentence else ""
+    leading_prefix = f"{leading_word} "
+
+    def _drop_leading_word(name: str) -> str:
+        if name == leading_word:
+            return ""
+        if leading_word and name.startswith(leading_prefix):
+            return name[len(leading_prefix) :]
+        return name
+
     names = frozenset(
-        m for m in all_names if m not in _COMMON_WORDS and m != leading_word
+        stripped
+        for m in all_names
+        if (stripped := _drop_leading_word(m)) and stripped not in _COMMON_WORDS
     )
 
     unverified_numbers = {n for n in numbers if not any(n == v or n in v for v in facts.numbers)}

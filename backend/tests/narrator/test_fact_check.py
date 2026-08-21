@@ -45,6 +45,52 @@ def test_a_genuine_leading_name_still_extracts_but_is_exempted():
     assert result.passed  # "Ana" is the leading word, exempted from verification
 
 
+def test_greeting_glued_to_a_verified_name_still_passes():
+    """Regression: found via live verification of the draft composer
+    (2026-08-21) — a real generation opening with "Hi Fernando," was
+    rejected because `_PROPER_NOUN_PATTERN` glues consecutive capitalized
+    words into one candidate ("Hi Fernando"), which the leading-word
+    exclusion (an exact-string match against the sentence's single first
+    word) never strips since the candidate spans two words. The greeting
+    word must be dropped from the *front* of the candidate, not discard
+    the candidate wholesale — "Fernando" alone is a real, verified name."""
+    facts = VerifiedFactSet(numbers=frozenset(), names=frozenset({"Fernando Juarez"}))
+    result = fact_check("Hi Fernando, thanks for flagging this.", facts)
+    assert result.passed
+
+
+def test_greeting_glued_to_an_unverified_name_still_fails():
+    """The fix above only strips the greeting word — it must not exempt an
+    actually-invented name just because a greeting precedes it."""
+    facts = VerifiedFactSet(numbers=frozenset(), names=frozenset({"Fernando Juarez"}))
+    result = fact_check("Hi David, thanks for flagging this.", facts)
+    assert not result.passed
+    assert "David" in result.extracted_names
+
+
+def test_ordered_list_marker_is_not_treated_as_a_claimed_number():
+    """Regression: found via live verification of the draft composer
+    (2026-08-21) — a real generation numbering its own steps ("1. Retrieve
+    the original thread", "2. Confirm the dates") was rejected because
+    `verify_facts`' sentence splitter treats each marker's period as a
+    sentence boundary, leaving "1", "2", "3" as trailing fragments
+    `_NUMBER_PATTERN` then reads as invented numeric facts."""
+    facts = VerifiedFactSet(numbers=frozenset(), names=frozenset())
+    result = fact_check("Before you send this, you'll need to:\n\n1.", facts)
+    assert result.passed
+    assert "1" not in result.extracted_numbers
+
+
+def test_a_number_that_genuinely_ends_a_sentence_is_still_checked():
+    """The list-marker exclusion is scoped to a line-starting marker only —
+    a real number ending an ordinary sentence (`data-model.md`'s own
+    "we promised 4." worked example) must still be verified normally."""
+    facts = VerifiedFactSet(numbers=frozenset(), names=frozenset())
+    result = fact_check("We took 19 hours to respond; we promised 4.", facts)
+    assert not result.passed
+    assert "4" in result.extracted_numbers
+
+
 def test_confidence_style_decimal_is_verified_as_a_number():
     facts = VerifiedFactSet(numbers=frozenset({"85.63"}), names=frozenset())
     result = fact_check("The score moved to 85.63.", facts)

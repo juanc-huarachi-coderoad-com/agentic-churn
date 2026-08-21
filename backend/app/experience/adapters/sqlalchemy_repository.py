@@ -783,23 +783,23 @@ class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
         self,
         draft: GeneratedDraft,
         *,
-        issue_id: UUID,
+        score_contribution_id: UUID,
         stakeholder_id: UUID,
         requested_by_user_id: UUID,
     ) -> UUID:
         row = (
             await self._session.execute(
                 text(
-                    "INSERT INTO draft_messages (issue_id, stakeholder_id, "
+                    "INSERT INTO draft_messages (score_contribution_id, stakeholder_id, "
                     "requested_by_user_id, draft_text, tone_variant, evidence_event_ids, "
                     "checks_passed) "
-                    "VALUES (:issue_id, :stakeholder_id, :requested_by_user_id, :draft_text, "
-                    "CAST(:tone_variant AS tone_variant), :evidence_event_ids, "
+                    "VALUES (:score_contribution_id, :stakeholder_id, :requested_by_user_id, "
+                    ":draft_text, CAST(:tone_variant AS tone_variant), :evidence_event_ids, "
                     ":checks_passed) "
                     "RETURNING id"
                 ),
                 {
-                    "issue_id": issue_id,
+                    "score_contribution_id": score_contribution_id,
                     "stakeholder_id": stakeholder_id,
                     "requested_by_user_id": requested_by_user_id,
                     "draft_text": draft.draft_text,
@@ -816,8 +816,9 @@ class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
         row = (
             await self._session.execute(
                 text(
-                    "SELECT id, issue_id, stakeholder_id, draft_text, tone_variant, "
-                    "evidence_event_ids, checks_passed, copied_at, logged_manually_at "
+                    "SELECT id, score_contribution_id, stakeholder_id, draft_text, "
+                    "tone_variant, evidence_event_ids, checks_passed, copied_at, "
+                    "logged_manually_at "
                     "FROM draft_messages WHERE id = :id"
                 ),
                 {"id": draft_id},
@@ -827,7 +828,7 @@ class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
             return None
         return DraftMessageRecord(
             id=row.id,
-            issue_id=row.issue_id,
+            score_contribution_id=row.score_contribution_id,
             stakeholder_id=row.stakeholder_id,
             draft_text=row.draft_text,
             tone_variant=row.tone_variant,

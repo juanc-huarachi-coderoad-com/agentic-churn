@@ -24,16 +24,16 @@ from app.experience.adapters.sqlalchemy_repository import (
     SqlAlchemyClientProfileRepository,
     SqlAlchemyDraftMessageRepository,
     SqlAlchemyFindingReader,
-    SqlAlchemyIssueReader,
     SqlAlchemyLedgerQueryRepository,
     SqlAlchemyNarratorReadRepository,
     SqlAlchemyPlaybookReader,
+    SqlAlchemyScoreReader,
     SqlAlchemyStakeholderReader,
 )
 from app.experience.application.use_cases import (
     DraftCheckFailedError,
+    EvidenceNotFoundError,
     GenerateDraftUseCase,
-    IssueNotFoundError,
     StakeholderNotFoundError,
 )
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
@@ -50,7 +50,7 @@ kinds (`research.md` Decision 7, Clarifications 2026-08-16)."""
 
 
 class DraftRequest(BaseModel):
-    issue_id: UUID
+    score_contribution_id: UUID
     stakeholder_id: UUID
     tone_variant: str
 
@@ -69,7 +69,7 @@ def _build_use_case(session: AsyncSession) -> GenerateDraftUseCase:
     )
     llm = AnthropicLLMAdapter(settings.anthropic_api_key, settings.generation_model_id)
     return GenerateDraftUseCase(
-        issues=SqlAlchemyIssueReader(session),
+        score=SqlAlchemyScoreReader(session),
         stakeholders=SqlAlchemyStakeholderReader(session),
         profile=SqlAlchemyClientProfileRepository(session),
         ledger=SqlAlchemyLedgerQueryRepository(session, encryption),
@@ -90,12 +90,12 @@ async def create_draft(
     use_case = _build_use_case(session)
     try:
         result = await use_case.execute(
-            issue_id=request.issue_id,
+            score_contribution_id=request.score_contribution_id,
             stakeholder_id=request.stakeholder_id,
             tone_variant=request.tone_variant,
             requested_by_user_id=current_user.user_id,
         )
-    except (IssueNotFoundError, StakeholderNotFoundError) as exc:
+    except (EvidenceNotFoundError, StakeholderNotFoundError) as exc:
         raise HTTPException(status_code=404, detail="Not found") from exc
     except DraftCheckFailedError as exc:
         raise HTTPException(status_code=422, detail=_CHECK_FAILURE_DETAIL) from exc

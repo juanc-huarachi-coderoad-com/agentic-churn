@@ -3,7 +3,7 @@ import type { AskAnsweredResponse, ComponentResponsePart } from '../types'
 
 interface AnswerRendererProps {
   answer: AskAnsweredResponse
-  onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+  onOpenDraftComposer?: (scoreContributionId: string, stakeholderId: string) => void
   onOpenEvidence?: (scoreContributionId: string) => void
 }
 
@@ -37,7 +37,7 @@ export function AnswerRenderer({
 
 interface GenerativeUIComponentProps {
   part: ComponentResponsePart
-  onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+  onOpenDraftComposer?: (scoreContributionId: string, stakeholderId: string) => void
   onOpenEvidence?: (scoreContributionId: string) => void
 }
 
@@ -248,26 +248,31 @@ function FilteredTimeline({ props }: { props: Record<string, unknown> }) {
 
 // The one non-inline-answer case (FR-012a) — surfaces the handoff context
 // rather than composing a message itself (feature 009's job). Real trigger
-// as of feature 009 (research.md Decision 10) — a link when both issue_id
-// and stakeholder_id resolved; the original static fallback copy is kept
-// unchanged for a null stakeholder_id (no picker UI is built here).
+// as of feature 009 (research.md Decision 10) — a link when both
+// score_contribution_id and stakeholder_id resolved. Below that, this must
+// NOT still say "open the draft composer" (2026-08-21 amendment) — that
+// text used to render unconditionally even when nothing was openable
+// (live-tested against demo-wara: `score_contribution_id` was null on
+// every question asked, since `issues`/`finding_issue_map` never gets
+// populated by any live code path), which is a broken promise, not a
+// fallback. Two distinct honest states replace it instead.
 function DraftHandoff({
   props,
   onOpenDraftComposer,
 }: {
   props: Record<string, unknown>
-  onOpenDraftComposer?: (issueId: string, stakeholderId: string) => void
+  onOpenDraftComposer?: (scoreContributionId: string, stakeholderId: string) => void
 }) {
-  const issueId = props.issue_id as string | null | undefined
+  const scoreContributionId = props.score_contribution_id as string | null | undefined
   const stakeholderId = props.stakeholder_id as string | null | undefined
 
-  if (issueId && stakeholderId && onOpenDraftComposer) {
+  if (scoreContributionId && stakeholderId && onOpenDraftComposer) {
     return (
       <p className="text-sm text-neutral-600">
-        Ready to draft a message about this issue —{' '}
+        Ready to draft a message about this —{' '}
         <button
           type="button"
-          onClick={() => onOpenDraftComposer(issueId, stakeholderId)}
+          onClick={() => onOpenDraftComposer(scoreContributionId, stakeholderId)}
           className="font-medium text-neutral-900 underline"
         >
           open the draft composer
@@ -277,14 +282,17 @@ function DraftHandoff({
     )
   }
 
+  if (!stakeholderId) {
+    return (
+      <p className="text-sm text-neutral-600">
+        Couldn't identify who to write to — try naming the stakeholder directly.
+      </p>
+    )
+  }
+
   return (
     <p className="text-sm text-neutral-600">
-      Ready to draft a message about this issue — open the draft composer to continue.
-      {!stakeholderId && (
-        <span className="mt-1 block text-xs text-neutral-400">
-          Couldn't identify who to write to — you'll need to pick a recipient there.
-        </span>
-      )}
+      There's no specific risk finding to draft a message about right now.
     </p>
   )
 }

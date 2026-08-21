@@ -13,23 +13,25 @@ shape.
   (`contracts/auth.md`, feature 002). `requested_by_user_id` is taken from
   the token, never the request body — matches every other "who did this"
   column's existing discipline.
-- **Request**:
+- **Request** (superseded by the 2026-08-21 Amendment below —
+  `score_contribution_id`, not `issue_id`, is the real field):
 
 ```json
 {
-  "issue_id": "iss-A",
+  "score_contribution_id": "sc-1",
   "stakeholder_id": "stk-ana",
   "tone_variant": "direct"
 }
 ```
 
-`issue_id` is any issue with cited evidence — not restricted to the current
-top-ranked issue (Clarifications, 2026-08-16). Rejects with `404` if
-`issue_id`/`stakeholder_id` don't resolve — `IssueReadPort.
-get_issue_evidence(issue_id)` or `StakeholderReadPort.get(stakeholder_id)`
-returns `None` (`research.md` Decision 13, `/speckit-analyze` finding U3,
-2026-08-16 — the stakeholder half of this check was undesigned in the
-original plan).
+`score_contribution_id` is any finding's own score contribution with cited
+evidence — not restricted to the current top-ranked one (Clarifications,
+2026-08-16, applied to the new anchor by the Amendment). Rejects with `404`
+if `score_contribution_id`/`stakeholder_id` don't resolve —
+`ScoreReadPort.get_contribution`/`FindingReadPort.get_finding` or
+`StakeholderReadPort.get(stakeholder_id)` returns `None` (`research.md`
+Decision 13, `/speckit-analyze` finding U3, 2026-08-16 — the stakeholder
+half of this check was undesigned in the original plan).
 
 ### Response (200) — all five pre-display checks passed
 
@@ -107,3 +109,35 @@ component (feature 008, currently static text only) gets a real trigger that
 opens `frontend/src/draft-composer/draft-composer-panel.tsx` with
 `component_props.issue_id`/`stakeholder_id` (`research.md` Decision 10) —
 no backend contract change, `AskComponentResponse`'s schema is unchanged.
+
+## Amendment — 2026-08-21: anchored to `score_contribution_id`, not `issue_id`
+
+**What changed.** `POST /api/drafts`'s request body field is now
+`score_contribution_id`, not `issue_id`. `GenerateDraftUseCase` resolves
+evidence via `ScoreReadPort.get_contribution` + `FindingReadPort.get_finding`
+— the exact same read path `GetEvidenceTraceUseCase` already uses for the
+evidence trace panel — instead of `IssueReadPort.get_issue_evidence`.
+`draft_messages.issue_id` is now nullable (kept, unused going forward);
+`draft_messages.score_contribution_id` is the new required column
+(`migrations/versions/0007_draft_finding_anchor.py`).
+
+**Why.** `issues`/`finding_issue_map` (`specs/004-score-engine`) were always
+fixture-only data — the only writer in the whole codebase is
+`backend/scripts/seed_score_fixture.py`'s hand-authored "Issue A" worked
+example, never a use case, background job, or reader. `specs/004-score-
+engine/data-model.md` explicitly deferred real finding-to-issue clustering
+to "feature 005," which never actually built it (feature 005's own
+clustering merges raw *events* into one `recurring_issue`-type finding — an
+unrelated mechanism). The result: `score_contributions.issue_id` was `NULL`
+for every real finding, in every real account, always — confirmed by live
+testing against the `demo-wara` account through both its Stage 1 and Stage 2
+fixtures (score 64.5 → 98.47), where the Ask agent's `write_to_stakeholder`
+handoff (`contracts/ask.md`) never once produced a non-null `issue_id`, so
+this feature's entry point never actually worked outside the one seeded
+fixture `test_draft_routes_real_db.py` depended on.
+
+**What did not change.** `issues`/`finding_issue_map` themselves are
+untouched, still available for a future real clustering effort — this
+amendment only stops the Draft Composer from depending on data that effort
+never shipped. The five pre-display checks, the tone-variant behavior, and
+the no-edit/no-send guarantees are all unchanged.

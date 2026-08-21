@@ -3,7 +3,7 @@
 export type ToneVariant = 'direct' | 'formal' | 'brief'
 
 export interface DraftRequest {
-  issue_id: string
+  score_contribution_id: string
   stakeholder_id: string
   tone_variant: ToneVariant
 }

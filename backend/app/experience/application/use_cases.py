@@ -16,7 +16,6 @@ from app.experience.application.ports import (
     DraftMessageRepositoryPort,
     FindingReadPort,
     IdentityGapPort,
-    IssueReadPort,
     LedgerQueryPort,
     NarratorReadPort,
     PlaybookReadPort,
@@ -508,11 +507,6 @@ class GetCoverageUseCase:
 # ---------------------------------------------------------------------------
 
 
-class IssueNotFoundError(Exception):
-    """`issue_id` doesn't resolve to an issue with cited (validated)
-    evidence — the route's `404` path (`contracts/drafts.md`)."""
-
-
 class StakeholderNotFoundError(Exception):
     """`stakeholder_id` doesn't resolve to a stakeholder on the current
     profile — the route's `404` path (`/speckit-analyze` finding U3)."""
@@ -539,11 +533,20 @@ class GenerateDraftUseCase:
     (`decisions/02-repo-and-tooling.md`'s ratified shape for M10,
     `research.md` Decision 2) — fetch inputs, generate, run all five
     pre-display checks (REQ-M10-07, `research.md` Decision 6), persist only
-    on a full pass (`research.md` Decision 7)."""
+    on a full pass (`research.md` Decision 7).
+
+    Anchored to a `score_contribution_id` rather than an `issue_id`
+    (2026-08-21 amendment, `specs/009-draft-composer/data-model.md`) — the
+    original design assumed finding-to-issue clustering (`issues`/
+    `finding_issue_map`) would exist by the time this feature shipped; it
+    never did, so every real draft request 404'd. A single finding's own
+    evidence — already the exact input `GetEvidenceTraceUseCase` resolves
+    for the same `score_contribution_id` — is a strictly smaller, always-
+    populated substitute."""
 
     def __init__(
         self,
-        issues: IssueReadPort,
+        score: ScoreReadPort,
         stakeholders: StakeholderReadPort,
         profile: ClientProfileRepositoryPort,
         ledger: LedgerQueryPort,
@@ -553,7 +556,7 @@ class GenerateDraftUseCase:
         drafts: DraftMessageRepositoryPort,
         llm: LLMPort,
     ) -> None:
-        self._issues = issues
+        self._score = score
         self._stakeholders = stakeholders
         self._profile = profile
         self._ledger = ledger
@@ -566,7 +569,7 @@ class GenerateDraftUseCase:
     async def execute(
         self,
         *,
-        issue_id: UUID,
+        score_contribution_id: UUID,
         stakeholder_id: UUID,
         tone_variant: str,
         requested_by_user_id: UUID,
@@ -575,15 +578,18 @@ class GenerateDraftUseCase:
         if stakeholder is None:
             raise StakeholderNotFoundError(stakeholder_id)
 
-        issue_evidence = await self._issues.get_issue_evidence(issue_id)
-        if issue_evidence is None:
-            raise IssueNotFoundError(issue_id)
+        contribution = await self._score.get_contribution(score_contribution_id)
+        if contribution is None:
+            raise EvidenceNotFoundError(score_contribution_id)
+        finding = await self._findings.get_finding(contribution.finding_id)
+        if finding is None:
+            raise EvidenceNotFoundError(score_contribution_id)
 
         profile = await self._profile.get_current()
         client_name = profile.client_name if profile is not None else ""
         communication_norms = profile.communication_norms if profile is not None else None
 
-        events = await self._findings.resolve_events(list(issue_evidence.cited_event_ids))
+        events = await self._findings.resolve_events(list(finding.cited_event_ids))
         evidence_texts = [e.quoted_text for e in events if e.quoted_text]
 
         thread_history = await self._ledger.timeline_for_stakeholder(stakeholder_id)
@@ -591,7 +597,7 @@ class GenerateDraftUseCase:
 
         narrator_summary = await self._narrator.get_latest()
         agreed_actions = await self._resolve_agreed_actions(
-            narrator_summary, issue_evidence.finding_types
+            narrator_summary, (finding.finding_type,)
         )
 
         facts = build_verified_fact_set(
@@ -605,7 +611,7 @@ class GenerateDraftUseCase:
         prompt = build_draft_prompt(
             stakeholder_name=stakeholder.name,
             tone_variant=tone_variant,
-            issue_label=issue_evidence.label,
+            issue_label=finding.finding_type.replace("_", " "),
             evidence_texts=evidence_texts,
             communication_norms=communication_norms,
             thread_history_texts=thread_history_texts,
@@ -623,12 +629,12 @@ class GenerateDraftUseCase:
         generated = GeneratedDraft(
             draft_text=model_output.draft_text,
             tone_variant=model_output.tone_variant or tone_variant,
-            evidence_event_ids=issue_evidence.cited_event_ids,
+            evidence_event_ids=finding.cited_event_ids,
             check_result=check_result,
         )
         draft_id = await self._drafts.persist(
             generated,
-            issue_id=issue_id,
+            score_contribution_id=score_contribution_id,
             stakeholder_id=stakeholder_id,
             requested_by_user_id=requested_by_user_id,
         )
@@ -644,8 +650,8 @@ class GenerateDraftUseCase:
         self, narrator_summary: NarratorSummaryRecord | None, finding_types: tuple[str, ...]
     ) -> list[AgreedAction]:
         """Filters the latest run's already-narrated, already-dated actions
-        down to the requested issue's own finding types (`research.md`
-        Decision 4) — the only source of a "human-supplied" date."""
+        down to the requested finding's own type (`research.md` Decision 4)
+        — the only source of a "human-supplied" date."""
         if narrator_summary is None:
             return []
         finding_type_set = set(finding_types)

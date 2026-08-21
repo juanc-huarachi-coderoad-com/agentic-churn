@@ -27,7 +27,7 @@ async function fetchDashboard(): Promise<DashboardResponse> {
 export function DashboardPage() {
   const [selectedContributionId, setSelectedContributionId] = useState<string | null>(null)
   const [draftHandoff, setDraftHandoff] = useState<{
-    issueId: string
+    scoreContributionId: string
     stakeholderId: string
   } | null>(null)
   const { data, isLoading, isError } = useQuery({
@@ -44,9 +44,9 @@ export function DashboardPage() {
     setSelectedContributionId(scoreContributionId)
   }
 
-  function openDraftComposer(issueId: string, stakeholderId: string) {
+  function openDraftComposer(scoreContributionId: string, stakeholderId: string) {
     setSelectedContributionId(null)
-    setDraftHandoff({ issueId, stakeholderId })
+    setDraftHandoff({ scoreContributionId, stakeholderId })
   }
 
   if (isLoading) {
@@ -197,7 +197,7 @@ export function DashboardPage() {
         onClose={() => setSelectedContributionId(null)}
       />
       <DraftComposerPanel
-        issueId={draftHandoff?.issueId ?? null}
+        scoreContributionId={draftHandoff?.scoreContributionId ?? null}
         stakeholderId={draftHandoff?.stakeholderId ?? null}
         onClose={() => setDraftHandoff(null)}
       />

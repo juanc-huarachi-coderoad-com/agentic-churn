@@ -672,14 +672,26 @@ def build_ask_agent_graph(
         }
 
     async def handoff(state: AskAgentState) -> dict[str, Any]:
+        """Anchors to the account's single highest-impact, risk-increasing
+        `score_contribution_id` — not `issue_id` (2026-08-21 amendment,
+        `specs/008-narrator-and-ask-agent/contracts/ask.md`). `issues`/
+        `finding_issue_map` are fixture-only data with no real writer
+        (`specs/004-score-engine`), so every `score_contributions.issue_id`
+        in a real account is `NULL`; live-tested against `demo-wara` through
+        both its Stage 1 and Stage 2 fixtures, confirming this was not a
+        theoretical gap. Every real finding, by contrast, always has a
+        `score_contribution_id` — the same one the evidence trace panel
+        already keys off (`GetEvidenceTraceUseCase`)."""
         stakeholder_id = await toolkit.resolve_stakeholder(state.get("subject_hint"))
         data = await toolkit.query_score_runs("top_risk")
         contributions = data.get("contributions", [])
-        issue_id = next((c["issue_id"] for c in contributions if c["issue_id"]), None)
+        risk_increasing = [c for c in contributions if not c["is_positive"]]
+        candidates = risk_increasing or contributions
+        top = max(candidates, key=lambda c: c["points"], default=None)
         return {
             "component": "draft_handoff",
             "component_props": {
-                "issue_id": issue_id,
+                "score_contribution_id": top["score_contribution_id"] if top else None,
                 "stakeholder_id": (str(stakeholder_id) if stakeholder_id else None),
             },
             "sources": (),

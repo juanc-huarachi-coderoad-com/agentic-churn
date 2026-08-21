@@ -525,17 +525,23 @@ CREATE TABLE ask_queries (
 CREATE TYPE tone_variant AS ENUM ('direct','formal','brief');
 
 CREATE TABLE draft_messages (
-    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    issue_id             UUID NOT NULL REFERENCES issues(id),
-    stakeholder_id       UUID NOT NULL REFERENCES stakeholders(id),
-    requested_by_user_id UUID NOT NULL REFERENCES users(id),
-    draft_text           TEXT NOT NULL,
-    tone_variant         tone_variant NOT NULL,
-    evidence_event_ids   UUID[] NOT NULL CHECK (array_length(evidence_event_ids, 1) >= 1),
-    checks_passed        BOOLEAN NOT NULL,
-    logged_manually_at   TIMESTAMPTZ,
-    copied_at            TIMESTAMPTZ,
-    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    issue_id               UUID REFERENCES issues(id),
+    -- ^ Nullable, legacy — `migrations/versions/0007_draft_finding_anchor.py`
+    -- (2026-08-21). `issues`/`finding_issue_map` never got a real writer
+    -- (specs/004-score-engine), so this was always NULL for a real row.
+    score_contribution_id  UUID REFERENCES score_contributions(id),
+    -- ^ The real anchor going forward (application layer requires it —
+    -- `specs/009-draft-composer/contracts/drafts.md`'s Amendment).
+    stakeholder_id         UUID NOT NULL REFERENCES stakeholders(id),
+    requested_by_user_id   UUID NOT NULL REFERENCES users(id),
+    draft_text             TEXT NOT NULL,
+    tone_variant           tone_variant NOT NULL,
+    evidence_event_ids     UUID[] NOT NULL CHECK (array_length(evidence_event_ids, 1) >= 1),
+    checks_passed          BOOLEAN NOT NULL,
+    logged_manually_at     TIMESTAMPTZ,
+    copied_at              TIMESTAMPTZ,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now()
     -- NOTE: no sent_at / sent_by column exists, and no column here writes to any
     -- external system (including the CRM) — architectural enforcement of REQ-M10-P1 / REQ-NFR-18
 );
@@ -567,7 +573,8 @@ CREATE INDEX idx_findings_cited_event_ids         ON findings USING GIN (cited_e
 -- the dashboard/ask-agent on every request), added while touching this file:
 CREATE INDEX idx_response_pairs_client_event_id ON response_pairs(client_event_id);
 CREATE INDEX idx_score_runs_computed_at         ON score_runs(computed_at);
-CREATE INDEX idx_draft_messages_issue_id        ON draft_messages(issue_id);
+CREATE INDEX idx_draft_messages_score_contribution_id ON draft_messages(score_contribution_id);
+-- (idx_draft_messages_issue_id dropped by 0007_draft_finding_anchor — issue_id is now legacy-only)
 
 -- ============================================================
 -- Roles and grants (real, not a comment)

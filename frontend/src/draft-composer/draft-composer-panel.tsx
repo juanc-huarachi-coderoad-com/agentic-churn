@@ -5,7 +5,7 @@ import { DraftCheckFailedError, copyDraft, logDraftAsSent, postDraft } from './a
 import type { ToneVariant } from './types'
 
 interface DraftComposerPanelProps {
-  issueId: string | null
+  scoreContributionId: string | null
   stakeholderId: string | null
   onClose: () => void
 }
@@ -17,7 +17,11 @@ const TONE_VARIANTS: ToneVariant[] = ['direct', 'formal', 'brief']
 // and copy, not literal free-text editing — FR-009a). No edit control of
 // any kind exists here, and no send action exists anywhere in this file or
 // any other (REQ-M10-P1) — only "Copy draft" and "Log as sent (manual)".
-export function DraftComposerPanel({ issueId, stakeholderId, onClose }: DraftComposerPanelProps) {
+export function DraftComposerPanel({
+  scoreContributionId,
+  stakeholderId,
+  onClose,
+}: DraftComposerPanelProps) {
   const [tone, setTone] = useState<ToneVariant>('direct')
   // Tracked by draft id, not a plain boolean, so "copied"/"logged" naturally
   // reset for a newly-generated draft (a different id) without an effect
@@ -30,12 +34,16 @@ export function DraftComposerPanel({ issueId, stakeholderId, onClose }: DraftCom
   })
 
   useEffect(() => {
-    if (issueId && stakeholderId) {
-      generate.mutate({ issue_id: issueId, stakeholder_id: stakeholderId, tone_variant: tone })
+    if (scoreContributionId && stakeholderId) {
+      generate.mutate({
+        score_contribution_id: scoreContributionId,
+        stakeholder_id: stakeholderId,
+        tone_variant: tone,
+      })
     }
     // Only re-generate when the target or tone changes — not on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issueId, stakeholderId, tone])
+  }, [scoreContributionId, stakeholderId, tone])
 
   const copyMutation = useMutation({
     mutationFn: async () => {
@@ -61,7 +69,7 @@ export function DraftComposerPanel({ issueId, stakeholderId, onClose }: DraftCom
   const copied = generate.data !== undefined && copiedDraftId === generate.data.id
   const loggedAsSent = generate.data !== undefined && loggedDraftId === generate.data.id
 
-  if (issueId === null || stakeholderId === null) {
+  if (scoreContributionId === null || stakeholderId === null) {
     return null
   }
 

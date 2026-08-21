@@ -18,7 +18,7 @@ function renderPanel() {
   const onClose = vi.fn()
   render(
     <QueryClientProvider client={queryClient}>
-      <DraftComposerPanel issueId="iss-A" stakeholderId="stk-ana" onClose={onClose} />
+      <DraftComposerPanel scoreContributionId="sc-1" stakeholderId="stk-ana" onClose={onClose} />
     </QueryClientProvider>,
   )
   return { onClose }

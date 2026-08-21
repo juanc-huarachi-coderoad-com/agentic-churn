@@ -51,6 +51,16 @@ doesn't exist yet — see `spec.md`'s Assumptions) and `state = NULL` (set by
 
 ### Issue groupings (`finding_issue_map` — `(finding_id, issue_id)` pairs only)
 
+> **2026-08-21 note.** Doubly confirmed since this was written: `IssueGrouper`
+> (`app/scoring/domain/services.py`) only *ranks* findings that already have
+> a `finding_issue_map` row — it never creates membership. No use case,
+> background job, or reader anywhere in this codebase writes a new
+> `issues`/`finding_issue_map` row; the seed data below (and `backend/
+> scripts/seed_score_fixture.py`, which loads it) remains the only source
+> either table has ever had. `specs/009-draft-composer/contracts/drafts.md`'s
+> Amendment stopped the Draft Composer from depending on this; a real
+> finding-to-issue clustering effort is still an open, unbuilt feature.
+
 | issue | label | cluster_method | findings |
 |---|---|---|---|
 | `iss-A` | Issue A — tracking_api reliability | `shared_entity` | `fnd-1`, `fnd-2`, `fnd-3` |

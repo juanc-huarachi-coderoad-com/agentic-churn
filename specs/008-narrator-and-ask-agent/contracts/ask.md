@@ -45,9 +45,21 @@ route; two additions to the documented schema, both from `/speckit-clarify`
 {
   "intent": "write_to_stakeholder",
   "component": "draft_handoff",
-  "component_props": { "issue_id": "iss-A", "stakeholder_id": "stk-ana" }
+  "component_props": { "score_contribution_id": "sc-1", "stakeholder_id": "stk-ana" }
 }
 ```
+
+> **2026-08-21 Amendment.** `component_props` originally carried `issue_id`
+> here, not `score_contribution_id`. Live testing against the `demo-wara`
+> account (both its Stage 1 and Stage 2 fixtures) showed `issue_id` was
+> `NULL` for every real finding, in every real account — `issues`/
+> `finding_issue_map` are fixture-only data with no live writer
+> (`specs/004-score-engine`), so this handoff never actually worked outside
+> `test_draft_routes_real_db.py`'s one seeded fixture. `handoff()`
+> (`ask_agent_graph.py`) now anchors to the account's highest-impact,
+> risk-increasing `score_contribution_id` instead — see
+> `specs/009-draft-composer/contracts/drafts.md`'s own Amendment for the
+> consumer-side half of this fix.
 
 Not answered inline — feature 009's draft composer is what actually consumes
 `component_props`; this feature only produces the handoff response, matching

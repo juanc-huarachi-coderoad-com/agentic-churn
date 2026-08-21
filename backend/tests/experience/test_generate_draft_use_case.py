@@ -1,9 +1,14 @@
 """`GenerateDraftUseCase` — `LLMPort` faked (fixed structured responses, no
 live Anthropic call). Covers spec.md's User Story 1 acceptance scenarios
-1-3, 5 (Edge Cases: nonexistent issue/stakeholder) and User Story 2
+1-3, 5 (Edge Cases: nonexistent finding/stakeholder) and User Story 2
 acceptance scenarios 1-3 (Edge Cases: each of the five checks blocking
 persistence), matching `test_narrate_score_run_use_case.py`'s own
 fake-in-tests precedent.
+
+Anchored to `score_contribution_id` (2026-08-21 amendment,
+`specs/009-draft-composer/data-model.md`) rather than `issue_id` — the
+original `issue_id` anchor 404'd for every real account since
+`issues`/`finding_issue_map` are fixture-only data with no live writer.
 """
 
 from datetime import UTC, datetime
@@ -15,33 +20,32 @@ import pytest
 from app.experience.application.ports import (
     ClientProfileRecord,
     ClientProfileRepositoryPort,
+    ContributionRecord,
     DraftMessageRepositoryPort,
     FindingReadPort,
-    IssueReadPort,
+    FindingRecord,
     LedgerQueryPort,
     NarratorReadPort,
     PlaybookReadPort,
+    ScoreReadPort,
     StakeholderReadPort,
     StakeholderRecord,
 )
 from app.experience.application.prompts.draft_composer_v1 import DraftModelOutput
 from app.experience.application.use_cases import (
     DraftCheckFailedError,
+    EvidenceNotFoundError,
     GenerateDraftUseCase,
-    IssueNotFoundError,
     StakeholderNotFoundError,
 )
-from app.experience.domain.entities import (
-    CitedEventRecord,
-    IssueEvidenceRecord,
-    NarratorSummaryRecord,
-)
+from app.experience.domain.entities import CitedEventRecord, NarratorSummaryRecord
 from app.readers.application.ports import LLMPort
 from app.readers.domain.entities import MessageEventInfo
 
 T = TypeVar("T")
 
-_ISSUE_ID = uuid4()
+_SCORE_CONTRIBUTION_ID = uuid4()
+_FINDING_ID = uuid4()
 _STAKEHOLDER_ID = uuid4()
 _REQUESTED_BY = uuid4()
 _EVENT_ID = uuid4()
@@ -56,12 +60,21 @@ class _FakeLLM(LLMPort):
         return self._response  # type: ignore[return-value]
 
 
-class _FakeIssueReader(IssueReadPort):
-    def __init__(self, record: IssueEvidenceRecord | None) -> None:
-        self._record = record
+class _FakeScoreReader(ScoreReadPort):
+    def __init__(self, contribution: ContributionRecord | None) -> None:
+        self._contribution = contribution
 
-    async def get_issue_evidence(self, issue_id: UUID) -> IssueEvidenceRecord | None:
-        return self._record
+    async def latest_run(self):
+        return None
+
+    async def trend(self, *, days: int) -> list[float]:
+        return []
+
+    async def list_contributions(self, score_run_id: UUID) -> list[ContributionRecord]:
+        return [self._contribution] if self._contribution else []
+
+    async def get_contribution(self, score_contribution_id: UUID) -> ContributionRecord | None:
+        return self._contribution
 
 
 class _FakeStakeholderReader(StakeholderReadPort):
@@ -116,11 +129,12 @@ class _FakePlaybook(PlaybookReadPort):
 
 
 class _FakeFindingReader(FindingReadPort):
-    def __init__(self, events: list[CitedEventRecord]) -> None:
+    def __init__(self, finding: FindingRecord | None, events: list[CitedEventRecord]) -> None:
+        self._finding = finding
         self._events = events
 
-    async def get_finding(self, finding_id: UUID):
-        return None
+    async def get_finding(self, finding_id: UUID) -> FindingRecord | None:
+        return self._finding
 
     async def resolve_events(self, event_ids: list[UUID]) -> list[CitedEventRecord]:
         return self._events
@@ -139,9 +153,13 @@ class _FakeDraftRepository(DraftMessageRepositoryPort):
     def __init__(self) -> None:
         self.persisted: list[tuple] = []
 
-    async def persist(self, draft, *, issue_id, stakeholder_id, requested_by_user_id) -> UUID:
+    async def persist(
+        self, draft, *, score_contribution_id, stakeholder_id, requested_by_user_id
+    ) -> UUID:
         draft_id = uuid4()
-        self.persisted.append((draft_id, draft, issue_id, stakeholder_id, requested_by_user_id))
+        self.persisted.append(
+            (draft_id, draft, score_contribution_id, stakeholder_id, requested_by_user_id)
+        )
         return draft_id
 
     async def get(self, draft_id: UUID):
@@ -154,12 +172,30 @@ class _FakeDraftRepository(DraftMessageRepositoryPort):
         return True
 
 
-def _issue_evidence() -> IssueEvidenceRecord:
-    return IssueEvidenceRecord(
-        issue_id=_ISSUE_ID,
-        label="Broken response promise",
-        finding_types=("broken_response_promise",),
+def _contribution() -> ContributionRecord:
+    return ContributionRecord(
+        id=_SCORE_CONTRIBUTION_ID,
+        finding_id=_FINDING_ID,
+        finding_type="broken_response_promise",
+        points_contributed=24.0,
+        is_positive=False,
+        base=20.0,
+        influence=1.0,
+        criticality=1.0,
+        confidence=1.0,
+        magnitude=1.0,
+        recency=1.0,
+        damping=1.0,
+        rank_within_issue_factor=1.0,
+    )
+
+
+def _finding() -> FindingRecord:
+    return FindingRecord(
+        id=_FINDING_ID,
+        finding_type="broken_response_promise",
         cited_event_ids=(_EVENT_ID,),
+        reader_type="commitment",
     )
 
 
@@ -205,12 +241,14 @@ def _narrator_summary() -> NarratorSummaryRecord:
 
 def _use_case(
     *,
-    issue: IssueEvidenceRecord | None = ...,
+    contribution: ContributionRecord | None = ...,
+    finding: FindingRecord | None = ...,
     stakeholder: StakeholderRecord | None = ...,
     llm_response: DraftModelOutput | None = None,
     drafts: _FakeDraftRepository | None = None,
 ) -> tuple[GenerateDraftUseCase, _FakeDraftRepository]:
-    issue_record = _issue_evidence() if issue is ... else issue
+    contribution_record = _contribution() if contribution is ... else contribution
+    finding_record = _finding() if finding is ... else finding
     stakeholder_record = _stakeholder() if stakeholder is ... else stakeholder
     repo = drafts if drafts is not None else _FakeDraftRepository()
     response = llm_response or DraftModelOutput(
@@ -221,13 +259,13 @@ def _use_case(
         tone_variant="direct",
     )
     use_case = GenerateDraftUseCase(
-        issues=_FakeIssueReader(issue_record),
+        score=_FakeScoreReader(contribution_record),
         stakeholders=_FakeStakeholderReader(stakeholder_record),
         profile=_FakeProfile(_profile()),
         ledger=_FakeLedger([]),
         narrator=_FakeNarrator(_narrator_summary()),
         playbook=_FakePlaybook({_PLAYBOOK_ID: "broken_response_promise"}),
-        findings=_FakeFindingReader(_events()),
+        findings=_FakeFindingReader(finding_record, _events()),
         drafts=repo,
         llm=_FakeLLM(response),
     )
@@ -239,7 +277,7 @@ async def test_fact_check_passing_draft_is_persisted():
     use_case, repo = _use_case()
 
     result = await use_case.execute(
-        issue_id=_ISSUE_ID,
+        score_contribution_id=_SCORE_CONTRIBUTION_ID,
         stakeholder_id=_STAKEHOLDER_ID,
         tone_variant="direct",
         requested_by_user_id=_REQUESTED_BY,
@@ -250,13 +288,27 @@ async def test_fact_check_passing_draft_is_persisted():
     assert len(repo.persisted) == 1
 
 
-async def test_nonexistent_issue_raises():
-    """Edge Cases — `issue_id` doesn't resolve, `404` path."""
-    use_case, _ = _use_case(issue=None)
+async def test_nonexistent_contribution_raises():
+    """Edge Cases — `score_contribution_id` doesn't resolve, `404` path."""
+    use_case, _ = _use_case(contribution=None)
 
-    with pytest.raises(IssueNotFoundError):
+    with pytest.raises(EvidenceNotFoundError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
+            stakeholder_id=_STAKEHOLDER_ID,
+            tone_variant="direct",
+            requested_by_user_id=_REQUESTED_BY,
+        )
+
+
+async def test_contribution_with_no_finding_raises():
+    """A `score_contribution_id` that resolves but whose finding is missing
+    (e.g. quarantined) is the same 404 path as a nonexistent contribution."""
+    use_case, _ = _use_case(finding=None)
+
+    with pytest.raises(EvidenceNotFoundError):
+        await use_case.execute(
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -270,7 +322,7 @@ async def test_nonexistent_stakeholder_raises():
 
     with pytest.raises(StakeholderNotFoundError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -286,7 +338,7 @@ async def test_unverified_fact_blocks_persistence():
 
     with pytest.raises(DraftCheckFailedError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -295,7 +347,7 @@ async def test_unverified_fact_blocks_persistence():
 
 
 async def test_invented_date_blocks_persistence():
-    """User Story 2, Acceptance Scenario 2 — a date not among the issue's
+    """User Story 2, Acceptance Scenario 2 — a date not among the finding's
     agreed actions (only "Thursday" is verified)."""
     bad_response = DraftModelOutput(
         draft_text="Ana — I'll call you before Friday.", tone_variant="direct"
@@ -304,7 +356,7 @@ async def test_invented_date_blocks_persistence():
 
     with pytest.raises(DraftCheckFailedError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -321,7 +373,7 @@ async def test_internal_leak_blocks_persistence():
 
     with pytest.raises(DraftCheckFailedError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -338,7 +390,7 @@ async def test_discount_offer_blocks_persistence():
 
     with pytest.raises(DraftCheckFailedError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -356,7 +408,7 @@ async def test_invented_cause_blocks_persistence():
 
     with pytest.raises(DraftCheckFailedError):
         await use_case.execute(
-            issue_id=_ISSUE_ID,
+            score_contribution_id=_SCORE_CONTRIBUTION_ID,
             stakeholder_id=_STAKEHOLDER_ID,
             tone_variant="direct",
             requested_by_user_id=_REQUESTED_BY,
@@ -364,9 +416,9 @@ async def test_invented_cause_blocks_persistence():
     assert repo.persisted == []
 
 
-async def test_agreed_actions_are_filtered_to_the_issue_finding_type():
+async def test_agreed_actions_are_filtered_to_the_finding_type():
     """`research.md` Decision 4 — an action whose playbook template applies
-    to a different finding type must not be treated as this issue's own
+    to a different finding type must not be treated as this finding's own
     verified date source."""
     from app.experience.domain.services import build_verified_date_set
 

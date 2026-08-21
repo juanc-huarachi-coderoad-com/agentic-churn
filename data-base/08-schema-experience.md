@@ -87,7 +87,8 @@ The second row shows the decline path: the agent recognized this as a forecastin
 | Field | Type | Description |
 |---|---|---|
 | `id` | UUID PK | |
-| `issue_id` | UUID FK → `issues.id` | Top issue this draft addresses |
+| `issue_id` | UUID FK → `issues.id`, NULL | Legacy — every row from before the 2026-08-21 amendment (`specs/009-draft-composer/contracts/drafts.md`). `issues`/`finding_issue_map` never got a real writer (`specs/004-score-engine`), so this was always `NULL` for a real draft; kept, unused, for any pre-amendment row |
+| `score_contribution_id` | UUID FK → `score_contributions.id` | The finding this draft addresses (2026-08-21 amendment) — every real row sets this, not `issue_id` |
 | `stakeholder_id` | UUID FK → `stakeholders.id` | Intended recipient (for context only — never used to send) |
 | `requested_by_user_id` | UUID FK → `users.id` | Who clicked "Write to X about this" (`data-base/12-users-and-auth.md`) |
 | `draft_text` | TEXT | |
@@ -100,9 +101,9 @@ The second row shows the decline path: the agent recognized this as a forecastin
 
 **Example row** — the draft to Ana from the worked example:
 
-| id | issue_id | stakeholder_id | requested_by_user_id | draft_text (excerpt) | checks_passed | logged_manually_at | copied_at |
+| id | score_contribution_id | stakeholder_id | requested_by_user_id | draft_text (excerpt) | checks_passed | logged_manually_at | copied_at |
 |---|---|---|---|---|---|---|---|
-| `draft-1` | `iss-A` | `stk-ana` | Marta's user row | "Ana — we took 19 hours to respond to ticket #456; we promised 4. Engineering is on it today…" | **true** | *(null)* | 2026-08-10 09:02 |
+| `draft-1` | `sc-1` | `stk-ana` | Marta's user row | "Ana — we took 19 hours to respond to ticket #456; we promised 4. Engineering is on it today…" | **true** | *(null)* | 2026-08-10 09:02 |
 
 The CS lead copied this draft (`copied_at` is stamped) and pasted it into their own email client to actually send it — an action that happened entirely outside this system's boundary, which is exactly why no row, anywhere in this database, ever records "sent," and no external system — CRM included — is ever contacted by this table.
 

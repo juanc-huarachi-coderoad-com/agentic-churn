@@ -417,6 +417,13 @@ class AskAgentPort(ABC):
 
 
 class IssueReadPort(ABC):
+    """Not consumed by any live code path as of the 2026-08-21 amendment
+    (`specs/009-draft-composer/data-model.md`) — `GenerateDraftUseCase`
+    anchors to a `score_contribution_id` instead, since `issues`/
+    `finding_issue_map` are fixture-only data with no real writer
+    (`specs/004-score-engine/data-model.md`). Kept, unchanged, as the read
+    surface a future real finding-to-issue clustering effort would need."""
+
     @abstractmethod
     async def get_issue_evidence(self, issue_id: UUID) -> IssueEvidenceRecord | None:
         """The requested issue's own aggregated evidence — any issue with
@@ -438,7 +445,7 @@ class PlaybookReadPort(ABC):
 @dataclass(frozen=True)
 class DraftMessageRecord:
     id: UUID
-    issue_id: UUID
+    score_contribution_id: UUID
     stakeholder_id: UUID
     draft_text: str
     tone_variant: str
@@ -454,7 +461,7 @@ class DraftMessageRepositoryPort(ABC):
         self,
         draft: GeneratedDraft,
         *,
-        issue_id: UUID,
+        score_contribution_id: UUID,
         stakeholder_id: UUID,
         requested_by_user_id: UUID,
     ) -> UUID:

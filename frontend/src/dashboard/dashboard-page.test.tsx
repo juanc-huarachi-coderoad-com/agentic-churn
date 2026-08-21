@@ -197,7 +197,7 @@ describe('DashboardPage', () => {
               {
                 type: 'component',
                 component: 'draft_handoff',
-                component_props: { issue_id: 'iss-A', stakeholder_id: 'stk-ana' },
+                component_props: { score_contribution_id: 'sc-1', stakeholder_id: 'stk-ana' },
               },
             ],
           }),

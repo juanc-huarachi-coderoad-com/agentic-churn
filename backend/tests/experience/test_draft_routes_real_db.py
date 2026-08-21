@@ -6,6 +6,14 @@ Anthropic call needed to prove the route/use-case/checks wiring is real);
 covers spec.md's User Story 1/2/3 acceptance scenarios and the scripted
 red-team case per check (`quickstart.md` §4), plus `/speckit-analyze`
 finding U3's stakeholder-404 case and the `/send` 404 probe (REQ-M10-P1).
+
+Anchored to `score_contributions.id` (2026-08-21 amendment,
+`specs/009-draft-composer/data-model.md`) rather than the old
+"Issue A — tracking_api reliability" fixture (`issues`/`finding_issue_map`),
+which required `seed_score_fixture.py` to have been run and is fixture-only
+data with no live writer in this codebase. `test_evidence_route.py`'s own
+`broken_response_promise` contribution query is the always-available
+substitute — any already-scored account has one.
 """
 
 import uuid
@@ -52,18 +60,19 @@ async def auth_token(client):
 
 
 @pytest.fixture
-async def issue_and_stakeholder():
-    """The real "Issue A — tracking_api reliability" / Ana Reyes fixture
-    (`examples/01-end-to-end-walkthrough.md`'s own worked example), skipped
+async def contribution_and_stakeholder():
+    """A real `broken_response_promise` score contribution plus Ana Reyes —
+    `test_evidence_route.py`'s own worked-example query, always available on
+    an already-scored database (unlike the old issue fixture), skipped
     honestly if this database hasn't been seeded/scored yet."""
     async with engine.begin() as conn:
-        issue_row = (
+        contribution_row = (
             await conn.execute(
                 text(
-                    "SELECT i.id FROM issues i "
-                    "JOIN finding_issue_map fim ON fim.issue_id = i.id "
-                    "JOIN findings f ON f.id = fim.finding_id AND f.status = 'validated' "
-                    "WHERE i.label ILIKE '%Issue A%' LIMIT 1"
+                    "SELECT sc.id FROM score_contributions sc "
+                    "JOIN findings f ON f.id = sc.finding_id "
+                    "WHERE f.finding_type = 'broken_response_promise' "
+                    "ORDER BY sc.points_contributed DESC LIMIT 1"
                 )
             )
         ).one_or_none()
@@ -72,19 +81,19 @@ async def issue_and_stakeholder():
                 text("SELECT id FROM stakeholders WHERE name ILIKE 'Ana%' LIMIT 1")
             )
         ).one_or_none()
-    if issue_row is None or stakeholder_row is None:
-        pytest.skip("Issue A / Ana fixture not seeded yet")
-    return issue_row.id, stakeholder_row.id
+    if contribution_row is None or stakeholder_row is None:
+        pytest.skip("broken_response_promise contribution / Ana fixture not seeded yet")
+    return contribution_row.id, stakeholder_row.id
 
 
-async def _cleanup_drafts(issue_id: uuid.UUID, stakeholder_id: uuid.UUID) -> None:
+async def _cleanup_drafts(score_contribution_id: uuid.UUID, stakeholder_id: uuid.UUID) -> None:
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "DELETE FROM draft_messages WHERE issue_id = :issue_id "
+                "DELETE FROM draft_messages WHERE score_contribution_id = :score_contribution_id "
                 "AND stakeholder_id = :stakeholder_id"
             ),
-            {"issue_id": issue_id, "stakeholder_id": stakeholder_id},
+            {"score_contribution_id": score_contribution_id, "stakeholder_id": stakeholder_id},
         )
 
 
@@ -97,9 +106,9 @@ def _fake_llm(
     monkeypatch.setattr(AnthropicLLMAdapter, "generate_structured", _fake_generate)
 
 
-def _draft_request(issue_id, stakeholder_id, tone_variant: str = "direct") -> dict:
+def _draft_request(score_contribution_id, stakeholder_id, tone_variant: str = "direct") -> dict:
     return {
-        "issue_id": str(issue_id),
+        "score_contribution_id": str(score_contribution_id),
         "stakeholder_id": str(stakeholder_id),
         "tone_variant": tone_variant,
     }
@@ -113,18 +122,27 @@ async def test_draft_requires_authentication(client):
 
 
 async def test_draft_generates_and_persists_against_the_real_fixture(
-    client, auth_token, issue_and_stakeholder, monkeypatch
+    client, auth_token, contribution_and_stakeholder, monkeypatch
 ):
-    issue_id, stakeholder_id = issue_and_stakeholder
+    score_contribution_id, stakeholder_id = contribution_and_stakeholder
     _fake_llm(
         monkeypatch,
-        "Ana — we're looking into the slow API response you reported. "
-        "Engineering is on it today.",
+        # Deliberately invents no number or ticket reference — on a
+        # long-running dev database the cited event's body can outlive its
+        # own retention window (`quoted_messages[0].text` becomes
+        # "[original message no longer available — retention period
+        # expired]"), leaving nothing but that placeholder for
+        # `verify_facts` to check specific figures against. A generic,
+        # fact-free message (matching `test_copy_and_log_as_sent_stamp_
+        # independently`'s own safe precedent) exercises the same
+        # route/use-case/persistence wiring without depending on evidence
+        # content this test doesn't control.
+        "Ana, thanks for flagging this — we're looking into it and will follow up soon.",
     )
 
     response = await client.post(
         "/api/drafts",
-        json=_draft_request(issue_id, stakeholder_id),
+        json=_draft_request(score_contribution_id, stakeholder_id),
         headers={"Authorization": f"Bearer {auth_token}"},
     )
 
@@ -147,11 +165,13 @@ async def test_draft_generates_and_persists_against_the_real_fixture(
     # (REQ-M10-P1), not just an API-response omission.
     assert not any(c.column_name.startswith("sent_") for c in columns)
 
-    await _cleanup_drafts(issue_id, stakeholder_id)
+    await _cleanup_drafts(score_contribution_id, stakeholder_id)
 
 
-async def test_draft_404_for_nonexistent_issue(client, auth_token, issue_and_stakeholder):
-    _, stakeholder_id = issue_and_stakeholder
+async def test_draft_404_for_nonexistent_contribution(
+    client, auth_token, contribution_and_stakeholder
+):
+    _, stakeholder_id = contribution_and_stakeholder
     response = await client.post(
         "/api/drafts",
         json=_draft_request(uuid.uuid4(), stakeholder_id),
@@ -160,12 +180,14 @@ async def test_draft_404_for_nonexistent_issue(client, auth_token, issue_and_sta
     assert response.status_code == 404
 
 
-async def test_draft_404_for_nonexistent_stakeholder(client, auth_token, issue_and_stakeholder):
+async def test_draft_404_for_nonexistent_stakeholder(
+    client, auth_token, contribution_and_stakeholder
+):
     """`/speckit-analyze` finding U3."""
-    issue_id, _ = issue_and_stakeholder
+    score_contribution_id, _ = contribution_and_stakeholder
     response = await client.post(
         "/api/drafts",
-        json=_draft_request(issue_id, uuid.uuid4()),
+        json=_draft_request(score_contribution_id, uuid.uuid4()),
         headers={"Authorization": f"Bearer {auth_token}"},
     )
     assert response.status_code == 404
@@ -184,23 +206,25 @@ async def test_draft_404_for_nonexistent_stakeholder(client, auth_token, issue_a
     ],
 )
 async def test_draft_check_failure_returns_422_and_persists_nothing(
-    client, auth_token, issue_and_stakeholder, monkeypatch, draft_text
+    client, auth_token, contribution_and_stakeholder, monkeypatch, draft_text
 ):
     """`quickstart.md` §4 — a scripted red-team case per check."""
-    issue_id, stakeholder_id = issue_and_stakeholder
+    score_contribution_id, stakeholder_id = contribution_and_stakeholder
     _fake_llm(monkeypatch, draft_text)
 
     async with engine.begin() as conn:
         before = (
             await conn.execute(
-                text("SELECT count(*) AS n FROM draft_messages WHERE issue_id = :id"),
-                {"id": issue_id},
+                text(
+                    "SELECT count(*) AS n FROM draft_messages WHERE score_contribution_id = :id"
+                ),
+                {"id": score_contribution_id},
             )
         ).one()
 
     response = await client.post(
         "/api/drafts",
-        json=_draft_request(issue_id, stakeholder_id),
+        json=_draft_request(score_contribution_id, stakeholder_id),
         headers={"Authorization": f"Bearer {auth_token}"},
     )
 
@@ -210,24 +234,26 @@ async def test_draft_check_failure_returns_422_and_persists_nothing(
     async with engine.begin() as conn:
         after = (
             await conn.execute(
-                text("SELECT count(*) AS n FROM draft_messages WHERE issue_id = :id"),
-                {"id": issue_id},
+                text(
+                    "SELECT count(*) AS n FROM draft_messages WHERE score_contribution_id = :id"
+                ),
+                {"id": score_contribution_id},
             )
         ).one()
     assert after.n == before.n
 
 
 async def test_copy_and_log_as_sent_stamp_independently(
-    client, auth_token, issue_and_stakeholder, monkeypatch
+    client, auth_token, contribution_and_stakeholder, monkeypatch
 ):
-    issue_id, stakeholder_id = issue_and_stakeholder
+    score_contribution_id, stakeholder_id = contribution_and_stakeholder
     _fake_llm(
         monkeypatch, "Ana, thanks for flagging this — we are on it and will follow up soon."
     )
 
     create = await client.post(
         "/api/drafts",
-        json=_draft_request(issue_id, stakeholder_id),
+        json=_draft_request(score_contribution_id, stakeholder_id),
         headers={"Authorization": f"Bearer {auth_token}"},
     )
     assert create.status_code == 200
@@ -255,7 +281,7 @@ async def test_copy_and_log_as_sent_stamp_independently(
     assert row.copied_at is not None
     assert row.logged_manually_at is not None
 
-    await _cleanup_drafts(issue_id, stakeholder_id)
+    await _cleanup_drafts(score_contribution_id, stakeholder_id)
 
 
 async def test_copy_404_for_nonexistent_draft(client, auth_token):
@@ -266,10 +292,10 @@ async def test_copy_404_for_nonexistent_draft(client, auth_token):
 
 
 async def test_different_tone_variant_is_a_new_row_not_an_update(
-    client, auth_token, issue_and_stakeholder, monkeypatch
+    client, auth_token, contribution_and_stakeholder, monkeypatch
 ):
     """`research.md` Decision 9."""
-    issue_id, stakeholder_id = issue_and_stakeholder
+    score_contribution_id, stakeholder_id = contribution_and_stakeholder
     _fake_llm(
         monkeypatch,
         "Ana, thanks for flagging this — we are on it and will follow up soon.",
@@ -278,7 +304,7 @@ async def test_different_tone_variant_is_a_new_row_not_an_update(
 
     first = await client.post(
         "/api/drafts",
-        json=_draft_request(issue_id, stakeholder_id, "direct"),
+        json=_draft_request(score_contribution_id, stakeholder_id, "direct"),
         headers={"Authorization": f"Bearer {auth_token}"},
     )
     assert first.status_code == 200
@@ -286,14 +312,14 @@ async def test_different_tone_variant_is_a_new_row_not_an_update(
     _fake_llm(monkeypatch, "Ana, quick update — engineering's on it.", tone_variant="brief")
     second = await client.post(
         "/api/drafts",
-        json=_draft_request(issue_id, stakeholder_id, "brief"),
+        json=_draft_request(score_contribution_id, stakeholder_id, "brief"),
         headers={"Authorization": f"Bearer {auth_token}"},
     )
     assert second.status_code == 200
     assert second.json()["id"] != first.json()["id"]
     assert second.json()["tone_variant"] == "brief"
 
-    await _cleanup_drafts(issue_id, stakeholder_id)
+    await _cleanup_drafts(score_contribution_id, stakeholder_id)
 
 
 async def test_no_send_route_exists(client, auth_token):

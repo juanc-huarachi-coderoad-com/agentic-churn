@@ -1,5 +1,13 @@
 # Phase 1 Data Model: Draft Composer
 
+> **2026-08-21 Amendment.** `draft_messages` did get a migration after all —
+> `migrations/versions/0007_draft_finding_anchor.py` adds
+> `score_contribution_id` and makes `issue_id` nullable. See
+> `contracts/drafts.md`'s own Amendment section for the full "what/why."
+> Everything below this notice describes the table's original, now-
+> superseded shape — kept as the historical record of what this feature
+> actually shipped with, not the current schema.
+
 No new tables, no migration. `draft_messages` and the `tone_variant` enum
 (`data-base/10-ddl-appendix.md`) already exist since feature 001's
 `0001_initial_schema.py` — already granted to `app_role`, already listed in

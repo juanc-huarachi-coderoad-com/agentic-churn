@@ -34,7 +34,7 @@ Pure reads — no route in this section computes anything; every response is a d
 
 | Route | Method | Body → Response |
 |---|---|---|
-| `/api/drafts` | POST | `{issue_id, stakeholder_id, tone_variant}` → the generated draft, or `422` if REQ-M10-07's pre-display checks fail |
+| `/api/drafts` | POST | `{score_contribution_id, stakeholder_id, tone_variant}` → the generated draft, or `422` if REQ-M10-07's pre-display checks fail. Anchored to `score_contribution_id`, not `issue_id`, since 2026-08-21 (`specs/009-draft-composer/contracts/drafts.md`'s Amendment) |
 | `/api/drafts/{id}/copy` | POST | Stamps `copied_at`. No response body needed beyond `204`. |
 | `/api/drafts/{id}/log-as-sent` | POST | Stamps `logged_manually_at` (REQ-M10-08). **There is no `/send` route, in any form — not rate-limited, not feature-flagged, not admin-only. It does not exist in this file because it does not exist in the system (REQ-M10-P1).** |
 
@@ -402,7 +402,7 @@ components:
       properties:
         intent: { type: string }
         component: { type: string, enum: [delta_breakdown, baseline_comparison, stakeholder_cards, ranked_issues, action_checklist, commitments_status, filtered_timeline, draft_handoff] }
-        component_props: { type: object, description: "For component=draft_handoff: {issue_id, stakeholder_id} — feature 009's draft composer consumes this later (specs/008-narrator-and-ask-agent, Clarifications)" }
+        component_props: { type: object, description: "For component=draft_handoff: {score_contribution_id, stakeholder_id} — feature 009's draft composer consumes this later (specs/008-narrator-and-ask-agent, Clarifications). Was {issue_id, stakeholder_id} before the 2026-08-21 amendment (specs/008-narrator-and-ask-agent/contracts/ask.md)" }
 
     # specs/014-ask-agent-response-formats — the current answered-response shape. An
     # ordered `parts` list: for response_mode=component_only (unchanged default), `parts`
@@ -434,9 +434,9 @@ components:
 
     DraftRequest:
       type: object
-      required: [issue_id, stakeholder_id, tone_variant]
+      required: [score_contribution_id, stakeholder_id, tone_variant]
       properties:
-        issue_id: { type: string, format: uuid }
+        score_contribution_id: { type: string, format: uuid }
         stakeholder_id: { type: string, format: uuid }
         tone_variant: { type: string, enum: [direct, formal, brief] }
 
