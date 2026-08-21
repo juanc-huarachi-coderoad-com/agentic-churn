@@ -1,0 +1,71 @@
+[
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-209-resolved-late",
+    "occurred_at": "2026-08-21T09:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 209,
+    "title": "Inventory sync job failed overnight — stock counts didn't match the warehouse",
+    "product_area": "inventory_sync",
+    "state": "resolved",
+    "_comment": "Closes the loop on Stage 2's reopened ticket. This does not delete the already-emitted broken_response_promise finding (findings are immutable) — it moves it from open_overdue to resolved, which removes the overdue ageing multiplier and starts its 14-day half-life fade (REQ-M6-CAL-02)."
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-210-created",
+    "occurred_at": "2026-08-21T10:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 210,
+    "title": "Customer asked to double-check a stock count before ordering",
+    "product_area": "inventory_sync",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-210-resolved",
+    "occurred_at": "2026-08-21T11:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 210,
+    "title": "Customer asked to double-check a stock count before ordering",
+    "product_area": "inventory_sync",
+    "state": "resolved",
+    "_comment": "Resolved in 1h, well under half the 4h P1 target — earns commitment_met (positive, capped at 25% of negative points)."
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-211-created",
+    "occurred_at": "2026-08-21T11:30:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 211,
+    "title": "Shopper asked why a promo banner didn't show at checkout",
+    "product_area": "checkout_api",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-211-resolved",
+    "occurred_at": "2026-08-21T12:30:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 211,
+    "title": "Shopper asked why a promo banner didn't show at checkout",
+    "product_area": "checkout_api",
+    "state": "resolved",
+    "_comment": "Also resolved in 1h — a second commitment_met, this time on the critical checkout_api area."
+  },
+  {
+    "source_type": "csat",
+    "source_native_id": "wara-csat-005",
+    "occurred_at": "2026-08-21T13:00:00-05:00",
+    "respondent": "juan.huarachi.sanchez@gmail.com",
+    "score": 9,
+    "comment": "Stock counts have been accurate all week and support has been quick. Appreciate the turnaround."
+  },
+  {
+    "source_type": "gmail",
+    "source_native_id": "wara-gmail-011",
+    "occurred_at": "2026-08-21T14:00:00-05:00",
+    "from": "juan.huarachi.sanchez@gmail.com",
+    "text": "Hi team, thanks for the good call today. The inventory numbers have looked right all week and the two small tickets got fixed fast. Let's keep the Friday sync going into next month.",
+    "_comment": "Warm, long, unhurried email — does not trigger tone_deterioration (not abrupt) and resets last_contact_at, so no new contact_absence fires. It does not undo the earlier absence finding (findings are immutable) — that is handled via the dashboard's False alarm action in RECOVERY.md's Step 3."
+  }
+]

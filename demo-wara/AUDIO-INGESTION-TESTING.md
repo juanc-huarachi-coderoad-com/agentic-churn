@@ -1,10 +1,16 @@
 # Manual Test Plan — Meeting Audio Ingestion (local storage + Whisper + pyannote.ai)
 
-Companion to `INSTALL.md` (the Wara demo). This walks through the **real**
-audio→transcript path (`specs/019-meeting-audio-ingestion`) — local storage
-discovery, OpenAI Whisper transcription, pyannote.ai hosted-API diarization
-— against a local `demo/meeting-audio/` folder, layered on top of the Wara
-demo's already-loaded profile (stakeholders `stk_juan` / `stk_fernando`).
+Companion to `RUNBOOK.md` (the Wara demo's 3-stage walkthrough — Install →
+Escalation → Recovery). This file is a deep-dive on the pipeline
+*mechanics* the Recovery stage uses (`RECOVERY.md` Step R2); it walks
+through the **real** audio→transcript path
+(`specs/019-meeting-audio-ingestion`) — local storage discovery, OpenAI
+Whisper transcription, pyannote.ai hosted-API diarization — against a
+local `demo/meeting-audio/` folder, layered on top of the Wara demo's
+already-loaded profile (stakeholders `stk_juan` / `stk_fernando`). If you
+just want to run Stage 3 as part of the demo, `RECOVERY.md`'s condensed
+steps are enough — come back here for the full negative-path/idempotency
+test coverage.
 
 It follows the same four user stories as the feature's own
 `specs/019-meeting-audio-ingestion/quickstart.md`, expanded with concrete

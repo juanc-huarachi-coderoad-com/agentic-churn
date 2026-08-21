@@ -2,8 +2,17 @@
 -- Wara demo — backdated score history (30-day depth)
 -- ============================================================
 -- Inserts 30 score_runs rows (Jul 18 - Aug 16, 2026) with matching
--- band_history rows, telling the visual story of a healthy
--- account gently trending up, then declining into watch and at_risk.
+-- band_history rows, telling the visual story of a healthy account
+-- gently trending up, then sliding into Watch as small, easy-to-read
+-- problems (inventory sync hiccups, a quieter CTO and dev lead) pile up.
+--
+-- Stage 1 target: the REAL score computed on Aug 17 by compute_score.py
+-- from the actual findings in `wara-concerning.json` lands at
+-- approximately 55-61 (Watch, upper end) — see INSTALL.md's worked
+-- arithmetic table for the exact per-finding math behind that number.
+-- This backfill's job is only to set up believable history and correct
+-- hysteresis state BEFORE that real computation, not to guess the final
+-- number itself.
 --
 -- The 31st point (Aug 17, today) comes from the real
 -- compute_score.py runs — NOT from this script.
@@ -12,9 +21,9 @@
 -- (`_TREND_DAYS = 14` in `backend/app/experience/application/use_cases.py`,
 -- intentionally unmodified) only ever renders the most recent 14 days.
 -- So only Aug 4-17 will appear on the sparkline; the Jul 18 - Aug 3
--- prelude exists in `score_runs` for anyone querying the table directly
--- (or for a future deeper trend view) but is not visible in today's UI.
--- This is expected, not a bug in the backfill.
+-- prelude exists in `score_runs` for anyone querying it directly (or for
+-- a future deeper trend view) but is not visible in today's UI. This is
+-- expected, not a bug in the backfill.
 --
 -- Run AFTER the Wara profile has been loaded (POST /api/profile/reload),
 -- AFTER the readers have run (so findings exist), and BEFORE the two
@@ -23,28 +32,26 @@
 -- This script first wipes any score_runs/band_history created by the
 -- profile-reload's automatic score recompute (which had no findings and
 -- produced score=0, band=healthy). That cleanup ensures the real
--- compute_score.py runs read the backdated at_risk band_history as the
+-- compute_score.py runs read the backdated Watch band_history as the
 -- latest prior state, so hysteresis settles correctly on the first run.
 --
--- Trend trajectory (gentle rise, then dramatic decline):
---   Jul 18-Aug 3: healthy (14-21, gently oscillating upward)
---   Aug 4-7:      healthy  (22-30, green/silver)
---   Aug 8-13:     watch    (38-62, amber)
---   Aug 14-16:    at_risk (68-74, red)
---   Aug 17:       real score from compute_score.py
+-- Trend trajectory (gentle rise, then a run of small, related problems):
+--   Jul 18-Aug 7:  healthy  (14-28, green/silver, gentle oscillating rise)
+--   Aug 8:         healthy->watch transition row (raw_band flips first,
+--                  displayed band lags one run — REQ-M6-19)
+--   Aug 9-16:      watch    (38-56, amber) — 8 consecutive runs, so the
+--                  real Aug 17 computation (also landing in Watch) settles
+--                  immediately instead of fighting hysteresis.
+--   Aug 17:        real score from compute_score.py (expected ~55-61)
 --
--- Hysteresis is respected: band transitions lag the raw_band by
--- one run (2-consecutive-run rule, REQ-M6-19), so consecutive_runs_in_band
--- is set correctly for the real compute_score.py to continue the at_risk streak.
--- `consecutive_runs_in_band` counts consecutive runs in the same *band*
--- (not raw_band) — the Jul 18-Aug 8 healthy streak is now 22 runs long
--- (previously 5, when the backfill started at Aug 4).
+-- `consecutive_runs_in_band` counts consecutive runs in the same
+-- *displayed* band (not raw_band).
 -- ============================================================
 -- Step 1 — Clean up any prior score_runs/band_history
 -- ============================================================
 -- POST /api/profile/reload triggers an automatic score recompute that
 -- creates a score_run (score=0, band=healthy) and a band_history row.
--- Delete those so the backfilled at_risk history is the latest prior
+-- Delete those so the backfilled Watch history is the latest prior
 -- state for the real compute_score.py runs.
 -- (Safe to run as the postgres superuser via docker compose exec db psql.)
 -- ============================================================
@@ -55,7 +62,7 @@ DELETE FROM band_history;
 DELETE FROM score_runs;
 
 -- ============================================================
--- Step 2 — Insert 13 backdated score_runs + band_history rows
+-- Step 2 — Insert 30 backdated score_runs + band_history rows
 -- ============================================================
 
 WITH profile AS (
@@ -84,18 +91,18 @@ data AS (
         ('2026-08-02T12:00:00-05:00'::timestamptz, 21.00, 'healthy', 'healthy', 16),
         ('2026-08-03T12:00:00-05:00'::timestamptz, 21.00, 'healthy', 'healthy', 17),
         ('2026-08-04T12:00:00-05:00'::timestamptz, 22.00, 'healthy', 'healthy', 18),
-        ('2026-08-05T12:00:00-05:00'::timestamptz, 25.00, 'healthy', 'healthy', 19),
-        ('2026-08-06T12:00:00-05:00'::timestamptz, 28.00, 'healthy', 'healthy', 20),
-        ('2026-08-07T12:00:00-05:00'::timestamptz, 30.00, 'healthy', 'healthy', 21),
-        ('2026-08-08T12:00:00-05:00'::timestamptz, 38.00, 'healthy', 'watch',      22),
-        ('2026-08-09T12:00:00-05:00'::timestamptz, 42.00, 'watch',   'watch',      1),
-        ('2026-08-10T12:00:00-05:00'::timestamptz, 45.00, 'watch',   'watch',      2),
-        ('2026-08-11T12:00:00-05:00'::timestamptz, 50.00, 'watch',   'watch',      3),
-        ('2026-08-12T12:00:00-05:00'::timestamptz, 55.00, 'watch',   'watch',      4),
-        ('2026-08-13T12:00:00-05:00'::timestamptz, 62.00, 'watch',   'watch',      5),
-        ('2026-08-14T12:00:00-05:00'::timestamptz, 68.00, 'watch',   'at_risk',    6),
-        ('2026-08-15T12:00:00-05:00'::timestamptz, 72.00, 'at_risk', 'at_risk',    1),
-        ('2026-08-16T12:00:00-05:00'::timestamptz, 74.00, 'at_risk', 'at_risk',    2)
+        ('2026-08-05T12:00:00-05:00'::timestamptz, 24.00, 'healthy', 'healthy', 19),
+        ('2026-08-06T12:00:00-05:00'::timestamptz, 26.00, 'healthy', 'healthy', 20),
+        ('2026-08-07T12:00:00-05:00'::timestamptz, 28.00, 'healthy', 'healthy', 21),
+        ('2026-08-08T12:00:00-05:00'::timestamptz, 33.00, 'healthy', 'watch',      22),
+        ('2026-08-09T12:00:00-05:00'::timestamptz, 38.00, 'watch',   'watch',      1),
+        ('2026-08-10T12:00:00-05:00'::timestamptz, 41.00, 'watch',   'watch',      2),
+        ('2026-08-11T12:00:00-05:00'::timestamptz, 44.00, 'watch',   'watch',      3),
+        ('2026-08-12T12:00:00-05:00'::timestamptz, 47.00, 'watch',   'watch',      4),
+        ('2026-08-13T12:00:00-05:00'::timestamptz, 50.00, 'watch',   'watch',      5),
+        ('2026-08-14T12:00:00-05:00'::timestamptz, 52.00, 'watch',   'watch',      6),
+        ('2026-08-15T12:00:00-05:00'::timestamptz, 54.00, 'watch',   'watch',      7),
+        ('2026-08-16T12:00:00-05:00'::timestamptz, 56.00, 'watch',   'watch',      8)
     ) AS t(computed_at, score, band, raw_band, consecutive)
 ),
 runs AS (
@@ -151,4 +158,4 @@ JOIN data d ON r.computed_at = d.computed_at;
 -- FROM score_runs
 -- ORDER BY computed_at ASC;
 --
--- Expected: 30 rows, Jul 18 (score 14, healthy) through Aug 16 (score 74, at_risk).
+-- Expected: 30 rows, Jul 18 (score 14, healthy) through Aug 16 (score 56, watch).

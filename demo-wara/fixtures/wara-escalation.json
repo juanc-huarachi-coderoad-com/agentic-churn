@@ -1,0 +1,35 @@
+[
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-209-created",
+    "occurred_at": "2026-08-19T08:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 209,
+    "title": "Inventory sync job failed overnight — stock counts didn't match the warehouse",
+    "product_area": "inventory_sync",
+    "state": "created"
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-209-resolved",
+    "occurred_at": "2026-08-19T10:30:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 209,
+    "title": "Inventory sync job failed overnight — stock counts didn't match the warehouse",
+    "product_area": "inventory_sync",
+    "state": "resolved",
+    "_comment": "First occurrence resolves cleanly in 2.5h (neutral, same as Stage 1's 204/207). It exists so the SAME problem reopening a few hours later reads as a real recurrence, not a first-time issue."
+  },
+  {
+    "source_type": "zendesk",
+    "source_native_id": "wara-zendesk-209-reopened",
+    "occurred_at": "2026-08-19T14:00:00-05:00",
+    "reporter": "support-desk@wara.zendesk.com",
+    "ticket_number": 209,
+    "title": "Inventory sync job failed overnight — stock counts didn't match the warehouse",
+    "reopen_count": 1,
+    "product_area": "inventory_sync",
+    "state": "reopened",
+    "_comment": "Same ticket, same title, reopened same day and left open past the 4-business-hour P1 target (wara-profile.yaml commitments). This is what fires broken_response_promise. The identical title against the 10:30 resolution is also what lets the Recurrence reader cluster the two as one recurring_issue (REQ-M6-06)."
+  }
+]
