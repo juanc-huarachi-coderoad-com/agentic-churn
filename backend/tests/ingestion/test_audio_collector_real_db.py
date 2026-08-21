@@ -1,14 +1,18 @@
 """Real-DB: `AudioCollector` end to end through `RunCollectorUseCase` — a
-consented recording (from a *fake* Drive client + transcription adapter, no
-real Google/OpenAI/pyannote calls) reaches the event ledger, decrypts
-correctly, and is readable by the unmodified `MeetingReader`
-(specs/019-meeting-audio-ingestion, FR-009). Also
+consented recording (from a *fake* local storage client + transcription
+adapter, no real filesystem, OpenAI, or pyannote calls) reaches the event
+ledger, decrypts correctly, and is readable by the unmodified
+`MeetingReader` (specs/019-meeting-audio-ingestion, FR-009). Also
 confirms an audio-sourced (`event_type = 'meeting'`) event is swept by the
 existing retention job exactly like any other event type (FR-010,
 `/speckit-analyze` finding E3) — using `test_retention_real_db.py`'s own
 isolated-`tmp_path`-key-store pattern, never the shared deployment key
 store, so this never risks shredding any other test's data in the same
 day's real bucket.
+
+2026-08-20 revision: migrated from a fake Google Drive client to a fake
+local storage client (`research.md` Decision 12) — the collection path
+under test is otherwise unchanged.
 """
 
 import uuid
@@ -22,8 +26,8 @@ from app.config import settings
 from app.db import async_session_factory, engine, shredder_session_factory
 from app.ingestion.adapters.audio_collector import AudioCollector
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
-from app.ingestion.adapters.google_drive_client import DriveRecording
 from app.ingestion.adapters.key_store import FileKeyStore
+from app.ingestion.adapters.local_storage_client import LocalStorageClient
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
     SqlAlchemyCollectorRunRepository,
@@ -90,20 +94,20 @@ def _fake_transcription_result(text_value: str):
     return type("R", (), {"text": text_value, "primary_speaker_name": None})()
 
 
-async def test_consented_audio_recording_reaches_the_meeting_reader_corpus():
+async def test_consented_audio_recording_reaches_the_meeting_reader_corpus(tmp_path):
     suffix = uuid.uuid4().hex[:8]
     series_id = f"audio-e2e-{suffix}"
     await _seed_consent(series_id)
 
-    recording = DriveRecording(
-        file_id=f"file-{suffix}",
-        name="meeting.mp3",
-        modified_time=datetime.now(UTC).isoformat(),
-        series_id=series_id,
-    )
-    fake_drive = AsyncMock()
-    fake_drive.list_recordings = lambda: [recording]
-    fake_drive.download = lambda file_id: b"fake-audio-bytes"
+    # A real LocalStorageClient over an isolated tmp_path root (research.md
+    # Decision 12) — exercises the actual filesystem-walking code, unlike
+    # test_audio_collector.py's unit-level fake.
+    series_dir = tmp_path / series_id
+    series_dir.mkdir()
+    recording_filename = "meeting.mp3"
+    (series_dir / recording_filename).write_bytes(b"fake-audio-bytes")
+    file_id = f"{series_id}/{recording_filename}"
+    storage = LocalStorageClient(str(tmp_path))
 
     fake_transcriber = AsyncMock()
     fake_transcriber.transcribe = AsyncMock(
@@ -115,7 +119,7 @@ async def test_consented_audio_recording_reaches_the_meeting_reader_corpus():
 
     async with async_session_factory() as session:
         collector = AudioCollector(
-            drive=fake_drive,
+            storage=storage,
             transcriber=fake_transcriber,
             consent=SqlAlchemyMeetingSeriesConsentRepository(session),
             collector_runs=SqlAlchemyCollectorRunRepository(session),
@@ -143,7 +147,7 @@ async def test_consented_audio_recording_reaches_the_meeting_reader_corpus():
                     "structured_payload, body_encrypted FROM events WHERE envelope_id = "
                     "(SELECT id FROM raw_envelopes WHERE source_native_id = :native_id)"
                 ),
-                {"native_id": f"file-{suffix}"},
+                {"native_id": file_id},
             )
         ).one()
     assert row.event_type == "meeting"

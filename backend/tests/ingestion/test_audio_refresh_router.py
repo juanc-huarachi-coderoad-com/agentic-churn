@@ -1,14 +1,18 @@
 """Real-DB, real-ASGI-app: `POST /api/meeting-audio/refresh`
 (specs/019-meeting-audio-ingestion, `contracts/meeting-audio.md`). Patches
 `_build_audio_collector` to return a real `AudioCollector` wired to fake
-Drive/transcription collaborators (mirrors `test_audio_collector.py`'s
-fakes) — no real Google/OpenAI/pyannote calls, but the real router, real
-`RunCollectorUseCase`, and real database.
+local storage/transcription collaborators (mirrors `test_audio_collector.py`'s
+fakes) — no real filesystem, OpenAI, or pyannote calls, but the real router,
+real `RunCollectorUseCase`, and real database.
 
 Also covers `/speckit-analyze` finding E2 (a real, if loose, timing
 assertion for SC-003) and User Story 4's degraded-response shape (finding
 F2's `trigger` fix is what makes attributing `source_error` to *this*
 specific run possible at all).
+
+2026-08-20 revision: migrated from a fake Google Drive client to a fake
+local storage client (`research.md` Decision 12) — the router-level behavior
+under test is otherwise unchanged.
 """
 
 import time
@@ -22,9 +26,9 @@ from sqlalchemy import text
 from app.auth.domain.password import hash_password
 from app.db import engine
 from app.ingestion.adapters.audio_collector import AudioCollector
-from app.ingestion.adapters.google_drive_client import (
-    DriveRecording,
-    GoogleDriveAuthenticationError,
+from app.ingestion.adapters.local_storage_client import (
+    LocalRecording,
+    LocalStorageAccessError,
 )
 from app.main import app
 
@@ -70,17 +74,17 @@ def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-class _FakeDrive:
+class _FakeLocalStorage:
     def __init__(self, recordings=None, fail: bool = False) -> None:
         self._recordings = recordings or []
         self._fail = fail
 
     def list_recordings(self):
         if self._fail:
-            raise GoogleDriveAuthenticationError("token expired")
+            raise LocalStorageAccessError("meeting audio storage location is not accessible")
         return self._recordings
 
-    def download(self, file_id: str) -> bytes:
+    def read(self, file_id: str) -> bytes:
         return b"fake-audio"
 
 
@@ -89,7 +93,7 @@ class _FakeTranscriber:
         return type("R", (), {"text": "", "primary_speaker_name": None})()
 
 
-def _fake_collector_factory(drive) -> object:
+def _fake_collector_factory(storage) -> object:
     # `_build_audio_collector` in the real router is a plain sync function
     # (constructing adapters has no I/O) — this fake must match that exact
     # signature, or the router's un-awaited `collector = _build_audio_
@@ -104,7 +108,7 @@ def _fake_collector_factory(drive) -> object:
         )
 
         return AudioCollector(
-            drive=drive,
+            storage=storage,
             transcriber=_FakeTranscriber(),
             consent=SqlAlchemyMeetingSeriesConsentRepository(session),
             collector_runs=SqlAlchemyCollectorRunRepository(session),
@@ -117,7 +121,7 @@ def _fake_collector_factory(drive) -> object:
 async def test_nothing_new_returns_all_zero_counts_not_an_error(client, cs_lead_token):
     with patch(
         "app.ingestion.adapters.audio_refresh_router._build_audio_collector",
-        new=_fake_collector_factory(_FakeDrive([])),
+        new=_fake_collector_factory(_FakeLocalStorage([])),
     ):
         start = time.monotonic()
         resp = await client.post("/api/meeting-audio/refresh", headers=_auth(cs_lead_token))
@@ -131,8 +135,8 @@ async def test_nothing_new_returns_all_zero_counts_not_an_error(client, cs_lead_
     assert body["failed"] == 0
     assert body["source_error"] is None
     # `/speckit-analyze` finding E2 — SC-003's "under one minute, excluding
-    # transcription time" — a real, if generous, upper bound with the
-    # Drive/Whisper calls mocked to return immediately.
+    # transcription time" — a real, if generous, upper bound with the local
+    # storage/Whisper calls mocked to return immediately.
     assert elapsed < 5.0
 
 
@@ -144,15 +148,15 @@ async def test_account_executive_gets_403(client, ae_token):
 async def test_a_recording_found_but_not_consented_is_counted_and_not_transcribed(
     client, cs_lead_token
 ):
-    recording = DriveRecording(
+    recording = LocalRecording(
         file_id=f"file-{uuid.uuid4().hex[:8]}",
         name="meeting.mp3",
-        modified_time="2026-08-19T10:00:00.000Z",
+        modified_time="2026-08-19T10:00:00+00:00",
         series_id=f"never-consented-{uuid.uuid4().hex[:8]}",
     )
     with patch(
         "app.ingestion.adapters.audio_refresh_router._build_audio_collector",
-        new=_fake_collector_factory(_FakeDrive([recording])),
+        new=_fake_collector_factory(_FakeLocalStorage([recording])),
     ):
         resp = await client.post("/api/meeting-audio/refresh", headers=_auth(cs_lead_token))
 
@@ -163,19 +167,21 @@ async def test_a_recording_found_but_not_consented_is_counted_and_not_transcribe
     assert body["transcribed"] == 0
 
 
-async def test_a_failing_drive_connection_returns_the_degraded_shape(client, cs_lead_token):
+async def test_an_inaccessible_local_storage_location_returns_the_degraded_shape(
+    client, cs_lead_token
+):
     """User Story 4 — a whole-connection failure surfaces as `source_error`,
     never a `500` and never indistinguishable from "nothing new"."""
     with patch(
         "app.ingestion.adapters.audio_refresh_router._build_audio_collector",
-        new=_fake_collector_factory(_FakeDrive([], fail=True)),
+        new=_fake_collector_factory(_FakeLocalStorage([], fail=True)),
     ):
         resp = await client.post("/api/meeting-audio/refresh", headers=_auth(cs_lead_token))
 
     assert resp.status_code == 200
     body = resp.json()
     assert body["source_error"] is not None
-    assert "token expired" in body["source_error"]
+    assert "storage location is not accessible" in body["source_error"]
 
     # GET /api/coverage reflects the same gap — `sources.status` is now
     # self-healing (`finish_run()`, a fix found necessary while building

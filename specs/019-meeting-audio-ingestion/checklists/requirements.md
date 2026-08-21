@@ -31,4 +31,5 @@
 
 ## Notes
 
-- All items pass. FR-015 (Drive-to-series mapping) and FR-016 (consent authority) were resolved with the user before this checklist was finalized: folder-per-series convention, CS lead via dashboard control.
+- All items pass. FR-015 (folder-to-series mapping) and FR-016 (consent authority) were resolved with the user before this checklist was finalized: folder-per-series convention, CS lead via dashboard control.
+- **2026-08-20 revision**: audio source changed from Google Drive to local storage (installation friction). All Drive-specific wording (OAuth/token validity, Drive folder, Drive connection) was replaced with local-storage equivalents (folder accessibility, local storage folder, storage location) throughout spec.md. Re-validated: still passes every item above — the change removes an external-account dependency and simplifies FR-001/FR-012/FR-013 without introducing new ambiguity or implementation-detail leakage (Whisper as the transcription service was already named pre-revision and remains the one named technology, consistent with this spec's existing precedent of naming the transcription service specifically because it's a scope-defining external dependency, not an implementation choice).

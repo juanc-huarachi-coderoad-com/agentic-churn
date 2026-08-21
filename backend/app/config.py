@@ -96,14 +96,13 @@ class Settings(BaseSettings):
     # every other timing knob above.
     audio_poll_interval_hours: int = 4
 
-    # Google Drive OAuth (research.md Decision 6) — a per-deployment file secret,
-    # sibling to encryption_key_path/data_keys_dir above, never committed
-    # (`secrets/` is gitignored wholesale). No safe default for the client
-    # id/secret, same honest-failure discipline as openai_api_key/anthropic_api_key.
-    google_drive_token_path: str = "./secrets/google-drive-token.json"
-    google_drive_root_folder_id: str = ""
-    google_drive_client_id: str = ""
-    google_drive_client_secret: str = ""
+    # Meeting audio's local storage location (specs/019-meeting-audio-ingestion,
+    # research.md Decision 12 — supersedes the prior Google Drive OAuth design).
+    # CWD-relative like client_profile_path/collector_fixture_path above; lands inside
+    # the ./demo directory both the api and worker services already mount read-only
+    # (docker-compose.yml), so no new mount is needed. No secret to configure — a
+    # subdirectory's name is the meeting series it maps to (FR-015).
+    meeting_audio_storage_path: str = "./demo/meeting-audio"
 
 
 settings = Settings()

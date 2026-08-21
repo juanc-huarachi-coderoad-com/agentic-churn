@@ -1,12 +1,21 @@
 # Quickstart: Meeting Audio Ingestion
 
 Prerequisites: the fully containerized stack (`docker compose up --build -d`), this feature's
-migration applied (`alembic upgrade head`), a one-time Google Drive OAuth grant already
-completed for this deployment (`secrets/google-drive-token.json` present — `research.md`
-Decision 6), `OPENAI_API_KEY` set (reused from the existing Recurrence-reader configuration,
-`app/config.py`), and one meeting-series folder created in the connected Drive location
-containing a short test recording (`research.md` Decision 1's folder-per-series convention,
-`spec.md` FR-015).
+migration applied (`alembic upgrade head`), `OPENAI_API_KEY` and `PYANNOTEAI_API_KEY` set
+(reused from the existing Recurrence-reader configuration and `research.md` Decision 7,
+`app/config.py`), and one meeting-series folder created under the local storage root containing
+a short test recording (`research.md` Decisions 1 and 12's folder-per-series convention,
+`spec.md` FR-015) — no external account, OAuth grant, or secret file required:
+
+```bash
+mkdir -p demo/meeting-audio/wara-weekly-sync
+cp demo-wara/wara-weekly-sync-recovery.m4a demo/meeting-audio/wara-weekly-sync/
+```
+
+This lands inside the `./demo` directory already bind-mounted read-only into both the `api` and
+`worker` containers (`docker-compose.yml`, `research.md` Decision 12) — no compose or mount
+change needed, no container rebuild needed to pick up a new recording. `wara-weekly-sync` is
+the `series_id` used in the steps below; substitute your own test series name if different.
 
 ## User Story 2 — Consent is documented and enforced (validate first — it gates User Story 1)
 
@@ -36,24 +45,25 @@ containing a short test recording (`research.md` Decision 1's folder-per-series 
 4. `python -m app.worker --run-once score` — confirm the next `score_runs` row reflects the new
    finding.
 5. Run `python -m app.worker --run-once audio` a second time with the same recording still
-   present in Drive — confirm no new `raw_envelopes`/`events` row is created (FR-011,
+   present in local storage — confirm no new `raw_envelopes`/`events` row is created (FR-011,
    idempotency via `Envelope.idempotency_key`).
 
 ## User Story 3 — On-demand refresh
 
-1. Add a second test recording to the same consented series folder in Drive.
+1. Add a second test recording to the same consented series folder under local storage
+   (`cp <another-file>.m4a demo/meeting-audio/wara-weekly-sync/`).
 2. `POST /api/meeting-audio/refresh` as a `cs_lead` user — expect `200` within the request
    itself (excluding transcription time), `transcribed: 1` in the response body.
 3. Confirm the evidence trace (`GET /api/evidence/{id}` for the resulting finding, or the
    dashboard) reflects the new recording without waiting for the next scheduled cycle (SC-003).
-4. Call `POST /api/meeting-audio/refresh` again immediately, with nothing new in Drive — expect
-   `200`, every count `0`, no error (User Story 3's second acceptance scenario).
+4. Call `POST /api/meeting-audio/refresh` again immediately, with nothing new in local storage —
+   expect `200`, every count `0`, no error (User Story 3's second acceptance scenario).
 
 ## User Story 4 — Honest degradation
 
-1. Temporarily invalidate the stored Drive token (e.g. truncate
-   `secrets/google-drive-token.json` in a throwaway copy of the deployment, or revoke the grant
-   in Google's own console for a test account).
+1. Temporarily make the local storage location inaccessible to the running containers — e.g.
+   rename the directory (`mv demo/meeting-audio demo/meeting-audio.bak`) or, to simulate a
+   permission failure instead of a missing path, `chmod 000 demo/meeting-audio` on the host.
 2. `POST /api/meeting-audio/refresh` — expect `200` with `source_error` present (contract's
    "degraded" response shape), not a `500` and not a response indistinguishable from "nothing
    new."
@@ -63,5 +73,7 @@ containing a short test recording (`research.md` Decision 1's folder-per-series 
 4. `python -m app.worker --run-once score` — confirm the score is unchanged from its prior value
    (frozen, per `specs/004-score-engine` FR-011) rather than computed as if the audio source were
    healthy.
-5. Restore the valid token and repeat step 2 — confirm normal (non-degraded) behavior resumes
-   without any manual re-authentication step (FR-001).
+5. Restore the directory (`mv demo/meeting-audio.bak demo/meeting-audio`, or `chmod 755
+   demo/meeting-audio`) and repeat step 2 — confirm normal (non-degraded) behavior resumes
+   immediately, with no re-authentication or reconnection step of any kind (FR-001) — the local
+   storage design has nothing to re-authenticate.

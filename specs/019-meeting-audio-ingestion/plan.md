@@ -1,26 +1,37 @@
 # Implementation Plan: Meeting Audio Ingestion
 
-**Branch**: `019-meeting-audio-ingestion` | **Date**: 2026-08-19 | **Spec**: [spec.md](./spec.md)
+**Branch**: `019-meeting-audio-ingestion` | **Date**: 2026-08-19 | **Revised**: 2026-08-20 |
+**Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/019-meeting-audio-ingestion/spec.md`
 
 **Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
+**2026-08-20 revision**: the spec's audio source changed from Google Drive to local storage
+(installation friction — Drive's OAuth/app-registration setup was too heavy for the demo). This
+plan is rewritten accordingly: every Drive-specific design decision below is replaced with its
+local-storage equivalent. See `research.md`'s Decision 12 for the consolidated rationale and
+`git log` on this branch for the Drive-era implementation this replaces (`google_drive_client.py`,
+`google_drive_token_store.py` — both slated for deletion by `/speckit-tasks`).
+
 ## Summary
 
 Add the one real component the existing meeting-evidence pipeline has always been missing: a
-new `Collector` (`AudioCollector`) that discovers recordings in a connected Google Drive
-location, transcribes them via OpenAI Whisper with speaker diarization, and emits the exact
+new `Collector` (`AudioCollector`) that discovers recordings in a configured local storage
+folder, transcribes them via OpenAI Whisper with speaker diarization, and emits the exact
 same `Envelope` shape `SimulatedCollector`'s calendar branch already produces — so the existing
 `MeetingReader`, `meeting_commitment` finding type, identity resolution, redaction, encryption,
 evidence trace, and scoring arithmetic require zero changes. Two new things make that safe to
 ship: an auditable, append-only `meeting_series_consent` table that structurally gates
 collection (replacing the fixture-only boolean both the audio path and, per `research.md`
 Decision 3, the existing demo path relied on), and two ways to trigger a cycle — a scheduled
-`APScheduler` job (`worker.py`) and a CS-lead-only manual-refresh endpoint. A degraded Drive
-connection or a failed transcription surfaces through the existing coverage/score-freeze
+`APScheduler` job (`worker.py`) and a CS-lead-only manual-refresh endpoint. An inaccessible
+storage location or a failed transcription surfaces through the existing coverage/score-freeze
 mechanism (`specs/004-score-engine` FR-011), via one small, additive extension to
-`RunCollectorUseCase.execute()`'s failure handling (`research.md` Decision 5).
+`RunCollectorUseCase.execute()`'s failure handling (`research.md` Decision 5). Local storage
+requires no external account, no OAuth grant, and no new secret — the CS lead drops a file into
+an already-mounted folder (`research.md` Decision 12), which is the entire point of this
+revision.
 
 ## Technical Context
 
@@ -28,18 +39,22 @@ mechanism (`specs/004-score-engine` FR-011), via one small, additive extension t
 addition only — a consent-management control and a refresh button)
 
 **Primary Dependencies**: FastAPI, SQLAlchemy (async) + asyncpg, APScheduler — all existing.
-New: `google-api-python-client` + `google-auth` (Drive listing/download, OAuth token refresh);
-`openai` SDK is already a dependency (`OpenAIEmbeddingAdapter`) and is reused for the Whisper
-transcription call; a lightweight diarization library (`research.md` Decision 7 — exact package
-a `/speckit-tasks` implementation detail, not a scope decision here)
+No new listing/download library — local storage discovery uses only the standard library
+(`pathlib`), replacing the `google-api-python-client` + `google-auth` dependency the Drive-era
+design needed (`research.md` Decision 12, both removed by `/speckit-tasks`). `openai` SDK is
+already a dependency (`OpenAIEmbeddingAdapter`) and is reused for the Whisper transcription
+call; `pyannoteai-sdk` (hosted diarization API, `research.md` Decision 7) is unaffected by this
+revision — diarization operates on already-read audio bytes regardless of where they came from
 
 **Storage**: PostgreSQL 16 (existing) — one new table, `meeting_series_consent`
 (`data-model.md`); no change to any existing table's shape
 
 **Testing**: pytest + `hypothesis` (existing pattern) — new unit tests for `AudioCollector`,
-the consent gate, and `WhisperTranscriptionAdapter` with mocked Drive/OpenAI clients (mirroring
-`OpenAIEmbeddingAdapter`'s deferred-client pattern, which exists specifically to make this kind
-of mocking easy); a real-DB integration test extending
+the consent gate, and `WhisperTranscriptionAdapter` with a real temporary directory (via
+`tmp_path`, standard pytest fixture — simpler than the mocked-client pattern the Drive-era
+design needed, since there is no external API surface left to fake for discovery/reads) and
+mocked OpenAI/pyannote.ai clients (mirroring `OpenAIEmbeddingAdapter`'s deferred-client
+pattern); a real-DB integration test extending
 `tests/ingestion/test_post_mvp_sources_real_db.py`'s existing pattern
 
 **Target Platform**: Linux server, Docker Compose, one stack per client deployment (unchanged)
@@ -52,10 +67,13 @@ top-level feature area
 request-path component. SC-003's "under one minute, excluding transcription time" bounds only
 the manual-refresh *request* overhead, not the transcription itself
 
-**Constraints**: No audio persistence anywhere, at any point (FR-008/SC-004); consent must be
-checked at collection time on every cycle, not cached as a one-time decision (FR-003); zero
-changes to `backend/app/scoring/` or `backend/app/readers/` required or permitted; a single
-Google Drive OAuth connection per deployment (Assumptions)
+**Constraints**: No audio persistence anywhere, at any point beyond the source folder itself
+(FR-008/SC-004 — an in-memory/temp copy made during processing is discarded; the source
+recording in the local storage folder is left untouched, exactly as the Drive-era design never
+deleted anything from Drive either); consent must be checked at collection time on every cycle,
+not cached as a one-time decision (FR-003); zero changes to `backend/app/scoring/` or
+`backend/app/readers/` required or permitted; a single configured local storage directory per
+deployment (Assumptions)
 
 **Scale/Scope**: One deployment, one client, a handful of meeting series, on the order of a few
 recordings per week — well within the existing 50k–200k events/year deployment scale
@@ -69,7 +87,7 @@ recordings per week — well within the existing 50k–200k events/year deployme
   `event_id`s; `AudioCollector` only changes how those `events` rows are produced, not the
   citation mechanism.
 
-- **P2 (The model interprets, code calculates)** — PASS. All new external-API code (Drive
+- **P2 (The model interprets, code calculates)** — PASS. All new adapter code (local storage
   client, Whisper adapter) lives in `backend/app/ingestion/adapters/` — nothing in
   `backend/app/scoring/` changes or gains an import. The static no-LLM-in-scoring CI check is
   unaffected because nothing in this feature touches that module.
@@ -88,7 +106,7 @@ recordings per week — well within the existing 50k–200k events/year deployme
   AI-safety rules, not a new kind of capability.
 
 - **P5 (Admit what we cannot see)** — PASS, contingent on `research.md` Decision 5 landing as
-  designed: a Drive-auth or transcription failure must flow into the *same*
+  designed: a local-storage-access or transcription failure must flow into the *same*
   `coverage_reports`/score-freeze mechanism every other source's failure already uses, not a
   bespoke, second reporting path. This is the one piece of this feature with real risk of
   quietly diverging from the constitution if implemented as a `worker.py`-only try/except
@@ -100,12 +118,15 @@ recordings per week — well within the existing 50k–200k events/year deployme
   one.
 
 - **P8 (Clean Architecture: the Dependency Rule is law)** — PASS by construction: new adapters
-  (`google_drive_client.py`, `whisper_transcription.py`, `audio_collector.py`,
+  (`local_storage_client.py`, `whisper_transcription.py`, `audio_collector.py`,
   `sqlalchemy_meeting_series_consent.py`) live in `backend/app/ingestion/adapters/`; the new
   port (`MeetingSeriesConsentRepositoryPort`) lives in `backend/app/ingestion/application/
-  ports.py`; no domain code gains a framework or SDK import. `/speckit-tasks` must add (or
-  confirm) an import-linter contract restricting `google.*`/`openai` imports to the adapters
-  layer within `ingestion`, mirroring the existing `readers-application-purity` contract.
+  ports.py`; no domain code gains a framework or SDK import. `local_storage_client.py` imports
+  only `pathlib`/`os` (standard library) — strictly simpler than the Drive-era adapter it
+  replaces, which needed `google.*` imports fenced off. `/speckit-tasks` must add (or confirm)
+  an import-linter contract restricting `openai`/`pyannoteai` imports to the adapters layer
+  within `ingestion`, mirroring the existing `readers-application-purity` contract (the `google.*`
+  restriction this contract previously needed is removed along with the dependency itself).
 
 - **P9 (Test-first determinism)** — PASS. Golden-replay, decimal-reconciliation, and
   monotonicity tests are unaffected (this feature never touches `backend/app/ledger/` or
@@ -126,8 +147,10 @@ recordings per week — well within the existing 50k–200k events/year deployme
   raw transcribed speech, evidentiary data equivalent to an email body, not a model-generated
   claim requiring `fact_check()`. The *existing* `MeetingReader` LLM call that reads that
   transcript and extracts a structured commitment remains the one governed by Rules 1–5, and is
-  completely unchanged by this feature. **Follow-up**: this feature's Drive/Whisper calls need
-  their own resilience budget (timeout/retry) — the constitution's existing "Resilience budgets"
+  completely unchanged by this feature. **Follow-up**: this feature's Whisper/diarization calls
+  need their own resilience budget (timeout/retry) — local file reads themselves are effectively
+  instantaneous and need no budget of their own, unlike the Drive-era design's network-bound
+  listing/download calls — the constitution's existing "Resilience budgets"
   paragraph only enumerates LLM-call budgets today. `/speckit-tasks` should size one (consistent
   with the Tone/Intent/Meeting readers' 8s × 2 retries precedent, scaled for a
   file-length-dependent transcription call), and a follow-up constitution amendment — the same
@@ -164,11 +187,11 @@ backend/
 │   │   │   ├── simulated_collector.py         # existing — consent check migrated to the new port (Decision 3)
 │   │   │   ├── meeting_envelope.py             # NEW — shared envelope-building, extracted (Decision 2)
 │   │   │   ├── audio_collector.py              # NEW — Collector impl, source_type="transcripts"; depends on
-│   │   │   │                                    #   CollectorRunRepositoryPort too (Decision 10 — pre-download
+│   │   │   │                                    #   CollectorRunRepositoryPort too (Decision 10 — pre-read
 │   │   │   │                                    #   idempotency check, not just RunCollectorUseCase's post-fetch one)
-│   │   │   ├── google_drive_client.py          # NEW — Drive listing/download, OAuth token refresh
+│   │   │   ├── local_storage_client.py         # NEW (replaces google_drive_client.py) — folder listing +
+│   │   │   │                                    #   file reads via pathlib only (Decision 12); no token/secret
 │   │   │   ├── whisper_transcription.py        # NEW — mirrors OpenAIEmbeddingAdapter's pattern
-│   │   │   ├── key_store.py                    # existing — GoogleDriveTokenStore mirrors FileKeyStore here or alongside it
 │   │   │   └── sqlalchemy_repositories.py       # existing — + SqlAlchemyMeetingSeriesConsentRepository
 │   │   ├── application/
 │   │   │   ├── ports.py                         # existing — + MeetingSeriesConsentRepositoryPort
@@ -176,13 +199,14 @@ backend/
 │   │   │                                     #   AND a caller-supplied `trigger` param (Decision 5's correction,
 │   │   │                                     #   finding F2 — replaces the hard-coded "manual" literal)
 │   │   └── domain/                              # unchanged
-│   ├── config.py                                # existing — + audio_poll_interval_hours, google_drive_* settings
+│   ├── config.py                                # existing — + audio_poll_interval_hours, meeting_audio_storage_path
+│   │                                             #   (replaces the four google_drive_* settings — no secret/credential)
 │   └── worker.py                                # existing — + _run_audio_collector job, "audio" in --run-once
 ├── migrations/versions/
 │   └── 0006_meeting_series_consent.py           # NEW
 └── tests/
     ├── ingestion/
-    │   ├── test_audio_collector.py               # NEW — unit, mocked Drive/Whisper
+    │   ├── test_audio_collector.py               # NEW — unit, tmp_path storage root + mocked Whisper
     │   ├── test_meeting_series_consent.py         # NEW — unit, the consent gate/port
     │   └── test_post_mvp_sources_real_db.py       # existing — consent seeding updated per Decision 3's compatibility note
     └── unit/
@@ -207,6 +231,6 @@ looks at in one place.
 
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| `RunCollectorUseCase.execute()` (shared, existing core code) gets a `try/except` around `collector.fetch()` (`research.md` Decision 5) | `AudioCollector` is the first `Collector` whose `fetch()` can genuinely raise (Drive auth failure, network error) — FR-012/FR-014 require that failure to freeze the score via the *existing* coverage mechanism, and the only place that mechanism's bookkeeping (`collector_runs`, `coverage_reports`) lives today is inside `execute()` | Catching the exception only in `worker.py`'s new job wrapper and hand-writing an equivalent `collector_runs`/`coverage_reports` sequence there — rejected: duplicates `execute()`'s bookkeeping for one collector, and leaves the manual-refresh endpoint (which also calls `execute()` directly) without the same handling, silently reintroducing the exact crash-on-failure gap this row exists to close |
+| `RunCollectorUseCase.execute()` (shared, existing core code) gets a `try/except` around `collector.fetch()` (`research.md` Decision 5) | `AudioCollector` is the first `Collector` whose `fetch()` can genuinely raise (the configured local storage path missing, unmounted, or permission-denied) — FR-012/FR-014 require that failure to freeze the score via the *existing* coverage mechanism, and the only place that mechanism's bookkeeping (`collector_runs`, `coverage_reports`) lives today is inside `execute()` | Catching the exception only in `worker.py`'s new job wrapper and hand-writing an equivalent `collector_runs`/`coverage_reports` sequence there — rejected: duplicates `execute()`'s bookkeeping for one collector, and leaves the manual-refresh endpoint (which also calls `execute()` directly) without the same handling, silently reintroducing the exact crash-on-failure gap this row exists to close |
 | `RunCollectorUseCase.execute()` gains a `trigger: str` parameter, replacing its hard-coded `"manual"` literal (`research.md` Decision 5's correction, `/speckit-analyze` finding F2) | The scheduled poll (`worker.py`) and the manual-refresh endpoint both call this same method and both need `collector_runs.trigger` to actually distinguish `'poll'` from `'manual'` — `contracts/meeting-audio.md` already documents that distinction as real. Without this, every scheduled poll would silently mislabel itself as manual, an operationally misleading audit trail rather than a functional break | Leaving `"manual"` hard-coded and accepting the mislabeling — rejected: it is not merely cosmetic, `collector_runs.trigger` is this schema's one durable record of *why* a collection run happened, and `ReplayUseCase.execute(*, trigger: str, ...)` already establishes the caller-supplied-trigger pattern this codebase uses elsewhere for the identical need, so following it is not a novel abstraction, just consistency |
 | `AudioCollector`'s constructor depends on `CollectorRunRepositoryPort` directly, not only on the ports `Collector` implementations have needed so far (`research.md` Decision 10, `/speckit-analyze` finding F1) | `fetch()` must check `envelope_exists()` *before* downloading/transcribing, not only rely on `RunCollectorUseCase`'s existing post-fetch dedup — otherwise every scheduled poll re-transcribes every still-present recording, forever, violating FR-011 in real operation, not just its persistence-layer outcome | Tracking "already processed" file IDs in `AudioCollector`'s own local state instead — rejected: duplicates state the ledger already durably tracks, drifts across restarts, and breaks under two concurrent runs (a manual refresh racing a scheduled poll) — exactly the class of problem `envelope_exists()` already exists to solve once, centrally |

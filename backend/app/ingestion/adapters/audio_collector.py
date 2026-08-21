@@ -1,26 +1,28 @@
-"""`AudioCollector` — the real, first external-API `Collector`
+"""`AudioCollector` — the real, first non-simulated `Collector`
 (specs/019-meeting-audio-ingestion). Invoked through its own, independent
 `RunCollectorUseCase.execute(audio_collector, ...)` call (research.md
 Decision 1), never merged with `SimulatedCollector`'s run.
 
-`fetch()`, per Drive recording:
-1. Checks the real consent audit table before downloading anything
+`fetch()`, per local storage recording:
+1. Checks the real consent audit table before reading anything
    (structural gate, mirrors `SimulatedCollector`, research.md Decision 3) —
    a folder whose name matches no real series is simply never active either,
    so this single check also covers research.md Decision 11 without a
    second "known series" lookup.
 2. Skips a recording whose `idempotency_key` already has a matching
-   `raw_envelopes` row *before* downloading or transcribing it (research.md
+   `raw_envelopes` row *before* reading or transcribing it (research.md
    Decision 10 — the load-bearing fix for `/speckit-analyze` finding F1;
    `RunCollectorUseCase`'s own post-fetch dedup exists too, but only
    prevents a duplicate row, not the expensive work this check avoids).
-3. Downloads, transcribes, and lets the in-memory audio bytes go out of
+3. Reads, transcribes, and lets the in-memory audio bytes go out of
    scope once transcription completes or fails — never written to disk here
    (research.md Decision 8; the one real temp file in this pipeline,
    `pyannote_diarization.py`'s, deletes itself in its own `finally` block).
+   The source file itself, in the read-only-mounted local storage folder,
+   is never written to or deleted.
 4. A per-item failure (corrupt audio, transcription error) is logged and
    skipped without aborting the cycle (FR-013).
-5. A whole-connection failure (`GoogleDriveAuthenticationError`) is allowed
+5. A whole-connection failure (`LocalStorageAccessError`) is allowed
    to propagate out of `fetch()` — `RunCollectorUseCase.execute()`'s own
    try/except (research.md Decision 5) records it as an honest, visible
    coverage gap (FR-012/FR-014), not a crash.
@@ -35,7 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.ingestion.adapters.google_drive_client import GoogleDriveClient
+from app.ingestion.adapters.local_storage_client import LocalStorageClient
 from app.ingestion.adapters.meeting_envelope import build_meeting_envelope
 from app.ingestion.adapters.whisper_transcription import WhisperTranscriptionAdapter
 from app.ingestion.application.collector import Collector
@@ -50,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 # architecture/06-error-handling.md's "Meeting audio ingestion" resilience
 # budget — a documented initial estimate, not yet live-tested against a
-# real recording (this implementation environment has no real Drive/OpenAI/
+# real recording (this implementation environment has no real OpenAI/
 # pyannote access); recalibrate once a real deployment has run this.
 _PER_ITEM_TIMEOUT_SECONDS = 300.0
 
@@ -79,13 +81,13 @@ class AudioCollector(Collector):
 
     def __init__(
         self,
-        drive: GoogleDriveClient,
+        storage: LocalStorageClient,
         transcriber: WhisperTranscriptionAdapter,
         consent: MeetingSeriesConsentRepositoryPort,
         collector_runs: CollectorRunRepositoryPort,
         profile_context: ClientProfileContextPort,
     ) -> None:
-        self._drive = drive
+        self._storage = storage
         self._transcriber = transcriber
         self._consent = consent
         self._collector_runs = collector_runs
@@ -95,7 +97,7 @@ class AudioCollector(Collector):
     async def fetch(self, window_start: datetime, window_end: datetime) -> list[dict[str, Any]]:
         stats = AudioCollectionStats()
         self.last_run_stats = stats
-        recordings = self._drive.list_recordings()  # GoogleDriveAuthenticationError propagates
+        recordings = self._storage.list_recordings()  # LocalStorageAccessError propagates
         stats.recordings_found = len(recordings)
         profile = await self._profile_context.get_current()
         candidate_names = [s.name for s in profile.stakeholders if s.name]
@@ -121,7 +123,7 @@ class AudioCollector(Collector):
                 continue
 
             try:
-                audio_bytes = self._drive.download(recording.file_id)
+                audio_bytes = self._storage.read(recording.file_id)
                 result = await asyncio.wait_for(
                     self._transcriber.transcribe(audio_bytes, recording.name, candidate_names),
                     timeout=_PER_ITEM_TIMEOUT_SECONDS,

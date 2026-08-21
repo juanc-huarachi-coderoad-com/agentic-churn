@@ -79,8 +79,8 @@ trigger the scheduled `worker.py` job uses (`trigger = "manual"` vs `"poll"`).
   }
   ```
 
-  - `recordings_found`: total items discovered in the connected Drive location this cycle,
-    before the consent gate.
+  - `recordings_found`: total items discovered in the configured local storage location this
+    cycle, before the consent gate.
   - `skipped_no_consent`: items belonging to a series without active consent — dropped before
     download, per FR-003.
   - `failed`: items whose download or transcription failed (per-item failure, FR-013) —
@@ -98,15 +98,16 @@ trigger the scheduled `worker.py` job uses (`trigger = "manual"` vs `"poll"`).
     "skipped_no_consent": 0,
     "failed": 0,
     "coverage_report_id": "b3f1...-uuid",
-    "source_error": "Google Drive authorization is no longer valid — reconnect required."
+    "source_error": "Meeting audio storage location is not accessible — check the mounted path and permissions."
   }
   ```
 
   `source_error` present (FR-012) means the whole cycle failed before any item-level processing
-  — the Drive connection itself, not an individual recording. Still `200`: the request to
-  *trigger* a refresh succeeded; the refresh itself surfaced a real, visible degradation,
-  consistent with `GET /api/coverage`'s existing pattern of reporting source health as data, not
-  as an HTTP error (`specs/006-dashboard-evidence-trace/contracts/coverage.md`).
+  — the local storage location itself (missing, unmounted, or unreadable), not an individual
+  recording. Still `200`: the request to *trigger* a refresh succeeded; the refresh itself
+  surfaced a real, visible degradation, consistent with `GET /api/coverage`'s existing pattern of
+  reporting source health as data, not as an HTTP error
+  (`specs/006-dashboard-evidence-trace/contracts/coverage.md`).
 
 - **Failure (401 / 403)**: no token, or a token without `require_full_access`.
 

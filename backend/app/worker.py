@@ -7,9 +7,10 @@ recompute hourly even with zero new evidence. specs/011-production-hardening add
 third: the daily retention/crypto-shredding job (FR-001). specs/019-meeting-audio-
 ingestion adds the fourth: the meeting-audio collector, on its own configurable
 interval (research.md Decision 9) — the first job whose `RunCollectorUseCase.execute()`
-call can genuinely fail (an invalid/expired Drive token), which is exactly why that
-method gained a real `try/except` and a caller-supplied `trigger` rather than a
-hard-coded literal (research.md Decision 5's correction). Run with:
+call can genuinely fail (the configured local storage location missing, unmounted, or
+permission-denied — research.md Decision 12), which is exactly why that method gained a
+real `try/except` and a caller-supplied `trigger` rather than a hard-coded literal
+(research.md Decision 5's correction). Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
@@ -30,9 +31,8 @@ from app.config import settings
 from app.db import async_session_factory, shredder_session_factory
 from app.ingestion.adapters.audio_collector import AudioCollector
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
-from app.ingestion.adapters.google_drive_client import GoogleDriveClient
-from app.ingestion.adapters.google_drive_token_store import GoogleDriveTokenStore
 from app.ingestion.adapters.key_store import FileKeyStore
+from app.ingestion.adapters.local_storage_client import LocalStorageClient
 from app.ingestion.adapters.pyannote_diarization import diarize
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
@@ -148,14 +148,7 @@ async def _collect_audio() -> None:
         encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
         async with async_session_factory() as session:
             collector = AudioCollector(
-                drive=GoogleDriveClient(
-                    token_store=GoogleDriveTokenStore(
-                        settings.google_drive_token_path,
-                        settings.google_drive_client_id,
-                        settings.google_drive_client_secret,
-                    ),
-                    root_folder_id=settings.google_drive_root_folder_id,
-                ),
+                storage=LocalStorageClient(settings.meeting_audio_storage_path),
                 transcriber=WhisperTranscriptionAdapter(
                     openai_api_key=settings.openai_api_key,
                     llm=AnthropicLLMAdapter(settings.anthropic_api_key, settings.reader_model_id),

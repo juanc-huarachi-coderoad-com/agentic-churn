@@ -11,9 +11,6 @@ dependencies = [
     "asyncpg>=0.31.0",
     "cryptography>=44.0.0",
     "fastapi>=0.141.1",
-    "google-api-python-client>=2.198.0",
-    "google-auth>=2.56.3",
-    "google-auth-oauthlib>=1.4.0",
     "hdbscan>=0.8.40",
     "langgraph>=1.2.11",
     "openai>=1.109.1",
@@ -70,24 +67,8 @@ ignore_missing_imports = true
 module = "hdbscan.*"
 ignore_missing_imports = true
 
-# specs/019-meeting-audio-ingestion — none of googleapiclient/google-auth/
-# pyannoteai-sdk ship inline types or a py.typed marker.
-[[tool.mypy.overrides]]
-module = "googleapiclient.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "google.oauth2.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "google.auth.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "google_auth_oauthlib.*"
-ignore_missing_imports = true
-
+# specs/019-meeting-audio-ingestion — pyannoteai-sdk ships no inline types or
+# py.typed marker (local storage discovery/reads use only pathlib — no override needed).
 [[tool.mypy.overrides]]
 module = "pyannoteai.*"
 ignore_missing_imports = true

@@ -18,9 +18,8 @@ from app.config import settings
 from app.db import get_session
 from app.ingestion.adapters.audio_collector import AudioCollector
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
-from app.ingestion.adapters.google_drive_client import GoogleDriveClient
-from app.ingestion.adapters.google_drive_token_store import GoogleDriveTokenStore
 from app.ingestion.adapters.key_store import FileKeyStore
+from app.ingestion.adapters.local_storage_client import LocalStorageClient
 from app.ingestion.adapters.pyannote_diarization import diarize
 from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyClientProfileContext,
@@ -46,14 +45,7 @@ class AudioRefreshResponse(BaseModel):
 
 def _build_audio_collector(session: AsyncSession) -> AudioCollector:
     return AudioCollector(
-        drive=GoogleDriveClient(
-            token_store=GoogleDriveTokenStore(
-                settings.google_drive_token_path,
-                settings.google_drive_client_id,
-                settings.google_drive_client_secret,
-            ),
-            root_folder_id=settings.google_drive_root_folder_id,
-        ),
+        storage=LocalStorageClient(settings.meeting_audio_storage_path),
         transcriber=WhisperTranscriptionAdapter(
             openai_api_key=settings.openai_api_key,
             llm=AnthropicLLMAdapter(settings.anthropic_api_key, settings.reader_model_id),

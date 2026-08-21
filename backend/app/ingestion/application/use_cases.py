@@ -321,8 +321,9 @@ class RunCollectorUseCase:
     ) -> CollectorRunResult:
         # specs/019-meeting-audio-ingestion, research.md Decision 5 — `fetch()` is
         # wrapped rather than left to propagate: `AudioCollector` is the first
-        # `Collector` whose `fetch()` can genuinely raise (an invalid/expired Drive
-        # token, a network error), and an uncaught exception here would crash the
+        # `Collector` whose `fetch()` can genuinely raise (the configured local
+        # storage location missing, unmounted, or permission-denied — research.md
+        # Decision 12), and an uncaught exception here would crash the
         # whole run before a single `collector_runs` row is written — silent,
         # indistinguishable from "nothing new" to anything downstream. `raw_items`
         # becomes `[]` on failure so every source this run expected still gets a

@@ -1,5 +1,11 @@
 # Research: Meeting Audio Ingestion
 
+**2026-08-20 revision**: the audio source changed from Google Drive to local storage
+(installation friction — see Decision 12, which supersedes Decision 6 and corrects Decisions 5,
+8, 10, and 11). Decisions 1–4, 7, and 9 are unaffected — they concern the consent gate, the
+envelope shape, transcription/diarization, and scheduling/RBAC, none of which depend on where
+the source recording lives.
+
 Phase 0 output. Every decision below was checked against what the repository already does
 (cited by file path), not assumed from the feature brief — the brief's claim that this closes
 a single, narrow gap in an already-built pipeline holds, with one correction: the
@@ -24,9 +30,9 @@ describe ("a 9th reader is one new class, never an `if reader_type == ...` branc
 feature needs already exists.
 
 **Alternatives considered**: Extending `SimulatedCollector` itself to optionally fetch real
-audio — rejected: it would conflate a fixture-file reader with a live external-API client
+audio — rejected: it would conflate a fixture-file reader with a live transcription client
 inside one class, breaking Single Responsibility and making the fixture path (still needed for
-every other demo source) depend on Drive/Whisper credentials being configured at all.
+every other demo source) depend on Whisper credentials being configured at all.
 
 ## Decision 2 — the envelope-normalization shape is extracted and shared, not duplicated
 
@@ -115,12 +121,21 @@ it's a test-injected frozenset, never something a real `fetch()` raising an exce
 an actual exception from `collector.fetch()` today propagates uncaught and crashes the whole
 run before a single `collector_runs` row is even written. `SimulatedCollector.fetch()` never
 raises (it reads a committed local file), so this gap has never mattered before now.
-`AudioCollector.fetch()` is the first `Collector` whose `fetch()` can genuinely fail — an
-invalid/expired Drive OAuth token, a network error, Drive API rate-limiting — and FR-012/FR-014
-require that failure to be visible and to freeze the score via the *existing* coverage/degrade
-mechanism (`specs/004-score-engine` FR-011), not a second, bespoke failure-reporting path
-bolted on in `worker.py`. Routing the real failure through the same recording code the
-simulated one already uses is the smallest change that makes both true at once.
+`AudioCollector.fetch()` is the first `Collector` whose `fetch()` can genuinely fail — the
+configured local storage directory is missing, unmounted, or permission-denied (`research.md`
+Decision 12) — and FR-012/FR-014 require that failure to be visible and to freeze the score via
+the *existing* coverage/degrade mechanism (`specs/004-score-engine` FR-011), not a second,
+bespoke failure-reporting path bolted on in `worker.py`. Routing the real failure through the
+same recording code the simulated one already uses is the smallest change that makes both true
+at once.
+
+**Correction (spec revision 2026-08-20)**: this decision originally cited "an invalid/expired
+Drive OAuth token, a network error, Drive API rate-limiting" as the failure modes `fetch()` can
+raise. With the audio source moved to local storage (Decision 12), the concrete failure modes
+change (missing/unmounted directory, permission-denied) but the decision itself — wrap
+`collector.fetch()` in `try/except` inside `execute()`, route through the existing coverage
+mechanism — is unaffected. Local storage failures are, if anything, simpler to detect: a single
+`OSError` from `pathlib`, not several distinct Drive-API/auth exception classes to normalize.
 
 **Blast-radius check**: this is an additive `try/except` around one call in a single method;
 no existing call site's behavior changes when `fetch()` doesn't raise (every current test still
@@ -147,26 +162,25 @@ therefore grows by one parameter: add `trigger: str` to `execute()`'s signature,
 `try/except` above — one small, additive signature change to shared code, not two separate
 changes to the same method in two different features' worth of work.
 
-## Decision 6 — Google Drive OAuth token is a per-deployment file secret, mirroring `FileKeyStore`
+## Decision 6 — local storage needs no credential at all (supersedes the Drive-era OAuth-secret design)
 
-**Decision**: A one-time, out-of-band OAuth consent grant (run manually by whoever provisions a
-deployment, not by the application at request time) produces a refresh token, stored at
-`secrets/google-drive-token.json` — sibling to `secrets/data.key` and `secrets/data-keys/`,
-same gitignored, per-deployment-secret directory. A small `GoogleDriveTokenStore` adapter
-reads/refreshes it, mirroring `FileKeyStore`'s (`backend/app/ingestion/adapters/key_store.py`)
-shape: a thin file-backed adapter behind a port, swappable for a Phase 2 secret manager without
-touching application code — the same Phase 1/Phase 2 split `architecture/03-technology-stack.md`
-already documents for encryption keys.
+**Superseded 2026-08-20** — see Decision 12 for the full rationale for the source-storage
+change. This decision originally specified a `GoogleDriveTokenStore` adapter reading a
+per-deployment OAuth refresh-token secret from `secrets/google-drive-token.json`, mirroring
+`FileKeyStore`'s (`backend/app/ingestion/adapters/key_store.py`) file-backed-secret shape. That
+entire mechanism — the token file, the refresh logic, the one-time interactive OAuth grant a
+deployment operator had to run out-of-band before the collector could work at all — is removed,
+not replaced with an equivalent. Local storage has nothing to authenticate: `AudioCollector`
+reads files from a plain, already-mounted directory (`research.md` Decision 12), the same way
+`SimulatedCollector` already reads `collector_fixture_path` and `ClientProfileContextPort`
+already reads `client_profile_path` (`backend/app/config.py`) — no adapter, no secret file, no
+Phase 1/Phase 2 secret-manager migration story to write, because there is no secret to manage.
 
-**Rationale**: matches the existing "one deployment = one client = one `.env` file" isolation
-model (constitution, "Isolation model") and requires no new secret-management infrastructure —
-consistent with P10 and with this being the feature's first real external-API integration
-(`research.md`'s framing note, `spec.md` Assumptions).
-
-**Alternatives considered**: Storing the refresh token in the database — rejected: every other
-credential-shaped secret in this codebase (encryption keys, role passwords) lives in the file
-system/`.env`, not the database, and a DB-stored OAuth secret would need its own encryption
-story this feature doesn't otherwise need.
+**Why this is the point of the revision**: the original Drive-based design's entire "one-time
+setup" burden — Google Cloud Console project, OAuth client registration, a scripted interactive
+consent grant, a token file to keep valid — is exactly the installation friction that motivated
+this change (`spec.md`'s 2026-08-20 revision note). Removing Decision 6 outright, rather than
+finding a lighter-weight credential, is what actually solves that problem.
 
 ## Decision 7 — transcription: OpenAI Whisper for text, a lightweight diarization pass for speaker turns
 
@@ -247,17 +261,29 @@ Assumptions frame it as needing to be demoable within the project's existing tim
 
 ## Decision 8 — audio never touches persistent storage
 
-**Decision**: `AudioCollector` downloads each Drive file's bytes into memory (or, for larger
-files, a `tempfile.NamedTemporaryFile` created under the container's ephemeral filesystem, never
-a mounted/persistent volume), passes it directly to the transcription call, and deletes it in a
-`finally` block immediately after — regardless of whether transcription succeeded.
+**Decision**: `AudioCollector` reads each local file's bytes into memory (or, for larger files, a
+`tempfile.NamedTemporaryFile` created under the container's ephemeral filesystem, never a
+mounted/persistent volume), passes it directly to the transcription call, and deletes any
+in-memory/temp copy in a `finally` block immediately after — regardless of whether transcription
+succeeded. The source recording itself, in the read-only-mounted local storage folder
+(`research.md` Decision 12), is never written to or deleted — FR-008 governs bytes the system
+itself holds during processing, not the CS lead's own source file, exactly as the Drive-era
+design never deleted anything from Drive either.
 
 **Rationale**: directly satisfies FR-008/SC-004 and the brief's explicit risk mitigation ("audio
 descartado tras transcribir"). A `finally` block (not a happy-path-only cleanup) is required
-because a Whisper call that raises must not leave the audio behind.
+because a Whisper call that raises must not leave the audio behind. Leaving the source file
+itself untouched (rather than deleting or moving it after processing) keeps the CS lead in
+control of their own recordings and matches how every other source in this product treats its
+origin data — the collector reads, it never mutates the source.
 
-**Alternatives considered**: none seriously — the spec is unambiguous on this point (FR-008),
-this decision documents *how*, not *whether*.
+**Alternatives considered**: Deleting or moving the source file to a "processed" subfolder after
+transcription — rejected: destructive to data the CS lead owns and didn't ask the system to
+manage, adds a write requirement to a mount that's otherwise safely read-only (`research.md`
+Decision 12), and is unnecessary — idempotency is already guaranteed by `envelope_exists()`
+(Decision 10), so a processed file staying in place causes no re-processing. Nothing else
+seriously considered — the spec is unambiguous that no audio bytes are retained *by the system*
+(FR-008); this decision documents *how*, not *whether*.
 
 ## Decision 9 — polling cadence, "refresh" scope, and consent authority (from `/speckit-specify`'s resolved clarifications)
 
@@ -279,43 +305,53 @@ authorization mechanism.
 
 ## Decision 10 — idempotency is checked before download/transcription, not only before persistence (`/speckit-analyze` finding F1)
 
-**Decision**: `AudioCollector.fetch()` lists each consented series-folder's files (Drive's list
-API returns file ID and metadata without downloading content), computes each file's
-`Envelope.idempotency_key` from that listing metadata alone (`source_type="transcripts"` +
-Drive file ID as `source_native_id`), and calls
-`CollectorRunRepositoryPort.envelope_exists(idempotency_key)` — **before** downloading or
-transcribing anything. A file already processed in a prior cycle is skipped at this point.
-Only files that pass this check are downloaded, transcribed, and returned as raw items.
-`AudioCollector`'s constructor gains a `collector_runs: CollectorRunRepositoryPort` dependency
-(the same port `RunCollectorUseCase` itself already depends on) to make this check.
+**Decision**: `AudioCollector.fetch()` lists each consented series-folder's files (a plain
+`pathlib.Path.iterdir()` walk returns each file's relative path and modification time without
+reading its content), computes each file's `Envelope.idempotency_key` from that listing metadata
+alone (`source_type="transcripts"` + the file's path relative to the storage root, as
+`source_native_id`), and calls `CollectorRunRepositoryPort.envelope_exists(idempotency_key)` —
+**before** reading or transcribing anything. A file already processed in a prior cycle is
+skipped at this point. Only files that pass this check are read, transcribed, and returned as
+raw items. `AudioCollector`'s constructor gains a `collector_runs: CollectorRunRepositoryPort`
+dependency (the same port `RunCollectorUseCase` itself already depends on) to make this check.
 
 **Rationale**: `RunCollectorUseCase.execute()`'s own dedup (`use_cases.py:382`,
 `envelope_exists()`) already runs — but only *after* `fetch()` and `normalize()` have both
-already produced an `Envelope`, i.e. after the expensive work (download + Whisper transcription)
-already happened. For `SimulatedCollector`, whose `fetch()` only reads a committed local JSON
-file, this ordering was harmless — nothing expensive happens before the existing dedup check.
+already produced an `Envelope`, i.e. after the expensive work (Whisper transcription) already
+happened. For `SimulatedCollector`, whose `fetch()` only reads a committed local JSON file, this
+ordering was harmless — nothing expensive happens before the existing dedup check.
 `AudioCollector` is the first collector where `fetch()` itself does real, billable, per-item
-work, so the existing post-fetch dedup alone leaves FR-011 ("SHALL NOT re-transcribe... a
-recording that was already successfully processed," revised by this same analysis pass to be
-explicit that the check applies before processing, not only before persistence) genuinely
-violated in production: every scheduled poll would re-download and re-transcribe every
-recording still sitting in its Drive folder, for as long as it stays there — unbounded, silent,
-recurring cost with no functional symptom to notice it by.
+work (the transcription call — the file read itself is cheap either way, local or Drive), so the
+existing post-fetch dedup alone leaves FR-011 ("SHALL NOT re-transcribe... a recording that was
+already successfully processed," revised by this same analysis pass to be explicit that the
+check applies before processing, not only before persistence) genuinely violated in production:
+every scheduled poll would re-read and re-transcribe every recording still sitting in its local
+storage folder, for as long as it stays there (which, per Decision 8, is indefinitely — the
+source file is never deleted) — unbounded, silent, recurring cost with no functional symptom to
+notice it by.
 
 **Alternatives considered**: Leaving the check where `RunCollectorUseCase.execute()` already
 does it, and treating "no duplicate `events` row" as sufficient — rejected: this is exactly the
 gap `/speckit-analyze` found; it satisfies the requirement's persistence-layer outcome while
 violating its plain-language intent every single polling cycle. Having `AudioCollector` track
-"already seen" file IDs in its own local/in-memory state instead of querying
+"already seen" file paths in its own local/in-memory state instead of querying
 `CollectorRunRepositoryPort` — rejected: would duplicate state the ledger already durably
 tracks, drifts on collector restart, and breaks the moment two `AudioCollector` instances (or a
 manual refresh racing a scheduled poll) exist — the same class of problem the existing
 `envelope_exists()` mechanism was already built to avoid.
 
-## Decision 11 — a Drive folder matching no known series is skipped and logged, never implicitly trusted (`/speckit-analyze` finding C1)
+**Correction (spec revision 2026-08-20)**: this decision originally used the Drive API's file ID
+as `source_native_id`. Local storage has no equivalent opaque, stable ID issued by an external
+service — the file's path relative to the storage root (e.g. `wara-weekly-sync/2026-08-19-
+sync.m4a`) is used instead. This is stable across collection cycles as long as the CS lead
+doesn't rename or move the file (Decision 8 guarantees the system itself never does either), and
+is exactly analogous to how `SimulatedCollector` already keys its own items off fixture-file
+content, not an external ID.
+
+## Decision 11 — a local storage folder matching no known series is skipped and logged, never implicitly trusted (`/speckit-analyze` finding C1)
 
 **Decision**: When `AudioCollector.fetch()` lists series-folders under
-`settings.google_drive_root_folder_id`, a folder whose name does not match any `series_id` the
+`settings.meeting_audio_storage_path`, a folder whose name does not match any `series_id` the
 system already knows about (from prior `meeting_series_consent` or `events` rows, or — for a
 never-before-seen series — simply not resolvable to any expected identifier) is skipped and
 logged as an unmapped folder. It is never treated as consented by default (there is no
@@ -325,16 +361,81 @@ to exist, mirroring `RunCollectorUseCase._POST_MVP_SOURCE_TYPES`'s existing "exp
 "actually present this run" reasoning rather than inventing a second kind of gap.
 
 **Rationale**: FR-015's folder-per-series convention (`/speckit-specify`'s resolved
-clarification) depends on an exact string match between a human-created Drive folder name and
-the `series_id` values `meeting_series_consent`/`structured_payload` already use — a typo or a
-folder created before its series is registered is a realistic, not hypothetical, operational
-mistake. The consent gate (Decision 3) already makes the *safe* failure mode automatic (no
-matching series means no matching consent record means nothing is collected); this decision's
-only addition is making that outcome *visible* (logged, not silently absorbed) so a CS lead
-setting up a new series has something to look at when a folder they just created isn't producing
-evidence yet.
+clarification) depends on an exact string match between a human-created local storage folder
+name and the `series_id` values `meeting_series_consent`/`structured_payload` already use — a
+typo or a folder created before its series is registered is a realistic, not hypothetical,
+operational mistake. The consent gate (Decision 3) already makes the *safe* failure mode
+automatic (no matching series means no matching consent record means nothing is collected); this
+decision's only addition is making that outcome *visible* (logged, not silently absorbed) so a
+CS lead setting up a new series has something to look at when a folder they just created isn't
+producing evidence yet.
 
 **Alternatives considered**: Treating an unmapped folder as an error that fails the whole cycle
 — rejected: one misnamed folder among several correctly-named ones shouldn't block collection
 for every other series, the same per-item-failure-isolation reasoning FR-013 already applies to
 a single bad recording.
+
+## Decision 12 — audio source moves from Google Drive to local storage (spec revision 2026-08-20)
+
+**Decision**: `AudioCollector` discovers and reads recordings from a configured local directory
+instead of a connected Google Drive location. The directory is `settings.
+meeting_audio_storage_path` (new `Settings` field, `backend/app/config.py`), CWD-relative like
+`client_profile_path`/`collector_fixture_path` in the same file, defaulting to
+`./demo/meeting-audio`. This directory sits **inside the existing `./demo` mount** — both the
+`api` and `worker` services already mount `./demo:/app/demo:ro` in `docker-compose.yml` (added
+for `client_profile_path`/`collector_fixture_path`, `specs/003-ingestion-and-context`), so no
+`docker-compose.yml` change is needed at all: creating `demo/meeting-audio/<series_id>/` on the
+host and dropping a file into it is immediately visible inside both running containers. The
+folder-per-series convention (FR-015) is unchanged — a subdirectory's name is the `series_id`,
+matched literally against `meeting_series_consent`/`structured_payload`, exactly as it was under
+Drive. `google_drive_client.py` and `google_drive_token_store.py` are deleted; a new
+`local_storage_client.py` replaces them with the same shape `AudioCollector` already depends on
+(`list_recordings() -> list[...]`, a per-item read method, a whole-connection error type) so
+`AudioCollector.fetch()`'s own logic (Decisions 1, 3, 10) needs only its dependency's type
+swapped, not its control flow rewritten:
+
+- `LocalStorageClient(root_path: str)` — no token store, no credentials.
+- `list_recordings() -> list[LocalRecording]`: walks one level of subdirectories under
+  `root_path` (each a `series_id`), then each subdirectory's files, skipping non-audio
+  extensions (`.m4a`, `.mp3`, `.wav`, `.ogg`, `.flac`, `.webm`) and hidden/system files (e.g.
+  `.DS_Store`) rather than passing every stray file through to a doomed transcription attempt —
+  an implementation nicety, not a new requirement (a genuinely corrupt or unsupported audio file
+  that *does* match an accepted extension still fails per-item at the transcription step,
+  exactly as `spec.md`'s Edge Cases already describe). Raises `LocalStorageAccessError` (replaces
+  `GoogleDriveAuthenticationError`) if `root_path` does not exist, is not a directory, or is not
+  readable — caught by `RunCollectorUseCase.execute()`'s existing try/except (Decision 5)
+  exactly the way a Drive-auth failure was.
+- `read(file_id: str) -> bytes`: `file_id` is the file's path relative to `root_path`
+  (Decision 10's corrected `source_native_id`); reads it directly off disk.
+
+**Rationale**: the Drive-based design's real cost wasn't runtime complexity — it worked — it was
+the one-time setup burden every new deployment had to clear before the feature did anything at
+all: register a Google Cloud project, create an OAuth client, run an interactive consent-grant
+script, keep the resulting token valid. For a product whose own "Isolation model" already
+provisions one Docker Compose stack per client deployment (constitution, Technology and Data
+Standards) with an existing `./demo` bind mount doing the equivalent job for two other data
+inputs (`client_profile_path`, `collector_fixture_path`), requiring a *third*, heavier mechanism
+for a conceptually identical "read files a CS lead put in a folder" need was disproportionate to
+what the feature actually does. Local storage reuses infrastructure this deployment model
+already has, matching P10 (simplicity over speculative generality) and directly answering the
+request that triggered this revision ("the functionality should be easy and easy to
+understand").
+
+**Consequences accepted**: (1) A local storage folder is host/container-local, not a shared
+cloud location a distributed CS-lead team can drop files into from anywhere the way a Drive
+folder could — acceptable per `spec.md`'s Assumptions (single deployment, single client, small
+meeting-series count) and consistent with this feature staying scoped to what's demoable within
+the project's timeline; multi-location or remote-upload support is out of scope, not a
+regression, since Drive support was never load-bearing for anything beyond this feature either.
+(2) No listing/download SDK dependency at all — `google-api-python-client` and `google-auth` are
+removed from `backend/pyproject.toml`, an unambiguous simplification with no offsetting cost
+(unlike Decision 7's pyannote.ai swap, which traded a large local dependency for a real,
+accepted network/third-party-exposure cost — this decision has no such trade).
+
+**Alternatives considered**: Keeping Google Drive as an optional/alternate source alongside
+local storage — rejected: doubles the adapters, tests, and configuration surface for a single
+demo deployment that only ever needs one, the same P10 reasoning Decision 1 already used to
+reject a fixture-plus-live-API hybrid inside one class. A different cloud-drive provider with
+lighter auth (e.g., a pre-shared link) — rejected: still an external account/service dependency,
+still doesn't remove the class of setup friction that motivated this change; local storage
+removes the *entire category* of "external account," not just Google's specific flavor of it.

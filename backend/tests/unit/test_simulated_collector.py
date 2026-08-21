@@ -280,17 +280,17 @@ async def test_revoked_calendar_series_is_also_never_collected(tmp_path):
 
 class _FailingCollector(Collector):
     """A minimal, dedicated single-purpose collector whose `fetch()` always
-    raises — stands in for `AudioCollector` hitting a real Drive-auth
-    failure (specs/019-meeting-audio-ingestion, research.md Decision 5,
-    `/speckit-analyze` finding F2). `mvp_sources_always_expected` stays at
-    its default `False` (`Collector`'s own default) — this is exactly the
-    "dedicated, single-purpose collector" case that flag distinguishes from
-    `SimulatedCollector`."""
+    raises — stands in for `AudioCollector` hitting a real local-storage-
+    access failure (specs/019-meeting-audio-ingestion, research.md
+    Decision 5/12, `/speckit-analyze` finding F2). `mvp_sources_always_
+    expected` stays at its default `False` (`Collector`'s own default) —
+    this is exactly the "dedicated, single-purpose collector" case that
+    flag distinguishes from `SimulatedCollector`."""
 
     source_type = "transcripts"
 
     async def fetch(self, window_start: datetime, window_end: datetime) -> list[dict[str, Any]]:
-        raise RuntimeError("Google Drive authorization is no longer valid")
+        raise RuntimeError("Meeting audio storage location is not accessible")
 
     def normalize(self, raw_item: dict[str, Any]) -> Envelope:
         raise AssertionError("normalize() must never be called — fetch() always raises")
@@ -342,7 +342,7 @@ async def test_real_fetch_failure_produces_honest_coverage_report():
     assert report.gap_reason is not None
     assert "transcripts" in report.gap_reason
     assert run.error is not None
-    assert "Google Drive authorization" in run.error
+    assert "storage location is not accessible" in run.error
     assert run.trigger == "poll"
     assert result.envelopes_emitted == 0
 

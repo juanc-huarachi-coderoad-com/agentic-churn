@@ -1,8 +1,14 @@
-"""`AudioCollector` (specs/019-meeting-audio-ingestion) — mocked Drive
-client, transcription adapter, and `CollectorRunRepositoryPort` (no real
-Google/OpenAI/pyannote calls). Covers `/speckit-analyze` findings F1
-(pre-download idempotency), C1 (unmapped folder), and E1 (a revoked, not
-only a never-consented, series is never collected)."""
+"""`AudioCollector` (specs/019-meeting-audio-ingestion) — a fake local
+storage client, transcription adapter, and `CollectorRunRepositoryPort` (no
+real filesystem, OpenAI, or pyannote calls). Covers `/speckit-analyze`
+findings F1 (pre-read idempotency), C1 (unmapped folder), and E1 (a
+revoked, not only a never-consented, series is never collected).
+
+2026-08-20 revision: migrated from a mocked Google Drive client to a fake
+local storage client (`research.md` Decision 12) — the collector-level
+behavior under test (consent gate, idempotency, per-item failure isolation,
+whole-connection failure propagation) is unchanged; only the fake's shape
+changed."""
 
 import asyncio
 from datetime import UTC, datetime, time
@@ -10,9 +16,9 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from app.ingestion.adapters.audio_collector import AudioCollector
-from app.ingestion.adapters.google_drive_client import (
-    DriveRecording,
-    GoogleDriveAuthenticationError,
+from app.ingestion.adapters.local_storage_client import (
+    LocalRecording,
+    LocalStorageAccessError,
 )
 from app.ingestion.adapters.whisper_transcription import TranscriptionResult
 from app.ingestion.application.ports import (
@@ -26,21 +32,21 @@ from app.ingestion.domain.business_hours import WorkingCalendar
 from app.ingestion.domain.envelope import idempotency_key
 
 
-class _FakeDrive:
-    def __init__(self, recordings: list[DriveRecording], fail: bool = False) -> None:
+class _FakeLocalStorage:
+    def __init__(self, recordings: list[LocalRecording], fail: bool = False) -> None:
         self._recordings = recordings
         self._fail = fail
-        self.downloaded: list[str] = []
-        self.download_calls = 0
+        self.read_files: list[str] = []
+        self.read_calls = 0
 
-    def list_recordings(self) -> list[DriveRecording]:
+    def list_recordings(self) -> list[LocalRecording]:
         if self._fail:
-            raise GoogleDriveAuthenticationError("token expired")
+            raise LocalStorageAccessError("meeting audio storage location is not accessible")
         return self._recordings
 
-    def download(self, file_id: str) -> bytes:
-        self.download_calls += 1
-        self.downloaded.append(file_id)
+    def read(self, file_id: str) -> bytes:
+        self.read_calls += 1
+        self.read_files.append(file_id)
         return b"audio-bytes"
 
 
@@ -122,11 +128,11 @@ class _FakeProfileContext(ClientProfileContextPort):
         )
 
 
-def _recording(series_id: str, file_id: str = "file-1") -> DriveRecording:
-    return DriveRecording(
+def _recording(series_id: str, file_id: str = "file-1") -> LocalRecording:
+    return LocalRecording(
         file_id=file_id,
         name="recording.mp3",
-        modified_time="2026-08-19T10:00:00.000Z",
+        modified_time="2026-08-19T10:00:00+00:00",
         series_id=series_id,
     )
 
@@ -135,11 +141,11 @@ def _stakeholder(name: str, identifiers: tuple[str, ...] = ()) -> StakeholderIde
     return StakeholderIdentity(id=uuid4(), name=name, identifiers=identifiers)
 
 
-async def test_non_consented_series_is_never_downloaded():
-    drive = _FakeDrive([_recording("never-decided-series")])
+async def test_non_consented_series_is_never_read():
+    storage = _FakeLocalStorage([_recording("never-decided-series")])
     transcriber = _FakeTranscriber(TranscriptionResult(text="", primary_speaker_name=None))
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=transcriber,
         consent=_FakeConsent(active_series=set()),
         collector_runs=_FakeCollectorRuns(),
@@ -149,22 +155,22 @@ async def test_non_consented_series_is_never_downloaded():
     items = await collector.fetch(datetime.now(UTC), datetime.now(UTC))
 
     assert items == []
-    assert drive.download_calls == 0
+    assert storage.read_calls == 0
     assert transcriber.transcribe_calls == 0
 
 
-async def test_revoked_series_is_also_never_downloaded():
+async def test_revoked_series_is_also_never_read():
     """`/speckit-analyze` finding E1 — a series that WAS consented and is
     then revoked must never be collected, not only a series that was never
     consented (the case above)."""
-    drive = _FakeDrive([_recording("revoked-series")])
+    storage = _FakeLocalStorage([_recording("revoked-series")])
     # `_FakeConsent`'s active_series is empty — "revoked" and "never
     # decided" both resolve to `is_active() == False` (spec.md's Edge
     # Cases), so this fake is deliberately identical to the case above; the
     # meaningful assertion is that AudioCollector's behavior for a revoked
     # series doesn't differ from a never-consented one.
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=_FakeTranscriber(TranscriptionResult(text="", primary_speaker_name=None)),
         consent=_FakeConsent(active_series=set()),
         collector_runs=_FakeCollectorRuns(),
@@ -174,16 +180,17 @@ async def test_revoked_series_is_also_never_downloaded():
     items = await collector.fetch(datetime.now(UTC), datetime.now(UTC))
 
     assert items == []
-    assert drive.download_calls == 0
+    assert storage.read_calls == 0
 
 
 async def test_unmapped_folder_is_skipped_same_as_non_consented():
-    """`/speckit-analyze` finding C1 — a Drive folder whose name matches no
-    real series is naturally never active either, so it's skipped by the
-    exact same check as a never-consented series (research.md Decision 11)."""
-    drive = _FakeDrive([_recording("typo-folder-nam")])
+    """`/speckit-analyze` finding C1 — a local storage folder whose name
+    matches no real series is naturally never active either, so it's
+    skipped by the exact same check as a never-consented series
+    (research.md Decision 11)."""
+    storage = _FakeLocalStorage([_recording("typo-folder-nam")])
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=_FakeTranscriber(TranscriptionResult(text="", primary_speaker_name=None)),
         # "typo-folder-name" is the real, correctly-spelled series
         consent=_FakeConsent(active_series={"typo-folder-name"}),
@@ -194,21 +201,21 @@ async def test_unmapped_folder_is_skipped_same_as_non_consented():
     items = await collector.fetch(datetime.now(UTC), datetime.now(UTC))
 
     assert items == []
-    assert drive.download_calls == 0
+    assert storage.read_calls == 0
 
 
-async def test_already_processed_recording_is_skipped_before_download():
+async def test_already_processed_recording_is_skipped_before_read():
     """`/speckit-analyze` finding F1, research.md Decision 10 — the
-    load-bearing assertion: Whisper/Drive must never be called a second
-    time for an already-processed recording, not merely "no duplicate
-    Envelope returned."""
+    load-bearing assertion: Whisper/local storage must never be read a
+    second time for an already-processed recording, not merely "no
+    duplicate Envelope returned."""
     recording = _recording("acme-weekly-sync", file_id="already-seen")
     existing_key = idempotency_key("transcripts", "already-seen")
-    drive = _FakeDrive([recording])
+    storage = _FakeLocalStorage([recording])
     transcriber = _FakeTranscriber(TranscriptionResult(text="", primary_speaker_name=None))
     collector_runs = _FakeCollectorRuns(existing_keys={existing_key})
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=transcriber,
         consent=_FakeConsent(active_series={"acme-weekly-sync"}),
         collector_runs=collector_runs,
@@ -218,19 +225,19 @@ async def test_already_processed_recording_is_skipped_before_download():
     items = await collector.fetch(datetime.now(UTC), datetime.now(UTC))
 
     assert items == []
-    assert drive.download_calls == 0, "already-processed recording must never be downloaded"
+    assert storage.read_calls == 0, "already-processed recording must never be read"
     assert transcriber.transcribe_calls == 0, "already-processed recording must never transcribe"
     assert existing_key in collector_runs.checked_keys
 
 
 async def test_audio_never_persists_after_a_successful_transcription():
     stakeholder = _stakeholder("Jane", identifiers=("jane@example.com",))
-    drive = _FakeDrive([_recording("acme-weekly-sync")])
+    storage = _FakeLocalStorage([_recording("acme-weekly-sync")])
     transcriber = _FakeTranscriber(
         TranscriptionResult(text="Jane: Ship by Friday.", primary_speaker_name="Jane")
     )
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=transcriber,
         consent=_FakeConsent(active_series={"acme-weekly-sync"}),
         collector_runs=_FakeCollectorRuns(),
@@ -254,10 +261,10 @@ async def test_a_failing_recording_is_skipped_without_aborting_the_cycle():
     covers the single-item shape (the multi-item "rest of the cycle
     proceeds" shape is exercised at the `RunCollectorUseCase` level,
     test_simulated_collector.py's real-fetch-failure test)."""
-    drive = _FakeDrive([_recording("acme-weekly-sync")])
+    storage = _FakeLocalStorage([_recording("acme-weekly-sync")])
     transcriber = _FakeTranscriber(RuntimeError("corrupt audio"))
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=transcriber,
         consent=_FakeConsent(active_series={"acme-weekly-sync"}),
         collector_runs=_FakeCollectorRuns(),
@@ -285,9 +292,9 @@ async def test_a_transcription_that_exceeds_the_per_item_budget_is_treated_as_fa
             await asyncio.sleep(10)
             raise AssertionError("should have timed out before this line")
 
-    drive = _FakeDrive([_recording("acme-weekly-sync")])
+    storage = _FakeLocalStorage([_recording("acme-weekly-sync")])
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=_HangingTranscriber(),
         consent=_FakeConsent(active_series={"acme-weekly-sync"}),
         collector_runs=_FakeCollectorRuns(),
@@ -301,13 +308,13 @@ async def test_a_transcription_that_exceeds_the_per_item_budget_is_treated_as_fa
 
 
 async def test_whole_connection_failure_propagates_not_swallowed():
-    """A Drive-auth failure is a whole-cycle failure, distinct from a
-    per-item one above — it must propagate so `RunCollectorUseCase.execute()`
-    records it honestly (research.md Decision 5), never be silently
-    swallowed here."""
-    drive = _FakeDrive([], fail=True)
+    """A local-storage-access failure is a whole-cycle failure, distinct
+    from a per-item one above — it must propagate so
+    `RunCollectorUseCase.execute()` records it honestly (research.md
+    Decision 5), never be silently swallowed here."""
+    storage = _FakeLocalStorage([], fail=True)
     collector = AudioCollector(
-        drive=drive,
+        storage=storage,
         transcriber=_FakeTranscriber(TranscriptionResult(text="", primary_speaker_name=None)),
         consent=_FakeConsent(active_series=set()),
         collector_runs=_FakeCollectorRuns(),
@@ -317,6 +324,6 @@ async def test_whole_connection_failure_propagates_not_swallowed():
     threw = False
     try:
         await collector.fetch(datetime.now(UTC), datetime.now(UTC))
-    except GoogleDriveAuthenticationError:
+    except LocalStorageAccessError:
         threw = True
     assert threw
