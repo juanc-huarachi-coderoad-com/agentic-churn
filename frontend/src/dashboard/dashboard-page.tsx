@@ -14,6 +14,7 @@ import { CoverageLine } from './coverage-line'
 import { NarratorPanel } from './narrator-panel'
 import { PulseTimeline } from './pulse-timeline'
 import { StakeholderCards } from './stakeholder-cards'
+import { AlertTriangle, CircleHelp, Info, RefreshCw } from 'lucide-react'
 import type { DashboardResponse } from './types'
 
 async function fetchDashboard(): Promise<DashboardResponse> {
@@ -115,9 +116,34 @@ export function DashboardPage() {
       </div>
 
       {data.message && (
-        <p className="mt-4 shrink-0 rounded-md bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
-          {data.message}
-        </p>
+        <div
+          role={data.state === 'source_down' ? 'alert' : 'status'}
+          className={`
+            mt-4 flex shrink-0 items-start gap-3 rounded-lg border px-4 py-3
+            ${data.state === 'source_down'
+              ? 'border-red-200 bg-red-50 text-red-900'
+              : data.state === 'unresolved_person'
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-blue-200 bg-blue-50 text-blue-900'}
+          `}
+        >
+          <div className="mt-0.5 shrink-0">
+            {data.state === 'source_down' && <AlertTriangle size={18} />}
+            {data.state === 'unresolved_person' && <CircleHelp size={18} />}
+            {data.state === 'catching_up' && <RefreshCw size={18} />}
+            {data.state === 'learning' && <Info size={18} />}
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">
+              {data.state === 'source_down' && 'Connection issue'}
+              {data.state === 'unresolved_person' && 'Identity needs review'}
+              {data.state === 'catching_up' && 'Data is catching up'}
+              {data.state === 'learning' && 'Learning your signals'}
+            </p>
+            <p className="mt-1 text-sm opacity-80">{data.message}</p>
+          </div>
+        </div>
       )}
 
       <div className="mt-8 grid min-h-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-[320px_minmax(0,1fr)_420px] lg:overflow-hidden">
