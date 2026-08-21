@@ -365,8 +365,10 @@ class AskAgentState(TypedDict, total=False):
     intent: str | None
     subject_hint: str | None
     response_mode: str | None
-    """specs/014-ask-agent-response-formats — `component_only` | `text_only`
-    | `hybrid`, decided by the same classify call as `intent`."""
+    """specs/014-ask-agent-response-formats — `text_only` | `hybrid`
+    (`specs/023-ask-agent-default-hybrid-responses` retired `component_only`
+    as a distinct, classify-chosen value; `hybrid` is now the default),
+    decided by the same classify call as `intent`."""
     tool_results: dict[str, Any]
     component: str | None
     component_props: dict[str, Any] | None

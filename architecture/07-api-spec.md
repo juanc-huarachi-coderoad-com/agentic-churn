@@ -405,9 +405,13 @@ components:
         component_props: { type: object, description: "For component=draft_handoff: {score_contribution_id, stakeholder_id} — feature 009's draft composer consumes this later (specs/008-narrator-and-ask-agent, Clarifications). Was {issue_id, stakeholder_id} before the 2026-08-21 amendment (specs/008-narrator-and-ask-agent/contracts/ask.md)" }
 
     # specs/014-ask-agent-response-formats — the current answered-response shape. An
-    # ordered `parts` list: for response_mode=component_only (unchanged default), `parts`
-    # is always exactly one component part, byte-identical to what AskComponentResponse
-    # above returned. See specs/014-ask-agent-response-formats/contracts/ask.md.
+    # ordered `parts` list: response_mode=hybrid (specs/023-ask-agent-default-hybrid-
+    # responses, the default for every structured intent) is a text part followed by a
+    # component part; degrades to exactly one component part, byte-identical to what
+    # AskComponentResponse above returned, only if text generation fails (graceful
+    # degradation — never a chosen mode). response_mode=text_only instead returns
+    # exactly one text part, no component at all. See
+    # specs/023-ask-agent-default-hybrid-responses/contracts/ask.md.
     AskAnsweredResponse:
       type: object
       required: [intent, parts]

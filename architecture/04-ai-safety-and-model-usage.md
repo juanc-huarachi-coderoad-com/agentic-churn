@@ -4,7 +4,7 @@ Spec §12.4–12.5, §15. This document is the engineering contract for every LL
 
 ## Rule 1 — Structured output everywhere
 
-Every model call returns a schema-constrained JSON object, never free prose as a scoring/decision artifact. Prose is generated only in three places — the Narrator, the Draft composer, and the Ask agent's `text_only`/`hybrid` responses (`specs/014-ask-agent-response-formats`) — and is itself mechanically checked before display in every one of them (see Rule 4). The Ask agent's own choice of response format (`component_only` / `text_only` / `hybrid`) is itself a schema-constrained field on the same classify call that already decides `intent` — never a free judgment made outside a structured-output call.
+Every model call returns a schema-constrained JSON object, never free prose as a scoring/decision artifact. Prose is generated only in three places — the Narrator, the Draft composer, and the Ask agent's `text_only`/`hybrid` responses (`specs/014-ask-agent-response-formats`) — and is itself mechanically checked before display in every one of them (see Rule 4). The Ask agent's own choice of response format (`text_only` / `hybrid` — `specs/023-ask-agent-default-hybrid-responses` retired `component_only` as a distinct, classify-chosen outcome; `hybrid` is now the default for every structured intent) is itself a schema-constrained field on the same classify call that already decides `intent` — never a free judgment made outside a structured-output call.
 
 ```mermaid
 flowchart LR

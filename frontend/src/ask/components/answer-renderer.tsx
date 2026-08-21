@@ -7,11 +7,15 @@ interface AnswerRendererProps {
   onOpenEvidence?: (scoreContributionId: string) => void
 }
 
-// specs/014-ask-agent-response-formats — an answered response is now an
-// ordered `parts` sequence: one part for component_only/text_only, two
-// (text then component) for hybrid. Each part renders independently, in
-// order; nothing here reorders or merges parts (REQ-M9-03's discipline,
-// extended).
+// specs/014-ask-agent-response-formats — an answered response is an
+// ordered `parts` sequence: one part for text_only, two (text then
+// component) for hybrid — the default for every structured-intent
+// question as of specs/023-ask-agent-default-hybrid-responses, degrading
+// to a lone component part only if text generation failed server-side.
+// Each part renders independently, in order; nothing here reorders or
+// merges parts (REQ-M9-03's discipline, extended). No change needed here
+// for specs/023 — this renderer already handles every parts shape
+// generically.
 export function AnswerRenderer({
   answer,
   onOpenDraftComposer,

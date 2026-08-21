@@ -1,6 +1,64 @@
 <!--
 Sync Impact Report
 ==================
+Version change: 1.4.0 → 1.5.0
+
+Rationale for 1.5.0 (MINOR): AI Safety Rule 1's response-mode inventory and the
+Resilience budgets paragraph are updated to reflect `specs/023-ask-agent-default-
+hybrid-responses`: the Ask agent's `component_only` response mode is retired as a
+distinct, selectable outcome — every structured-intent answer now defaults to
+`hybrid` (component + short accompanying text), with `text_only` remaining the one
+LLM-judged exception for genuinely conversational questions. This is a factual-
+inventory update to text this same constitution introduced for `specs/014` (the
+`1.3.0 → 1.4.0` amendment below), following that amendment's own precedent, not a
+redefinition of any Core Principle — P1-P11 are untouched. The already-shipped,
+already-accepted 15s-capped text-generation budget (`asyncio.wait_for`) is unchanged
+in value; only its applicability changes, from a subset of responses to virtually
+all of them, since the former `component_only` 2.5s fast path no longer exists as a
+reachable outcome for the 8 structured intents.
+
+Modified principles: none (Development Workflow & Quality Gates → AI safety rule 1
+and the Resilience budgets paragraph updated — not principles, and not redefined)
+
+Added principles (this amendment): none — this is a scoped update to an existing
+rule's stated inventory (which response modes exist and what their timing budget
+is), fully accountable to the AI safety rules that already existed, not a new
+governing rule. See `specs/023-ask-agent-default-hybrid-responses/plan.md`'s
+Constitution Check and `research.md` Decision 7 for the full evaluation of why this
+update is necessary and safe.
+
+Added sections (this amendment):
+  - "Development Workflow & Quality Gates" → AI safety rules: Rule 1's response-mode
+    sentence now names two values (`text_only`/`hybrid`) instead of three
+    (`component_only`/`text_only`/`hybrid`) — `component_only` is retired as a
+    distinct, classify-chosen outcome; a component-alone response can still occur,
+    but only as graceful degradation when text generation fails, never as a chosen
+    mode.
+  - "Resilience budgets" paragraph: the prior "Ask agent `component_only` 2.5s with
+    no retry... falls back to plain text immediately" clause is removed as a
+    distinct, common case; every structured-intent answer now goes through the
+    classify call plus the existing 15s-capped text-generation call, described as
+    the norm rather than a `text_only`/`hybrid`-only subset.
+
+Templates requiring updates:
+  - .specify/templates/plan-template.md, spec-template.md, tasks-template.md
+    ✅ compatible — same reasoning as prior amendments: generic structure, no
+    principle-specific language to reconcile. No edit made.
+  - .claude/skills/speckit-*.md ⚠ pending, same standing note as prior amendments — no
+    known conflict, full pass still deferred to the next amendment that touches them.
+  - architecture/04-ai-safety-and-model-usage.md ⚠ pending — grep for `component_only`
+    and update if it independently restates the retired 3-way inventory, per
+    `specs/023-ask-agent-default-hybrid-responses/quickstart.md`'s governance
+    checklist.
+  - architecture/06-error-handling.md ⚠ pending — same grep-and-update note, for the
+    resilience-budget row this document may independently restate.
+
+Follow-up TODOs: none beyond the two ⚠ architecture-doc greps noted above, already
+tracked in `specs/023-ask-agent-default-hybrid-responses/quickstart.md`'s governance
+checklist.
+
+--- prior report (v1.3.0 → v1.4.0) ---
+
 Version change: 1.3.0 → 1.4.0
 
 Rationale for 1.4.0 (MINOR): AI Safety Rules 1 and 4's component inventory gains a third
@@ -461,8 +519,10 @@ every LLM call — Tone, Intent, Meeting readers; Narrator; Ask agent; Draft com
    `text_only`/`hybrid` responses (`specs/014-ask-agent-response-formats`) — never as a
    scoring/decision artifact anywhere else — and is mechanically checked before display in
    every one of those three places (Rule 4). The Ask agent's own response-format decision
-   (`component_only` vs `text_only` vs `hybrid`) is itself a schema-constrained field on the
-   same classify call that already decides `intent` — never a free judgment.
+   (`text_only` vs `hybrid` — `specs/023-ask-agent-default-hybrid-responses` retired
+   `component_only` as a distinct, classify-chosen outcome; `hybrid` is now the default for
+   every structured intent) is itself a schema-constrained field on the same classify call
+   that already decides `intent` — never a free judgment.
 2. **Prompt injection defense is architectural, not prompt-level** — client text is
    untrusted data, never instructions. Interpreters have zero tools and zero side effects;
    output is validated against closed enumerations; a finding can never become an
@@ -487,17 +547,22 @@ timeout and bounded retry policy sized to keep the pipeline inside its latency t
 Tone/Intent/Meeting readers 8s × 2 retries (abstain on exhaustion, never quarantined —
 nothing was produced to quarantine); Narrator 10s × 1 retry (falls back to a deterministic,
 non-LLM headline built from the scoring engine's own output if every generated sentence
-fails its fact-check); Ask agent `component_only` 2.5s with no retry (a retry would already blow its 3s
-budget — falls back to plain text immediately); Ask agent `text_only`/`hybrid` adds a
-second call, the text generation step, capped at a hard 15s via `asyncio.wait_for` — not
-just documentation, an enforced ceiling in code (`specs/014-ask-agent-response-formats`;
-found necessary by live-testing against the real model during that feature's own
-implementation: the shared `LLMPort` adapter's own internal 3-attempt retry meant this
-call was actually unbounded before the explicit cap was added, and a real run without it
-took 72s; asking the model for a short, 2-4 sentence answer — both better chat UX and
-faster to generate — brought real generation down to ~7-8s typical, so 15s is real
-tail-latency headroom, not a guess). Degrades to a `component_only`-shaped response if this
-second call fails or times out, never a partial or corrupted Markdown fragment; the
+fails its fact-check); Ask agent classify call plus a second call, the text generation
+step, capped at a hard 15s via `asyncio.wait_for` — not just documentation, an enforced
+ceiling in code (`specs/014-ask-agent-response-formats`; found necessary by live-testing
+against the real model during that feature's own implementation: the shared `LLMPort`
+adapter's own internal 3-attempt retry meant this call was actually unbounded before the
+explicit cap was added, and a real run without it took 72s; asking the model for a short,
+2-4 sentence answer — both better chat UX and faster to generate — brought real
+generation down to ~7-8s typical, so 15s is real tail-latency headroom, not a guess).
+This budget now applies to every structured-intent answer by default
+(`specs/023-ask-agent-default-hybrid-responses` retired the separate, faster
+`component_only` 2.5s/no-retry path that used to apply to most of them) — the ceiling
+itself is unchanged, only its applicability widened from a subset of responses to
+virtually all of them. Degrades to a `component_only`-shaped response (one component,
+no accompanying text) if this second call fails or times out, never a partial or
+corrupted Markdown fragment — this remains the only way that shape can still occur,
+since `component_only` is no longer a mode the classify call can choose; the
 classify call's own timeout/retry behavior is unchanged, governed by the same shared
 adapter policy it always has been. Draft composer 10s × 1 retry (fails visibly, never a
 partial or silently-empty draft). A malformed webhook payload is captured
@@ -564,4 +629,4 @@ facing companion to this constitution — read it before touching code; where it
 mechanical enforcement detail (a `CHECK` constraint, a CI script, a foreign-key rule), that
 detail is binding, not illustrative.
 
-**Version**: 1.4.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-17
+**Version**: 1.5.0 | **Ratified**: 2026-08-13 | **Last Amended**: 2026-08-21

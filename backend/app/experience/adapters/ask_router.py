@@ -63,10 +63,15 @@ class ResponsePartSchema(BaseModel):
 
 
 class AskAnsweredResponse(BaseModel):
-    """Replaces the old flat `AskComponentResponse`. For `response_mode ==
-    "component_only"` (unchanged default), `parts` is always exactly one
-    component part carrying the identical data the old shape returned —
-    contracts/ask.md's backward-compatibility guarantee."""
+    """Replaces the old flat `AskComponentResponse`. `response_mode` (never
+    itself part of this public schema — see `contracts/ask.md`) now
+    defaults to `"hybrid"`: `parts` is a text part followed by a component
+    part for every structured-intent question by default
+    (`specs/023-ask-agent-default-hybrid-responses`), degrading to exactly
+    one component part — carrying the identical data the old
+    `AskComponentResponse` shape returned — only if text generation fails
+    (contracts/ask.md's backward-compatibility guarantee for that
+    degraded case)."""
 
     intent: str
     parts: list[ResponsePartSchema]

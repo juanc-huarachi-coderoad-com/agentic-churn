@@ -33,13 +33,15 @@ class _FakeLLM(LLMPort):
     """specs/014-ask-agent-response-formats — dispatches on `schema` so the
     same fake can stand in for both the classify call (`ClassifyOutput`)
     and the text-generation call (`TextGenerationOutput`), matching how the
-    real graph makes two separate `generate_structured` calls."""
+    real graph makes two separate `generate_structured` calls. Default
+    `response_mode` is `HYBRID` (specs/023-ask-agent-default-hybrid-
+    responses), matching the real classify call's new default."""
 
     def __init__(
         self,
         intent: Intent,
         subject_hint: str | None = None,
-        response_mode: ResponseMode = ResponseMode.COMPONENT_ONLY,
+        response_mode: ResponseMode = ResponseMode.HYBRID,
         text_markdown: str | Exception | None = None,
     ) -> None:
         self._intent = intent
@@ -503,19 +505,59 @@ async def test_hybrid_response_produces_text_then_component_from_one_snapshot():
     assert result.parts[1].component_props["score"] == 61.0
 
 
-async def test_component_only_stays_a_single_component_part_unchanged():
+async def test_default_response_produces_text_then_component_with_no_special_phrasing():
+    """specs/023-ask-agent-default-hybrid-responses FR-001/US1 — a plain,
+    unremarkable structured-data question (no explanation requested) still
+    gets both parts by default now, since `component_only` no longer
+    exists as a chosen mode."""
     run = _ScoreRun(score=61.0, band="at_risk")
     agent = _build_agent(
-        _FakeLLM(Intent.SCORE_DELTA, response_mode=ResponseMode.COMPONENT_ONLY),
+        _FakeLLM(
+            Intent.SCORE_DELTA,
+            text_markdown="The score dropped mainly due to one broken response promise this week.",
+        ),
         score=_FakeScore(latest=run, contributions=[_contribution()]),
     )
     result = await agent.answer("why did the score go up?", asked_by_user_id=uuid4())
 
-    assert result.response_mode == "component_only"
-    assert len(result.parts) == 1
-    assert isinstance(result.parts[0], ComponentPart)
-    assert result.parts[0].component == "delta_breakdown"
-    assert result.parts[0].component_props["score"] == 61.0
+    assert result.response_mode == "hybrid"
+    assert len(result.parts) == 2
+    assert isinstance(result.parts[0], TextPart)
+    assert isinstance(result.parts[1], ComponentPart)
+    assert result.parts[1].component == "delta_breakdown"
+    assert result.parts[1].component_props["score"] == 61.0
+
+
+async def test_default_hybrid_holds_across_other_structured_intents():
+    """specs/023-ask-agent-default-hybrid-responses FR-001/US1 — the
+    default applies to structured intents generally, not just score_delta."""
+    run = _ScoreRun()
+    top_risk_agent = _build_agent(
+        _FakeLLM(Intent.TOP_RISK, text_markdown="The biggest risk is one open, escalating issue."),
+        score=_FakeScore(latest=run, contributions=[_contribution()]),
+    )
+    top_risk_result = await top_risk_agent.answer(
+        "what's the biggest risk?", asked_by_user_id=uuid4()
+    )
+    assert top_risk_result.response_mode == "hybrid"
+    assert len(top_risk_result.parts) == 2
+    assert isinstance(top_risk_result.parts[0], TextPart)
+    assert isinstance(top_risk_result.parts[1], ComponentPart)
+    assert top_risk_result.parts[1].component == "ranked_issues"
+
+    quiet_agent = _build_agent(
+        _FakeLLM(
+            Intent.QUIET_STAKEHOLDERS,
+            text_markdown="One stakeholder has gone quiet since last week.",
+        ),
+        stakeholders=_FakeStakeholders([_Stakeholder("Diego Marín")]),
+    )
+    quiet_result = await quiet_agent.answer("who has gone quiet?", asked_by_user_id=uuid4())
+    assert quiet_result.response_mode == "hybrid"
+    assert len(quiet_result.parts) == 2
+    assert isinstance(quiet_result.parts[0], TextPart)
+    assert isinstance(quiet_result.parts[1], ComponentPart)
+    assert quiet_result.parts[1].component == "stakeholder_cards"
 
 
 async def test_sentence_with_unverifiable_claim_is_dropped_not_shown():
@@ -579,17 +621,17 @@ async def test_a_response_with_no_survivable_text_also_degrades_to_component_onl
     assert isinstance(result.parts[0], ComponentPart)
 
 
-async def test_component_only_is_the_default_response_mode_logged():
+async def test_hybrid_is_the_default_response_mode_logged():
     ask_queries = _FakeAskQueries()
     run = _ScoreRun(score=61.0, band="at_risk")
     agent = _build_agent(
-        _FakeLLM(Intent.SCORE_DELTA),
+        _FakeLLM(Intent.SCORE_DELTA, text_markdown="The score is 61.0."),
         score=_FakeScore(latest=run, contributions=[_contribution()]),
         ask_queries=ask_queries,
     )
     await agent.answer("why did the score go up?", asked_by_user_id=uuid4())
 
-    assert ask_queries.logged[0]["response_mode"] == "component_only"
+    assert ask_queries.logged[0]["response_mode"] == "hybrid"
 
 
 async def test_decline_and_fallback_log_no_response_mode():
@@ -647,7 +689,11 @@ async def test_smalltalk_word_boundary_does_not_false_match_inside_a_real_questi
         llm, stakeholders=_FakeStakeholders([_Stakeholder("Diego Marín")])
     )
     result = await _run(graph, "show me Diego's history")
-    assert len(llm.calls) == 1
+    # specs/023-ask-agent-default-hybrid-responses: hybrid is now the
+    # default, so a second (generate_text) call also fires — what this
+    # test actually cares about is that classify itself was reached
+    # exactly once, not skipped or double-invoked.
+    assert sum(1 for _, schema in llm.calls if schema is ClassifyOutput) == 1
     assert result["component"] == "filtered_timeline"
 
 
@@ -657,7 +703,11 @@ async def test_non_smalltalk_question_still_reaches_classify_intent_unchanged():
     graph = _build_graph(llm, score=_FakeScore(latest=run, contributions=[_contribution()]))
     result = await _run(graph, "why did the score go up?")
     assert result["component"] == "delta_breakdown"
-    assert len(llm.calls) == 1
+    # specs/023-ask-agent-default-hybrid-responses: hybrid is now the
+    # default, so a second (generate_text) call also fires — what this
+    # test actually cares about is that classify itself was reached
+    # exactly once.
+    assert sum(1 for _, schema in llm.calls if schema is ClassifyOutput) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -514,7 +514,10 @@ CREATE TABLE ask_queries (
     question_text       TEXT NOT NULL,
     matched_intent      TEXT,
     rendered_component  TEXT,
-    response_mode       TEXT,  -- 'component_only'|'text_only'|'hybrid'; NULL for decline/fallback rows
+    response_mode       TEXT,  -- 'text_only'|'hybrid' going forward (specs/023-ask-agent-
+                                -- default-hybrid-responses); historical rows may still read
+                                -- 'component_only', a retired value kept as valid history,
+                                -- never backfilled. NULL for decline/fallback rows
                                 -- (specs/014-ask-agent-response-formats)
     declined_reason     declined_reason,
     response_time_ms    INTEGER,

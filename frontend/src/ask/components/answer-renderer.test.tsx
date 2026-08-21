@@ -10,10 +10,12 @@ import type { AskAnsweredResponse } from '../types'
 // and key by its own unique score_contribution_id, not the repeatable
 // finding_type (research.md Decision 1).
 //
-// specs/014-ask-agent-response-formats — the answered response is now a
-// `parts` sequence; component_only responses are always exactly one
-// component part carrying this same data (Decision 5's backward-
-// compatibility guarantee).
+// specs/014-ask-agent-response-formats — the answered response is a
+// `parts` sequence; this fixture uses a single component part (the shape
+// a hybrid response degrades to if text generation fails —
+// specs/023-ask-agent-default-hybrid-responses — carrying this same data,
+// Decision 5's backward-compatibility guarantee), since this test only
+// cares about component rendering.
 const DUPLICATE_FINDING_TYPE_ANSWER: AskAnsweredResponse = {
   intent: 'score_delta',
   parts: [

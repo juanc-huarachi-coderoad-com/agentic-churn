@@ -166,8 +166,11 @@ class ComponentPart:
 
 ResponsePart = TextPart | ComponentPart
 """An answered response is an ordered sequence of these — one part for
-`component_only`/`text_only`, two (text then component) for `hybrid`
-(research.md Decision 5)."""
+`text_only`, two (text then component) for `hybrid` (research.md Decision
+5). A lone component part can still occur under `hybrid` as graceful
+degradation when text generation fails
+(`specs/023-ask-agent-default-hybrid-responses`) — `component_only` is no
+longer a mode the classify call can choose."""
 
 
 # ---------------------------------------------------------------------------
