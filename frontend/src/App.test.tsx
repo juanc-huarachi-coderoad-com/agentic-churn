@@ -20,6 +20,6 @@ describe('App', () => {
 
   it('redirects an unauthenticated visitor to /login', () => {
     renderApp()
-    expect(screen.getByRole('heading', { name: /log in/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /welcome back/i })).toBeInTheDocument()
   })
 })

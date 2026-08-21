@@ -1,9 +1,15 @@
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Eye, EyeOff, Lock, TriangleAlert, User } from 'lucide-react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useNavigate } from 'react-router'
 import { z } from 'zod'
+import { Button } from '../components/ui/button'
+import { Icon } from '../components/ui/icon'
+import { cn } from '../lib/utils'
 import { apiFetch } from './api-client'
 import { useAuthStore } from './auth-store'
+import { LoginBrandPanel } from './login-brand-panel'
 
 // Client-side validation is UX only — the backend re-validates independently
 // (constitution Full-Stack §5 "Zero Trust Validation"); this schema just gives the CS
@@ -23,10 +29,12 @@ interface LoginResponse {
 export function LoginPage() {
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const {
     register,
     handleSubmit,
     setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) })
 
@@ -50,54 +58,94 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-svh items-center justify-center">
-      <form
-        onSubmit={(e) => void handleSubmit(onSubmit)(e)}
-        className="w-full max-w-sm space-y-4 p-8"
-      >
-        <h1 className="text-lg font-medium text-neutral-900">Log in</h1>
+    <main className="flex min-h-svh w-full bg-neutral-50">
+      <LoginBrandPanel />
 
-        <div>
-          <label htmlFor="username" className="block text-sm text-neutral-600">
-            Username
-          </label>
-          <input
-            id="username"
-            autoComplete="username"
-            className="mt-1 w-full rounded border border-neutral-300 px-3 py-2"
-            {...register('username')}
-          />
-          {errors.username && (
-            <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
+      <div className="flex flex-1 items-center justify-center p-8">
+        <form onSubmit={(e) => void handleSubmit(onSubmit)(e)} className="w-full max-w-sm">
+          <LoginBrandPanel compact />
+
+          <h1 className="text-2xl font-semibold text-neutral-900">Welcome back</h1>
+          <p className="mt-1.5 mb-8 text-sm text-neutral-500">Log in to your AURA workspace</p>
+
+          {errors.root && (
+            <div
+              role="alert"
+              className="mb-5 flex items-start gap-2 rounded-md bg-red-50 px-3 py-2.5 text-sm text-red-700"
+            >
+              <Icon icon={TriangleAlert} size={16} className="mt-0.5 shrink-0 text-red-600" />
+              <span>{errors.root.message}</span>
+            </div>
           )}
-        </div>
 
-        <div>
-          <label htmlFor="password" className="block text-sm text-neutral-600">
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            className="mt-1 w-full rounded border border-neutral-300 px-3 py-2"
-            {...register('password')}
-          />
-          {errors.password && (
-            <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
-          )}
-        </div>
+          <div className="mb-5">
+            <label
+              htmlFor="username"
+              className="mb-1.5 block text-sm font-medium text-neutral-700"
+            >
+              Username
+            </label>
+            <div
+              className={cn(
+                'flex items-center rounded-md border border-neutral-300 bg-white transition-colors focus-within:border-neutral-400 focus-within:ring-[3px] focus-within:ring-neutral-900/8',
+                errors.username && 'border-red-500 focus-within:ring-red-500/10',
+              )}
+            >
+              <Icon icon={User} size={16} className="ml-3 shrink-0 text-neutral-400" />
+              <input
+                id="username"
+                autoComplete="username"
+                aria-invalid={!!errors.username}
+                className="h-11 w-full min-w-0 bg-transparent px-3 text-sm text-neutral-900 outline-none"
+                {...register('username', { onChange: () => clearErrors('root') })}
+              />
+            </div>
+            {errors.username && (
+              <p className="mt-1.5 text-sm text-red-600">{errors.username.message}</p>
+            )}
+          </div>
 
-        {errors.root && <p className="text-sm text-red-600">{errors.root.message}</p>}
+          <div className="mb-6">
+            <label
+              htmlFor="password"
+              className="mb-1.5 block text-sm font-medium text-neutral-700"
+            >
+              Password
+            </label>
+            <div
+              className={cn(
+                'flex items-center rounded-md border border-neutral-300 bg-white transition-colors focus-within:border-neutral-400 focus-within:ring-[3px] focus-within:ring-neutral-900/8',
+                errors.password && 'border-red-500 focus-within:ring-red-500/10',
+              )}
+            >
+              <Icon icon={Lock} size={16} className="ml-3 shrink-0 text-neutral-400" />
+              <input
+                id="password"
+                type={passwordVisible ? 'text' : 'password'}
+                autoComplete="current-password"
+                aria-invalid={!!errors.password}
+                className="h-11 w-full min-w-0 bg-transparent px-3 text-sm text-neutral-900 outline-none"
+                {...register('password', { onChange: () => clearErrors('root') })}
+              />
+              <button
+                type="button"
+                onClick={() => setPasswordVisible((visible) => !visible)}
+                aria-label={passwordVisible ? 'Hide characters' : 'Reveal characters'}
+                className="flex h-11 w-10 shrink-0 items-center justify-center text-neutral-400 transition-colors hover:text-neutral-600 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-neutral-900"
+              >
+                <Icon icon={passwordVisible ? EyeOff : Eye} size={16} />
+              </button>
+            </div>
+            {errors.password && (
+              <p className="mt-1.5 text-sm text-red-600">{errors.password.message}</p>
+            )}
+          </div>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full rounded bg-neutral-900 px-4 py-2 text-white disabled:opacity-50"
-        >
-          {isSubmitting ? 'Logging in…' : 'Log in'}
-        </button>
-      </form>
+          <Button type="submit" disabled={isSubmitting} className="w-full">
+            {isSubmitting ? 'Logging in…' : 'Log in'}
+          </Button>
+        </form>
+      </div>
     </main>
   )
 }

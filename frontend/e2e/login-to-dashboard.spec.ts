@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test'
 test('an unauthenticated visitor is redirected to /login', async ({ page }) => {
   await page.goto('/dashboard')
   await expect(page).toHaveURL(/\/login$/)
-  await expect(page.getByRole('heading', { name: 'Log in' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
 })
 
 test('logging in with valid credentials reaches the dashboard shell', async ({ page }) => {
