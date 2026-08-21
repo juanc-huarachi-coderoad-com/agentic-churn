@@ -13,13 +13,17 @@ function renderSidebar(initialPath: string) {
 }
 
 describe('Sidebar', () => {
-  it('renders exactly one link per existing destination — Dashboard, Coverage, Profile', () => {
+  it('renders exactly one link per existing destination — Dashboard, Coverage, Input Connectors, Profile', () => {
     renderSidebar('/dashboard')
 
     expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('link', { name: 'Coverage' })).toHaveAttribute('href', '/coverage')
+    expect(screen.getByRole('link', { name: 'Input Connectors' })).toHaveAttribute(
+      'href',
+      '/connectors',
+    )
     expect(screen.getByRole('link', { name: 'Profile' })).toHaveAttribute('href', '/profile')
-    expect(screen.getAllByRole('link')).toHaveLength(3)
+    expect(screen.getAllByRole('link')).toHaveLength(4)
   })
 
   it('marks the current route as active and no other route', () => {
@@ -37,7 +41,7 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: 'Dashboard' })).not.toHaveAttribute('aria-current')
   })
 
-  it('renders the account menu trigger after the three destination links', () => {
+  it('renders the account menu trigger after the destination links', () => {
     renderSidebar('/dashboard')
 
     expect(screen.getByRole('button', { name: /account/i })).toBeInTheDocument()

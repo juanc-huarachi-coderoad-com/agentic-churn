@@ -19,6 +19,13 @@ describe('Breadcrumb', () => {
     expect(screen.getByText('Coverage')).toBeInTheDocument()
   })
 
+  it('shows Home > Input Connectors on the connectors screen', () => {
+    renderBreadcrumb('/connectors')
+
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByText('Input Connectors')).toBeInTheDocument()
+  })
+
   it('shows Home > Profile on the profile screen', () => {
     renderBreadcrumb('/profile')
 

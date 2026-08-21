@@ -1,4 +1,4 @@
-import { LayoutGrid, Radar, UserRound } from 'lucide-react'
+import { LayoutGrid, Plug, Radar, UserRound } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 export interface Destination {
@@ -15,5 +15,6 @@ export interface Destination {
 export const DESTINATIONS: Destination[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutGrid },
   { to: '/coverage', label: 'Coverage', icon: Radar },
+  { to: '/connectors', label: 'Input Connectors', icon: Plug },
   { to: '/profile', label: 'Profile', icon: UserRound },
 ]
