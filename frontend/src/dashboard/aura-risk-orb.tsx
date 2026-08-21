@@ -21,13 +21,13 @@ export function AuraRiskOrb({ band }: AuraRiskOrbProps) {
     <div
       data-testid="aura-risk-orb"
       aria-hidden="true"
-      className="relative flex aspect-square w-full items-center justify-center motion-safe:animate-aura-pulse"
+      className="relative flex aspect-square w-1/2 items-center justify-center motion-safe:animate-aura-pulse"
       style={{ '--orb-color': color } as CSSProperties}
     >
       {/* Soft ambient halo bleeding past the sphere's edge */}
       <div
         className="absolute inset-[-20%] rounded-full blur-2xl"
-        style={{ background: 'var(--orb-color)', opacity: 0.35 }}
+        style={{ opacity: 0.35 }}
       />
 
       {/* The glossy sphere */}

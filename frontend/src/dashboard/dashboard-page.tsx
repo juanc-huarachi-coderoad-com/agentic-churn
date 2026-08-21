@@ -127,7 +127,7 @@ export function DashboardPage() {
           data-testid="dashboard-column-1"
           className="flex min-w-0 flex-col gap-6 lg:h-full lg:overflow-y-auto"
         >
-          <div>
+          <div className="text-center">
             <h1 className="text-lg font-medium text-neutral-900">
               {data.client_header?.client_name}
             </h1>
@@ -138,8 +138,9 @@ export function DashboardPage() {
             )}
           </div>
 
-          {data.score_block && <AuraRiskOrb band={data.score_block.band} />}
-
+          <div className="flex justify-center">
+            {data.score_block && <AuraRiskOrb band={data.score_block.band} />}
+          </div>
           <AskBar onOpenDraftComposer={openDraftComposer} onOpenEvidence={openEvidence} />
         </section>
 
