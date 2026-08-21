@@ -40,4 +40,14 @@ describe('AppShell', () => {
       breadcrumb.compareDocumentPosition(content) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
+
+  it('renders the Live badge and notification bell alongside the breadcrumb', () => {
+    renderShell('/coverage')
+
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    const liveBadge = screen.getByText('Live')
+
+    expect(breadcrumb.parentElement).toContainElement(liveBadge)
+    expect(document.querySelector('.lucide-bell')).toBeInTheDocument()
+  })
 })

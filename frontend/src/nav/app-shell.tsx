@@ -1,4 +1,6 @@
+import { Bell } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { Icon } from '../components/ui/icon'
 import { Breadcrumb } from './breadcrumb'
 import { Sidebar } from './sidebar'
 
@@ -18,7 +20,18 @@ export function AppShell({ children }: AppShellProps) {
       <Sidebar />
 
       <main className="flex min-w-0 flex-1 flex-col p-8 lg:overflow-hidden">
-        <Breadcrumb />
+        <div className="flex shrink-0 items-center justify-between gap-3">
+          <Breadcrumb />
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs text-neutral-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden="true" />
+              Live
+            </span>
+            <span className="relative flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 text-neutral-500">
+              <Icon icon={Bell} size={16} />
+            </span>
+          </div>
+        </div>
         <div className="mt-4 flex min-h-0 flex-1 flex-col">{children}</div>
       </main>
     </div>

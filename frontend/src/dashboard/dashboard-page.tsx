@@ -1,9 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bell, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { apiFetch } from '../auth/api-client'
 import { AskBar } from '../ask/ask-bar'
-import { Icon } from '../components/ui/icon'
 import { DraftComposerPanel } from '../draft-composer/draft-composer-panel'
 import { EvidencePanel } from '../evidence/evidence-panel'
 import { AppShell } from '../nav/app-shell'
@@ -97,29 +95,11 @@ export function DashboardPage() {
 
   return (
     <AppShell>
-      {/* FR-013 (Clarifications 2026-08-17): decorative only — no new
-          state, no new API call. Neither the date range nor the
-          notification count is backed by real data today. Company title/
-          renewal moved into column 1 (research.md Decision 5). */}
-      <div className="flex shrink-0 items-center justify-end gap-3">
-        <span className="flex items-center gap-1 rounded-md border border-neutral-200 px-3 py-1.5 text-xs text-neutral-600">
-          Last 30 days
-          <Icon icon={ChevronDown} size={14} />
-        </span>
-        <span className="flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1.5 text-xs text-neutral-600">
-          <span className="h-1.5 w-1.5 rounded-full bg-green-500" aria-hidden="true" />
-          Live
-        </span>
-        <span className="relative flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 text-neutral-500">
-          <Icon icon={Bell} size={16} />
-        </span>
-      </div>
-
       {data.message && (
         <div
           role={data.state === 'source_down' ? 'alert' : 'status'}
           className={`
-            mt-4 flex shrink-0 items-start gap-3 rounded-lg border px-4 py-3
+            flex shrink-0 items-start gap-3 rounded-lg border px-4 py-3
             ${data.state === 'source_down'
               ? 'border-red-200 bg-red-50 text-red-900'
               : data.state === 'unresolved_person'
