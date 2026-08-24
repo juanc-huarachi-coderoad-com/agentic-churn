@@ -10,12 +10,20 @@ interval (research.md Decision 9) — the first job whose `RunCollectorUseCase.e
 call can genuinely fail (the configured local storage location missing, unmounted, or
 permission-denied — research.md Decision 12), which is exactly why that method gained a
 real `try/except` and a caller-supplied `trigger` rather than a hard-coded literal
-(research.md Decision 5's correction). Run with:
+(research.md Decision 5's correction). specs/026-automated-pipeline-orchestration adds
+the fifth: a 30-second poll (research.md Decision 3) that wires RunReadersUseCase and
+NarrateScoreRunUseCase into a live, automatic trigger for the first time —
+scripts/run_narrator.py's own docstring used to say "no live/chained trigger path exists
+anywhere in this pipeline yet"; this job is that path. Skips entirely (no reader,
+recompute, or narration work) when `events.created_at`'s max hasn't advanced since the
+last cycle (research.md Decision 2) — a quiet, healthy account costs nothing between
+real signals (constitution P6). Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
     uv run python -m app.worker --run-once retention
     uv run python -m app.worker --run-once audio
+    uv run python -m app.worker --run-once pipeline
 """
 
 import argparse
@@ -26,6 +34,7 @@ import time
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import text
 
 from app.config import settings
 from app.db import async_session_factory, shredder_session_factory
@@ -48,8 +57,42 @@ from app.ingestion.application.use_cases import (
     RunCollectorUseCase,
     RunRetentionUseCase,
 )
+from app.narrator.adapters.sqlalchemy_repository import (
+    SqlAlchemyClientContextRepository,
+    SqlAlchemyNarratorOutputRepository,
+    SqlAlchemyPlaybookRepository,
+    SqlAlchemyScoreContextRepository,
+)
+from app.narrator.application.use_cases import NarrateScoreRunUseCase
 from app.observability.adapters.tracing import setup_tracing, traced
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
+from app.readers.adapters.openai_embedding import OpenAIEmbeddingAdapter
+from app.readers.adapters.sqlalchemy_repository import (
+    SqlAlchemyAbsenceEventRepository,
+    SqlAlchemyCandidateCorpusRepository,
+    SqlAlchemyConfirmedBaselineRepository,
+    SqlAlchemyEventExistenceRepository,
+    SqlAlchemyFindingTypeConfigRepository,
+    SqlAlchemyMeetingTranscriptRepository,
+    SqlAlchemyMessageEventRepository,
+    SqlAlchemyQuarantineRepository,
+    SqlAlchemyRelationshipContext,
+    SqlAlchemyResponsePairRepository,
+    SqlAlchemyRollupRepository,
+)
+from app.readers.adapters.sqlalchemy_repository import (
+    SqlAlchemyFindingRepository as ReadersFindingRepository,
+)
+from app.readers.application.absence_reader import AbsenceReader
+from app.readers.application.commitment_reader import CommitmentReader
+from app.readers.application.intent_reader import IntentReader
+from app.readers.application.meeting_reader import MeetingReader
+from app.readers.application.recurrence_reader import RecurrenceReader
+from app.readers.application.relationship_reader import RelationshipReader
+from app.readers.application.tone_reader import ToneReader
+from app.readers.application.usage_reader import UsageReader
+from app.readers.application.use_cases import RunReadersUseCase
+from app.readers.application.validation_gate import ValidationGate
 from app.scoring.adapters.sqlalchemy_repository import (
     SqlAlchemyClientProfileMultipliers,
     SqlAlchemyCoverageCheck,
@@ -177,11 +220,123 @@ async def _collect_audio() -> None:
     )
 
 
+# specs/026-automated-pipeline-orchestration, research.md Decision 2 — in-process only,
+# not persisted. A restart re-runs one harmless cycle if nothing changed (the readers'
+# own idempotency checks, e.g. RecurrenceReader's already_interpreted() dedup, make a
+# redundant cycle produce zero duplicate findings); persisting this to survive restarts
+# would be schema surface disproportionate to that one-time, harmless cost (P10).
+_last_seen_event_at: datetime | None = None
+
+
+def _run_pipeline_orchestration() -> None:
+    asyncio.run(_orchestrate_pipeline())
+
+
+async def _orchestrate_pipeline() -> None:
+    # specs/026-automated-pipeline-orchestration — no blanket try/except here
+    # (research.md Decision — FR-010): a failure in RecomputeScoreUseCase or
+    # NarrateScoreRunUseCase must propagate through traced() (which marks the span
+    # degraded) to APScheduler's own executor logging, exactly like every other job
+    # in this file. RunReadersUseCase's own internal per-reader try/except is what
+    # satisfies FR-005 — unchanged, reused as-is.
+    global _last_seen_event_at
+    with traced("pipeline_orchestration"):
+        async with async_session_factory() as session:
+            latest_at = (
+                await session.execute(text("SELECT MAX(created_at) FROM events"))
+            ).scalar_one_or_none()
+            # research.md Decision 2 — events.id is a UUID, not orderable; created_at
+            # (insertion time, monotonic) is the only usable high-water-mark. The
+            # `is not None` guard on the module-level variable is required, not
+            # optional: comparing `latest_at <= _last_seen_event_at` while the latter
+            # is still None (the very first tick after process start) would raise
+            # TypeError — that first tick must run once to establish the baseline.
+            if latest_at is None:
+                return
+            if _last_seen_event_at is not None and latest_at <= _last_seen_event_at:
+                return
+            captured_at = latest_at  # read-cursor-then-work, so a mid-cycle arrival
+            # is never lost — it simply becomes the next cycle's trigger instead.
+
+            encryption = BucketedFernetEncryption(
+                FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
+            )
+            reader_findings = ReadersFindingRepository(session)
+            messages = SqlAlchemyMessageEventRepository(session, encryption)
+            gate = ValidationGate(
+                finding_type_config=SqlAlchemyFindingTypeConfigRepository(session),
+                event_existence=SqlAlchemyEventExistenceRepository(session),
+            )
+            quarantine = SqlAlchemyQuarantineRepository(session)
+            reader_llm = AnthropicLLMAdapter(settings.anthropic_api_key, settings.reader_model_id)
+            readers = [
+                CommitmentReader(SqlAlchemyResponsePairRepository(session), reader_findings),
+                UsageReader(SqlAlchemyRollupRepository(session), reader_findings),
+                AbsenceReader(SqlAlchemyAbsenceEventRepository(session), reader_findings),
+                RelationshipReader(SqlAlchemyRelationshipContext(session), reader_findings),
+                RecurrenceReader(
+                    SqlAlchemyCandidateCorpusRepository(session),
+                    OpenAIEmbeddingAdapter(settings.openai_api_key),
+                    reader_findings,
+                ),
+                ToneReader(
+                    messages,
+                    SqlAlchemyConfirmedBaselineRepository(session, encryption),
+                    reader_llm,
+                    reader_findings,
+                ),
+                IntentReader(messages, reader_llm, reader_findings),
+                MeetingReader(
+                    SqlAlchemyMeetingTranscriptRepository(session, encryption),
+                    reader_llm,
+                    reader_findings,
+                ),
+            ]
+            reader_results = await RunReadersUseCase(
+                readers=readers, findings=reader_findings, gate=gate, quarantine=quarantine
+            ).execute()
+            for result in reader_results:
+                if result.error is not None:
+                    logger.warning(
+                        "pipeline orchestration: reader %s failed (isolated): %s",
+                        result.reader_type,
+                        result.error,
+                    )
+
+            score_run = await RecomputeScoreUseCase(
+                findings=SqlAlchemyFindingRepository(session),
+                score_runs=SqlAlchemyScoreRunRepository(session),
+                profile=SqlAlchemyClientProfileMultipliers(session),
+                damping=SqlAlchemyDampingRepository(session),
+                coverage=SqlAlchemyCoverageCheck(session),
+            ).execute(trigger="new_event")
+
+            # research.md Decision 5 — NarrateScoreRunUseCase.execute() already
+            # returns None when the score run has no findings ("a genuinely healthy
+            # run"), which already satisfies FR-009 with no extra check needed here.
+            narrator_output = await NarrateScoreRunUseCase(
+                llm=AnthropicLLMAdapter(settings.anthropic_api_key, settings.generation_model_id),
+                score_context=SqlAlchemyScoreContextRepository(session),
+                client_context=SqlAlchemyClientContextRepository(session, encryption),
+                playbook=SqlAlchemyPlaybookRepository(session),
+                repository=SqlAlchemyNarratorOutputRepository(session),
+            ).execute(score_run.id)
+
+            _last_seen_event_at = captured_at
+        logger.info(
+            "pipeline orchestration: score=%.2f band=%s narrated=%s",
+            score_run.score,
+            score_run.band,
+            narrator_output is not None,
+        )
+
+
 _RUN_ONCE_JOBS = {
     "absence": _run_absence_detection,
     "score": _run_score_recompute,
     "retention": _run_retention,
     "audio": _run_audio_collector,
+    "pipeline": _run_pipeline_orchestration,
 }
 
 
@@ -217,11 +372,21 @@ def main() -> None:
         hours=settings.audio_poll_interval_hours,
         id="audio_collector",
     )
+    # specs/026-automated-pipeline-orchestration, research.md Decisions 1/3 — a
+    # 30-second poll (same primitive as every job above), not LISTEN/NOTIFY or a
+    # message broker; matches architecture/03-technology-stack.md's own stated
+    # "30-second batching window" design intent and stays inside REQ-NFR-02's 60s
+    # cap. No max_instances override — BackgroundScheduler's own default (1) is
+    # exactly FR-006's "never two overlapping cycles" requirement (research.md
+    # Decision 6), already relied upon, silently, by every job above.
+    scheduler.add_job(
+        _run_pipeline_orchestration, "interval", seconds=30, id="pipeline_orchestration"
+    )
     scheduler.start()
     logger.info(
         "worker started — absence collector and score recompute on the hourly "
         "heartbeat, retention job on the daily heartbeat, audio collector every "
-        "%d hour(s)",
+        "%d hour(s), pipeline orchestration (readers/recompute/narration) every 30s",
         settings.audio_poll_interval_hours,
     )
 

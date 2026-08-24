@@ -65,6 +65,14 @@ _SCORE_AS_OF = datetime(2026, 8, 11, 13, 2, tzinfo=_BOGOTA)
 _RESET_TABLES = (
     "score_contributions",
     "band_history",
+    # narrator_outputs must clear before score_runs — it carries a FK to
+    # score_runs.id (narrator_outputs_score_run_id_fkey). Never populated in this
+    # shared dev database until specs/026-automated-pipeline-orchestration's own
+    # `--run-once pipeline`/live verification became the first real caller of
+    # NarrateScoreRunUseCase to run outside a fresh, isolated container — the same
+    # "this FK dependency never actually fired against a real row until now" class
+    # of gap the quarantine/validation_failures entry below already documents.
+    "narrator_outputs",
     "score_runs",
     "finding_issue_map",
     # validation_failures/quarantine must clear before findings — both carry
