@@ -124,3 +124,41 @@ jobs:
           uv run alembic upgrade head
           uv run python scripts/seed.py
           uv run pytest tests/golden_replay/ tests/scoring/ tests/unit/ -v
+
+  # T009-T012 (specs/025-ci-cd-github-actions) — publishes ghcr.io images tagged by
+  # commit SHA only (research.md Decision 3: no `latest`, so a running deployment's
+  # image tag always traces to one exact commit and its CI run). Gated by `needs:`
+  # on the three jobs above rather than a separate workflow_run-triggered file
+  # (research.md Decision 1) — one push/PR event maps to exactly one workflow run,
+  # and the publish job simply cannot start until lint/type-check/test all succeed
+  # for this exact commit.
+  publish:
+    needs: [lint, type-check, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push api image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/agentic-churn-api:${{ github.sha }}
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/agentic-churn-web:${{ github.sha }}
