@@ -75,7 +75,9 @@ async def validated_finding():
 
 
 async def test_feedback_requires_authentication(client):
-    response = await client.post("/api/feedback", json={"finding_id": str(uuid.uuid4()), "verdict": "correct"})
+    response = await client.post(
+        "/api/feedback", json={"finding_id": str(uuid.uuid4()), "verdict": "correct"}
+    )
     assert response.status_code == 401
 
 
@@ -127,7 +129,10 @@ async def test_second_false_alarm_damps_to_0250(client, auth_token, validated_fi
     async with engine.begin() as conn:
         row = (
             await conn.execute(
-                text("SELECT weight, false_alarm_count FROM damping_weights WHERE pattern_signature = :ps"),
+                text(
+                    "SELECT weight, false_alarm_count FROM damping_weights "
+                    "WHERE pattern_signature = :ps"
+                ),
                 {"ps": pattern},
             )
         ).one()
@@ -141,7 +146,10 @@ async def test_past_score_run_unchanged_after_verdict(client, auth_token, valida
     async with engine.begin() as conn:
         before = (
             await conn.execute(
-                text("SELECT id, score, computed_at FROM score_runs ORDER BY computed_at DESC LIMIT 1")
+                text(
+                    "SELECT id, score, computed_at FROM score_runs "
+                    "ORDER BY computed_at DESC LIMIT 1"
+                )
             )
         ).one_or_none()
     if before is None:
@@ -193,7 +201,9 @@ async def test_false_alarm_with_only_issue_id_is_rejected(client, auth_token):
 # ---------------------------------------------------------------------------
 
 
-async def test_two_false_alarms_then_correct_recovers_to_02875(client, auth_token, validated_finding):
+async def test_two_false_alarms_then_correct_recovers_to_02875(
+    client, auth_token, validated_finding
+):
     finding_id, pattern = validated_finding
 
     for verdict in ("false_alarm", "false_alarm", "correct"):

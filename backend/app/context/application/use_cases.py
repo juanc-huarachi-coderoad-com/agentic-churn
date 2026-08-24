@@ -104,6 +104,12 @@ class RecordFeedbackVerdictUseCase:
 
         target_finding_id = finding_id
         if target_finding_id is None:
+            # Zero Trust Validation (constitution, Full-Stack Engineering §5) — the
+            # route already rejects finding_id=None/issue_id=None before calling
+            # execute(), but the use case re-checks its own invariant rather than
+            # trusting the caller, and this narrows issue_id to non-None for mypy.
+            if issue_id is None:
+                raise VerdictRequiresFindingError(verdict)
             target_finding_id = await self._issues.get_top_finding_id(issue_id)
             if target_finding_id is None:
                 raise IssueNotFoundError(issue_id)

@@ -56,7 +56,9 @@ def build_disclosure_text(
         if false_alarm_count == 1:
             headline = "weight reduced — your team flagged this pattern as a false alarm"
         else:
-            headline = f"weight reduced — your team dismissed this pattern {_times(false_alarm_count)}"
+            headline = (
+                f"weight reduced — your team dismissed this pattern {_times(false_alarm_count)}"
+            )
         if correct_count > 0:
             headline += f", partially restored after your team confirmed it {_times(correct_count)}"
     elif correct_count > 0:
