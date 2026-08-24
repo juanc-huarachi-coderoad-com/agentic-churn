@@ -233,12 +233,23 @@ def _run_pipeline_orchestration() -> None:
 
 
 async def _orchestrate_pipeline() -> None:
-    # specs/026-automated-pipeline-orchestration — no blanket try/except here
-    # (research.md Decision — FR-010): a failure in RecomputeScoreUseCase or
-    # NarrateScoreRunUseCase must propagate through traced() (which marks the span
-    # degraded) to APScheduler's own executor logging, exactly like every other job
-    # in this file. RunReadersUseCase's own internal per-reader try/except is what
-    # satisfies FR-005 — unchanged, reused as-is.
+    # specs/026-automated-pipeline-orchestration — no blanket try/except around
+    # readers/RecomputeScoreUseCase (research.md Decision — FR-010): a failure there
+    # must propagate through traced() (which marks the span degraded) to APScheduler's
+    # own executor logging, exactly like every other job in this file.
+    # RunReadersUseCase's own internal per-reader try/except is what satisfies FR-005
+    # — unchanged, reused as-is. NarrateScoreRunUseCase gets its own narrower
+    # try/except below (not blanket) — found necessary by this feature's own live CI
+    # verification, not assumed up front: unlike RecomputeScoreUseCase (pure
+    # arithmetic, P2, never touches an LLM), narration always constructs a real
+    # AnthropicLLMAdapter and can fail on a missing/misconfigured key exactly the way
+    # Tone/Intent already can — but unlike those two readers, nothing here isolated
+    # that failure, so it used to crash the whole cycle AND (worse) skip updating
+    # `_last_seen_event_at`, which would have retried the full readers+recompute+
+    # narrate sequence every 30s forever against a persistently-misconfigured key.
+    # The score/findings are already correct and visible on the dashboard the moment
+    # RecomputeScoreUseCase returns — narration text is the one part of this cycle
+    # that's allowed to fail without undoing that.
     global _last_seen_event_at
     with traced("pipeline_orchestration"):
         async with async_session_factory() as session:
@@ -310,19 +321,31 @@ async def _orchestrate_pipeline() -> None:
                 damping=SqlAlchemyDampingRepository(session),
                 coverage=SqlAlchemyCoverageCheck(session),
             ).execute(trigger="new_event")
+            # The cursor advances here, not after narration — readers and score
+            # recompute have already fully processed everything up to captured_at;
+            # narration's own fate (below) must never cause a re-processing retry.
+            _last_seen_event_at = captured_at
 
             # research.md Decision 5 — NarrateScoreRunUseCase.execute() already
             # returns None when the score run has no findings ("a genuinely healthy
             # run"), which already satisfies FR-009 with no extra check needed here.
-            narrator_output = await NarrateScoreRunUseCase(
-                llm=AnthropicLLMAdapter(settings.anthropic_api_key, settings.generation_model_id),
-                score_context=SqlAlchemyScoreContextRepository(session),
-                client_context=SqlAlchemyClientContextRepository(session, encryption),
-                playbook=SqlAlchemyPlaybookRepository(session),
-                repository=SqlAlchemyNarratorOutputRepository(session),
-            ).execute(score_run.id)
-
-            _last_seen_event_at = captured_at
+            narrator_output = None
+            try:
+                narrator_output = await NarrateScoreRunUseCase(
+                    llm=AnthropicLLMAdapter(
+                        settings.anthropic_api_key, settings.generation_model_id
+                    ),
+                    score_context=SqlAlchemyScoreContextRepository(session),
+                    client_context=SqlAlchemyClientContextRepository(session, encryption),
+                    playbook=SqlAlchemyPlaybookRepository(session),
+                    repository=SqlAlchemyNarratorOutputRepository(session),
+                ).execute(score_run.id)
+            except Exception:
+                logger.exception(
+                    "pipeline orchestration: narration failed for score_run %s "
+                    "(score/findings already persisted; not retried this cycle)",
+                    score_run.id,
+                )
         logger.info(
             "pipeline orchestration: score=%.2f band=%s narrated=%s",
             score_run.score,

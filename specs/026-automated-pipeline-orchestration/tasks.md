@@ -231,6 +231,17 @@ immediately; `scripts/run_readers.py`/`scripts/run_narrator.py` still work unmod
   freshly bootstrapped, real Postgres — confirmed the skip branch is a real no-op (no new
   `score_runs` row) and the run branch really executes end to end (one new `trigger='new_event'`
   row per triggering event).
+- **Genuine bug found and fixed by real CI, not local testing**: the first pushed version of this
+  feature passed every local check (including against a real Postgres with real API keys) but
+  **failed on GitHub Actions** — CI deliberately runs with no `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`
+  set, and narration's identical-to-Tone/Intent missing-key failure mode wasn't isolated the way
+  those two readers already are, crashing the whole cycle and (worse) skipping the cursor update
+  that would have prevented an infinite 30s retry storm against a real misconfigured deployment.
+  Fixed: narration gets its own `try/except`, logged not swallowed; the cursor now advances right
+  after `RecomputeScoreUseCase` succeeds, before narration runs (`research.md` Decision 7).
+  Reproduced and confirmed locally by explicitly clearing both keys (overriding the local `.env`
+  file) and re-running the full suite against a fresh container: 181 passed, 1 skipped, matching
+  CI's real result after the fix, pushed as a second commit on the same PR.
 - **Genuine bug found and fixed during this feature's own verification, not by inspection**:
   the first real, non-container-isolated call to `NarrateScoreRunUseCase` in this shared dev
   database (via T009's live run) populated a real `narrator_outputs` row for the first time —

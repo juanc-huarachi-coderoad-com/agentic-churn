@@ -140,3 +140,41 @@ library behavior.
 
 **Alternatives considered**: A manual `asyncio.Lock`/DB advisory lock — rejected, redundant with a
 library guarantee already in effect and already relied upon (silently) by the existing jobs.
+
+## Decision 7: Narration failure is isolated (logged, cursor still advances), found necessary by real CI verification, not assumed up front
+
+**Decision**: `NarrateScoreRunUseCase`'s call is wrapped in its own `try/except Exception`,
+logging via `logger.exception(...)` and continuing — not a blanket wrapper around the whole
+cycle, and not the original "let everything propagate for FR-010" design this feature started
+with. `_last_seen_event_at` is now updated immediately after `RecomputeScoreUseCase` succeeds,
+**before** narration runs, not after.
+
+**Rationale**: This is a real correction, not a planning-time decision — the first version of this
+feature (no narration isolation, cursor updated only after narration) passed every local test on a
+machine with real `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` configured, then **failed for real on
+GitHub Actions**, where those keys are deliberately absent (feature 025's own CI job never sets
+them, to avoid needing paid-API secrets in CI). `AnthropicLLMAdapter.generate_structured()` raises
+a plain `ValueError` on a missing key — deliberately lazy, per its own docstring, specifically so
+`RunReadersUseCase` can isolate it as Tone/Intent's own reader-level failure (FR-005, already
+correct). But `NarrateScoreRunUseCase` is not a reader — nothing wrapped its identical failure
+mode, so it crashed the whole cycle *and*, because the cursor update was the last line in the
+function, skipped advancing `_last_seen_event_at` too. Reproduced locally by explicitly clearing
+`ANTHROPIC_API_KEY`/`OPENAI_API_KEY` (overriding the local `.env` file's real keys) and re-running
+the full suite against a fresh container — confirms the failure, and confirms the fix: 181 passed,
+1 skipped, both with and without real keys configured.
+
+The deeper problem this fix closes isn't just "the CI test fails" — it's that a
+persistently-misconfigured `ANTHROPIC_API_KEY` in a real deployment would have retried the entire
+readers→recompute→narrate sequence every 30 seconds, forever, paying full readers/embedding cost
+each time for a narration step that can never succeed until someone fixes the key. Findings and
+score are already correct and dashboard-visible the moment `RecomputeScoreUseCase` returns —
+narration text is a genuine nice-to-have on top of that, not a gate on it, so its own failure
+isolating (log, move on, cursor already advanced) is the correct shape, matching the spirit of the
+Narrator's own existing resilience budget (falls back to a deterministic non-LLM headline when
+generated content fails its fact-check) even though this specific failure mode — a missing key,
+not a content fact-check failure — wasn't one that fallback already covered.
+
+**Alternatives considered**: Keep the original "propagate everything" design and instead make the
+CI test set a fake `ANTHROPIC_API_KEY` — rejected: that would hide the exact production risk this
+decision describes (an indefinite 30s retry storm on a real misconfigured deployment) behind a
+test that only proves the code path is exercised, not that it's safe.
