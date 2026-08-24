@@ -7,8 +7,6 @@ from openai import AsyncOpenAI
 
 from app.readers.application.ports import EmbeddingPort
 
-_MODEL = "text-embedding-3-small"
-
 
 class OpenAIEmbeddingAdapter(EmbeddingPort):
     """Deliberately doesn't validate `api_key` at construction time (unlike a
@@ -17,6 +15,11 @@ class OpenAIEmbeddingAdapter(EmbeddingPort):
     raise would crash the whole run instead of being caught and reported as
     Recurrence's own isolated failure (`spec.md`'s Edge Cases — "isolated to
     Recurrence alone")."""
+
+    # specs/027-pgvector-embedding-store, research.md Decision 4 — public so
+    # composition roots can key CachedEmbeddingAdapter's cache by exactly this
+    # string, with no second, independently-maintained copy of it anywhere else.
+    MODEL_ID = "text-embedding-3-small"
 
     def __init__(self, api_key: str) -> None:
         # The client itself isn't built here — `AsyncOpenAI(api_key="")` raises
@@ -35,5 +38,5 @@ class OpenAIEmbeddingAdapter(EmbeddingPort):
             )
         if self._client is None:
             self._client = AsyncOpenAI(api_key=self._api_key)
-        response = await self._client.embeddings.create(model=_MODEL, input=text)
+        response = await self._client.embeddings.create(model=self.MODEL_ID, input=text)
         return response.data[0].embedding
