@@ -83,7 +83,10 @@ jobs:
     runs-on: ubuntu-latest
     services:
       db:
-        image: postgres:16
+        # specs/027-pgvector-embedding-store, research.md Decision 5 — matches
+        # docker-compose.yml's own db image; CREATE EXTENSION vector (the new
+        # embedding_cache migration) fails against a vanilla postgres:16 service.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

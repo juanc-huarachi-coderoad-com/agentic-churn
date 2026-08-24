@@ -119,6 +119,26 @@ Fine-grained log, one row per failed check (a finding can fail more than one che
 |---|---|---|---|
 | `q-1` | `confidence_floor` | "≥ 0.65" | "0.55" |
 
+## `embedding_cache`
+
+**In plain terms:** the Recurrence reader's memory for text it has already asked an embeddings
+provider about. Without this table, every run re-embeds its *entire* candidate corpus from
+scratch, even titles it has seen on every previous run — this table lets it skip the redundant
+call and reuse what it already paid for once (`specs/027-pgvector-embedding-store`).
+
+A pure cache, not a finding-producing table — it has no foreign key in or out of anything else in
+this schema, and nothing about clustering or findings changes based on whether a given embedding
+came from this table or a fresh provider call (`specs/027-pgvector-embedding-store/data-model.md`).
+
+| Field | Type | Description |
+|---|---|---|
+| `content_hash` | TEXT, part of PK | SHA-256 of the exact candidate title string embedded |
+| `model` | TEXT, part of PK | Which embedding model produced this vector — never reused across a model change |
+| `embedding` | `vector(1536)` | The embedding itself (pgvector extension) |
+| `created_at` | TIMESTAMPTZ | Diagnostic only, never read by a lookup |
+
+**Primary key**: `(content_hash, model)` — a lookup is always an exact match on both together.
+
 ## `finding_type_config`
 
 **In plain terms:** the price list. Before any finding can be turned into points, the system needs to know how many points that *type* of finding is worth at its full strength, and what bar it has to clear to be trusted at all. This table is set once by the product team (Phase 1: seed defaults; Phase 2: tuned in a workshop with real CS leads — see `decisions/00-open-questions-resolved.md` Q4), not something a reader decides for itself.

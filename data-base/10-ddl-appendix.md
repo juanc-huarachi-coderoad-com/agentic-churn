@@ -400,6 +400,20 @@ CREATE TABLE validation_failures (
     actual         TEXT
 );
 
+-- specs/027-pgvector-embedding-store — a pure cache, no FK in or out. The
+-- Recurrence reader's own candidate-corpus/clustering logic is unaffected by
+-- this table's existence (data-model.md); it only removes redundant
+-- embedding-provider calls for content already embedded on a prior run.
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE embedding_cache (
+    content_hash TEXT NOT NULL,
+    model        TEXT NOT NULL,
+    embedding    vector(1536) NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (content_hash, model)
+);
+
 -- ============================================================
 -- 06 · Scoring
 -- ============================================================

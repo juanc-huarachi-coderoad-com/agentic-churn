@@ -21,6 +21,7 @@ from app.ingestion.adapters.encryption import BucketedFernetEncryption  # noqa: 
 from app.ingestion.adapters.key_store import FileKeyStore  # noqa: E402
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter  # noqa: E402
 from app.readers.adapters.openai_embedding import OpenAIEmbeddingAdapter  # noqa: E402
+from app.readers.adapters.pgvector_embedding_cache import CachedEmbeddingAdapter  # noqa: E402
 from app.readers.adapters.sqlalchemy_repository import (  # noqa: E402
     SqlAlchemyAbsenceEventRepository,
     SqlAlchemyCandidateCorpusRepository,
@@ -68,7 +69,13 @@ async def run() -> None:
             RelationshipReader(SqlAlchemyRelationshipContext(session), findings),
             RecurrenceReader(
                 SqlAlchemyCandidateCorpusRepository(session),
-                OpenAIEmbeddingAdapter(settings.openai_api_key),
+                # specs/027-pgvector-embedding-store — same cached wiring as
+                # app.worker, so this manual script exercises the real path.
+                CachedEmbeddingAdapter(
+                    session,
+                    OpenAIEmbeddingAdapter.MODEL_ID,
+                    OpenAIEmbeddingAdapter(settings.openai_api_key),
+                ),
                 findings,
             ),
             ToneReader(

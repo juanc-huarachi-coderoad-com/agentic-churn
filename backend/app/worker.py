@@ -67,6 +67,7 @@ from app.narrator.application.use_cases import NarrateScoreRunUseCase
 from app.observability.adapters.tracing import setup_tracing, traced
 from app.readers.adapters.anthropic_llm import AnthropicLLMAdapter
 from app.readers.adapters.openai_embedding import OpenAIEmbeddingAdapter
+from app.readers.adapters.pgvector_embedding_cache import CachedEmbeddingAdapter
 from app.readers.adapters.sqlalchemy_repository import (
     SqlAlchemyAbsenceEventRepository,
     SqlAlchemyCandidateCorpusRepository,
@@ -287,7 +288,14 @@ async def _orchestrate_pipeline() -> None:
                 RelationshipReader(SqlAlchemyRelationshipContext(session), reader_findings),
                 RecurrenceReader(
                     SqlAlchemyCandidateCorpusRepository(session),
-                    OpenAIEmbeddingAdapter(settings.openai_api_key),
+                    # specs/027-pgvector-embedding-store — a repeated candidate
+                    # title across pipeline cycles costs zero additional
+                    # embedding calls; RecurrenceReader itself is unaware of this.
+                    CachedEmbeddingAdapter(
+                        session,
+                        OpenAIEmbeddingAdapter.MODEL_ID,
+                        OpenAIEmbeddingAdapter(settings.openai_api_key),
+                    ),
                     reader_findings,
                 ),
                 ToneReader(
