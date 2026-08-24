@@ -4,10 +4,10 @@ rest of the codebase's DDL-first pattern (no ORM declarative models).
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import text
+from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.experience.application.ports import (
@@ -810,7 +810,8 @@ class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
             )
         ).one()
         await self._session.commit()
-        return row.id
+        draft_id: UUID = row.id
+        return draft_id
 
     async def get(self, draft_id: UUID) -> DraftMessageRecord | None:
         row = (
@@ -839,17 +840,23 @@ class SqlAlchemyDraftMessageRepository(DraftMessageRepositoryPort):
         )
 
     async def stamp_copied(self, draft_id: UUID) -> bool:
-        result = await self._session.execute(
-            text("UPDATE draft_messages SET copied_at = now() WHERE id = :id"),
-            {"id": draft_id},
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                text("UPDATE draft_messages SET copied_at = now() WHERE id = :id"),
+                {"id": draft_id},
+            ),
         )
         await self._session.commit()
         return result.rowcount > 0
 
     async def stamp_logged_manually(self, draft_id: UUID) -> bool:
-        result = await self._session.execute(
-            text("UPDATE draft_messages SET logged_manually_at = now() WHERE id = :id"),
-            {"id": draft_id},
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                text("UPDATE draft_messages SET logged_manually_at = now() WHERE id = :id"),
+                {"id": draft_id},
+            ),
         )
         await self._session.commit()
         return result.rowcount > 0

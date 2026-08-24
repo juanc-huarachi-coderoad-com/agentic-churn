@@ -74,17 +74,24 @@ class _FakeVerdictRepository(FeedbackVerdictRepositoryPort):
         self._row = updated
 
 
+_DEFAULT_COMPONENTS = FindingPatternComponents(
+    reader_type="relationship", finding_type="relationship_change"
+)
+_UNSET: FindingPatternComponents | None = FindingPatternComponents(
+    reader_type="__unset__", finding_type="__unset__"
+)
+
+
 def _use_case(
     *,
-    components: FindingPatternComponents | None = FindingPatternComponents(
-        reader_type="relationship", finding_type="relationship_change"
-    ),
+    components: FindingPatternComponents | None = _UNSET,
     top_finding_id: UUID | None = None,
     verdicts: _FakeVerdictRepository | None = None,
 ) -> tuple[RecordFeedbackVerdictUseCase, _FakeVerdictRepository]:
     repo = verdicts or _FakeVerdictRepository()
+    resolved_components = _DEFAULT_COMPONENTS if components is _UNSET else components
     use_case = RecordFeedbackVerdictUseCase(
-        findings=_FakeFindingReader(components),
+        findings=_FakeFindingReader(resolved_components),
         issues=_FakeIssueReader(top_finding_id),
         verdicts=repo,
     )
