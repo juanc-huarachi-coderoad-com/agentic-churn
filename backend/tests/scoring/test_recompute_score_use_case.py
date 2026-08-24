@@ -23,13 +23,17 @@ from app.scoring.adapters.sqlalchemy_repository import (
 )
 from app.scoring.application.use_cases import RecomputeScoreUseCase
 
-_RESET_TABLES = ("score_contributions", "band_history", "score_runs")
+_RESET_TABLES = ("score_contributions", "band_history", "narrator_outputs", "score_runs")
 
 
 async def _reset_score_runs() -> None:
     """This file never touches findings/issues (it runs against whatever validated
     findings already exist, typically none in a freshly seeded DB) — only wipes the
-    run-history tables it itself needs a clean slate for."""
+    run-history tables it itself needs a clean slate for. narrator_outputs must clear
+    before score_runs (narrator_outputs_score_run_id_fkey) — never populated in this
+    shared dev database until specs/026-automated-pipeline-orchestration's own
+    NarrateScoreRunUseCase caller ran outside a fresh, isolated container for the
+    first time; see test_worked_example.py's own _RESET_TABLES for the same fix."""
     async with engine.begin() as conn:
         for table in _RESET_TABLES:
             await conn.execute(text(f"DELETE FROM {table}"))
