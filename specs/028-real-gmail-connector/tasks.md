@@ -224,27 +224,54 @@ the run.
 - **T012/T013**: Whole-connection-failure propagation and per-item-failure isolation both covered
   by dedicated fake-`GmailClient` tests, passing.
 - **T014**: The *logic* (connection failure propagates, is never silently swallowed) is proven by
-  T012's unit test. The *live* half of this task — running `--run-once gmail` against the real
-  Gmail API with a deliberately invalid token and observing `GET /api/coverage`'s real response —
-  could not be completed in this session: it requires `GMAIL_REFRESH_TOKEN` to exist first (T001's
-  own remaining manual step), which it does not yet. Flagged here honestly rather than marked done
-  by assumption — this is the one genuine gap between "fully verified" and "fully implemented and
-  unit-tested" for this feature.
+  T012's unit test. The live half (invalid-token run) remains unverified — see the outstanding-gap
+  note below, now narrowed to this one scenario only.
 - **T015**: `ruff check .`, `uv run mypy app`, `lint-imports --config ../.importlinter` all clean.
-- **T016**: Not completed live end-to-end for the same reason as T014 (no refresh token yet) —
-  `quickstart.md`'s Setup step 1 is the actual blocking prerequisite. The full backend suite was
-  run against a **freshly created** `pgvector/pgvector:pg16` container, twice, with the exact same
-  result both times: **192 passed, 1 skipped**, with exactly one failure —
-  `tests/unit/test_hash_chain.py::test_appended_sequence_has_no_broken_links` — reproduced only in
-  the full-suite run, passing cleanly (2/2) when run alone against the same fresh container.
-  Confirmed **pre-existing and unrelated to this feature**: this exact test is named in
-  `specs/ROADMAP.md`'s feature-011 log entry as one of five known full-suite test-ordering
-  flakes, already "git-stash-verified against unmodified code" there — not introduced or
-  worsened by any change in this feature. Not attempted to fix here (out of this feature's scope,
-  pre-existing, not caused by anything Gmail-related).
+- **T016**: The full backend suite was run against a **freshly created** `pgvector/pgvector:pg16`
+  container, twice, with the exact same result both times: **192 passed, 1 skipped**, with exactly
+  one failure — `tests/unit/test_hash_chain.py::test_appended_sequence_has_no_broken_links` —
+  reproduced only in the full-suite run, passing cleanly (2/2) when run alone against the same
+  fresh container. Confirmed **pre-existing and unrelated to this feature**: this exact test is
+  named in `specs/ROADMAP.md`'s feature-011 log entry as one of five known full-suite test-ordering
+  flakes, already "git-stash-verified against unmodified code" there. Also confirmed it does not
+  reproduce on real GitHub Actions CI (this feature's own PR: `lint`/`type-check`/`test` all green).
 - **T017**: `specs/ROADMAP.md` intentionally left unmodified, matching prior features' precedent.
 
-**Outstanding before this feature is fully live-verified, not just implemented and unit-tested**:
-a human must run `uv run python scripts/generate_gmail_token.py` (real, interactive Google login),
-add the printed `GMAIL_REFRESH_TOKEN` to `backend/.env`, then re-run `quickstart.md`'s Story 1–3
-validation sequence against a real connected mailbox.
+**Post-merge live verification (2026-08-25), run by the operator with real credentials**: after
+`GMAIL_CLIENT_ID`/`GMAIL_CLIENT_SECRET`/`GMAIL_REFRESH_TOKEN` were configured (the last one via a
+real, interactive run of `scripts/generate_gmail_token.py` — genuinely could not be automated, per
+`research.md`'s own reasoning), `--run-once gmail` was run twice against a freshly migrated,
+freshly seeded `pgvector/pgvector:pg16` container, with **real** Gmail API calls:
+
+- **Run 1 (cold)**: `envelopes_emitted=17 duplicates_skipped=0` — 17 real emails from the
+  connected mailbox became real ledger events. `sources` row: `status='connected'`,
+  `display_name='Meridian — Email'` (the same row `SimulatedCollector`'s fixture items already
+  used, exactly as `research.md` Decision 2 predicted). Directly queried: 17/17 events have a
+  correctly-parsed, valid-email-shaped `structured_payload->>'participant'` (confirming
+  `email.utils.parseaddr` correctly stripped display names from real Gmail `From` headers, not
+  just fixture-shaped test headers) and 17/17 real message bodies extracted successfully (zero
+  dropped for "no readable body," `spec.md` Edge Cases) — real proof `_extract_body_text`'s MIME
+  walking works against real Gmail payloads, not only the synthetic shapes in
+  `test_gmail_collector.py`. All 17 show `identity_status='unresolved'` — correct and expected:
+  the connected mailbox's real senders (e.g. LinkedIn notifications) don't match any stakeholder in
+  the demo/Meridian client profile, which is fixture data unrelated to this real inbox; REQ-M1-05's
+  "abstain, never guess" held for every one of them.
+- **Run 2 (warm, immediately after)**: `envelopes_emitted=0 duplicates_skipped=0` — confirms
+  SC-002 for real. The `duplicates_skipped=0` (not `>0`) is the *correct* signature of this
+  collector's specific idempotency design (`envelope_exists()` checked before the expensive
+  per-message fetch, `AudioCollector`'s Decision 10 precedent) — every already-seen message was
+  filtered out before ever reaching `RunCollectorUseCase`'s own dedup layer, so nothing was left
+  for that layer to count as a duplicate.
+
+This closes the "implemented and unit-tested but not yet live-verified" gap this section
+originally flagged for Story 1 and Story 2 (FR-001–FR-005, FR-009, FR-010, SC-001–SC-003) against
+a real Gmail account, not just fakes. **T014's live half (an invalid-token run) remains the one
+still-open item** — a smaller, lower-risk scenario than what's now confirmed, deferred rather than
+blocking, since it exercises the same already-unit-tested propagation path (T012) against a real
+but deliberately-broken credential.
+
+Separately, found and fixed post-merge: `.env.example` had no `GMAIL_*` entries at all (unlike
+`PYANNOTEAI_API_KEY`'s own precedent for a prior real-connector feature) — a real gap, now closed.
+`README.md` was deliberately left unmodified — it already stops covering any feature past 011
+(confirmed: zero mentions of `specs/019-meeting-audio-ingestion` either), so omitting Gmail from it
+matches this repository's own established convention rather than being an oversight.
