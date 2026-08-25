@@ -11,6 +11,10 @@ dependencies = [
     "asyncpg>=0.31.0",
     "cryptography>=44.0.0",
     "fastapi>=0.141.1",
+    "google-api-python-client>=2.199.0",
+    "google-auth>=2.57.0",
+    "google-auth-httplib2>=0.4.2",
+    "google-auth-oauthlib>=1.4.1",
     "hdbscan>=0.8.40",
     "langgraph>=1.2.11",
     "openai>=1.109.1",
@@ -71,6 +75,12 @@ ignore_missing_imports = true
 # py.typed marker (local storage discovery/reads use only pathlib — no override needed).
 [[tool.mypy.overrides]]
 module = "pyannoteai.*"
+ignore_missing_imports = true
+
+# specs/028-real-gmail-connector — googleapiclient/google-auth ship no inline types
+# or py.typed marker.
+[[tool.mypy.overrides]]
+module = ["googleapiclient.*", "google.oauth2.*", "google_auth_oauthlib.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
