@@ -24,6 +24,11 @@ tmp/
 secrets/
 backend/secrets/
 
+# Google Cloud Console's own default download filename for OAuth client
+# credentials (specs/028-real-gmail-connector) — never committed. The real
+# values belong in backend/.env (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET) instead.
+client_secret_*.json
+
 # Build outputs
 dist/
 build/

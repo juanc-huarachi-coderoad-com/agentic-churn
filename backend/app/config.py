@@ -104,5 +104,16 @@ class Settings(BaseSettings):
     # subdirectory's name is the meeting series it maps to (FR-015).
     meeting_audio_storage_path: str = "./demo/meeting-audio"
 
+    # Real Gmail connector (specs/028-real-gmail-connector) — read-only OAuth
+    # credentials for one connected mailbox. Same honest-empty-default discipline as
+    # openai_api_key above: GmailCollector fails visibly (a coverage gap), never
+    # silently, when unconfigured. gmail_refresh_token is obtained once by a human
+    # running scripts/generate_gmail_token.py locally — it can't be provisioned any
+    # other way, since it requires a real interactive Google login.
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
+    gmail_poll_interval_hours: int = 1
+
 
 settings = Settings()

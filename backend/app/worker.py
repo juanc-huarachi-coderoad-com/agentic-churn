@@ -17,13 +17,18 @@ scripts/run_narrator.py's own docstring used to say "no live/chained trigger pat
 anywhere in this pipeline yet"; this job is that path. Skips entirely (no reader,
 recompute, or narration work) when `events.created_at`'s max hasn't advanced since the
 last cycle (research.md Decision 2) — a quiet, healthy account costs nothing between
-real signals (constitution P6). Run with:
+real signals (constitution P6). specs/028-real-gmail-connector adds the sixth: the
+second real, non-simulated `Collector` (`GmailCollector`, after `AudioCollector`) — its
+own independent `RunCollectorUseCase.execute()` call, on its own configurable interval,
+never merged with `SimulatedCollector`'s run (that collector and its JSON fixture are
+untouched by this feature, an explicit requirement). Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
     uv run python -m app.worker --run-once retention
     uv run python -m app.worker --run-once audio
     uv run python -m app.worker --run-once pipeline
+    uv run python -m app.worker --run-once gmail
 """
 
 import argparse
@@ -40,6 +45,7 @@ from app.config import settings
 from app.db import async_session_factory, shredder_session_factory
 from app.ingestion.adapters.audio_collector import AudioCollector
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
+from app.ingestion.adapters.gmail_collector import GmailCollector, _RealGmailClient
 from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.local_storage_client import LocalStorageClient
 from app.ingestion.adapters.pyannote_diarization import diarize
@@ -221,6 +227,51 @@ async def _collect_audio() -> None:
     )
 
 
+def _run_gmail_collector() -> None:
+    asyncio.run(_collect_gmail())
+
+
+async def _collect_gmail() -> None:
+    # specs/028-real-gmail-connector — a third, independent collector run,
+    # never merged with the absence/audio collectors above (mirrors research.md
+    # Decision 1's precedent from specs/019). SimulatedCollector and its JSON
+    # fixture are never touched by this job.
+    with traced("gmail_collector"):
+        key_store = FileKeyStore(settings.data_keys_dir)
+        encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
+        async with async_session_factory() as session:
+            collector = GmailCollector(
+                client=_RealGmailClient(
+                    settings.gmail_client_id,
+                    settings.gmail_client_secret,
+                    settings.gmail_refresh_token,
+                ),
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                session=session,
+            )
+            use_case = RunCollectorUseCase(
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                events=SqlAlchemyEventRepository(session),
+                profile_context=SqlAlchemyClientProfileContext(session),
+                encryption=encryption,
+                key_store=key_store,
+            )
+            now = datetime.now(UTC)
+            # window_start/window_end are unused by GmailCollector.fetch() itself
+            # (it derives its own window from the ledger, research.md Decision 4)
+            # — passed through only for collector_runs' own record-keeping,
+            # mirroring AudioCollector's identical now()/now() call above.
+            result = await use_case.execute(
+                collector, window_start=now, window_end=now, trigger="poll"
+            )
+    logger.info(
+        "gmail collector: envelopes_emitted=%d duplicates_skipped=%d coverage_report_id=%s",
+        result.envelopes_emitted,
+        result.duplicates_skipped,
+        result.coverage_report_id,
+    )
+
+
 # specs/026-automated-pipeline-orchestration, research.md Decision 2 — in-process only,
 # not persisted. A restart re-runs one harmless cycle if nothing changed (the readers'
 # own idempotency checks, e.g. RecurrenceReader's already_interpreted() dedup, make a
@@ -368,6 +419,7 @@ _RUN_ONCE_JOBS = {
     "retention": _run_retention,
     "audio": _run_audio_collector,
     "pipeline": _run_pipeline_orchestration,
+    "gmail": _run_gmail_collector,
 }
 
 
@@ -413,12 +465,22 @@ def main() -> None:
     scheduler.add_job(
         _run_pipeline_orchestration, "interval", seconds=30, id="pipeline_orchestration"
     )
+    # specs/028-real-gmail-connector — its own configurable interval, like the
+    # audio collector above; email is not on the ~30-60s automated-pipeline path.
+    scheduler.add_job(
+        _run_gmail_collector,
+        "interval",
+        hours=settings.gmail_poll_interval_hours,
+        id="gmail_collector",
+    )
     scheduler.start()
     logger.info(
         "worker started — absence collector and score recompute on the hourly "
         "heartbeat, retention job on the daily heartbeat, audio collector every "
-        "%d hour(s), pipeline orchestration (readers/recompute/narration) every 30s",
+        "%d hour(s), pipeline orchestration (readers/recompute/narration) every 30s, "
+        "gmail collector every %d hour(s)",
         settings.audio_poll_interval_hours,
+        settings.gmail_poll_interval_hours,
     )
 
     running = True
