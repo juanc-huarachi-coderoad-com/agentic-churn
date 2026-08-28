@@ -26,7 +26,12 @@ adds the seventh: the third real, non-simulated `Collector` (`ZendeskCollector`)
 shape, same explicit "SimulatedCollector untouched" requirement; the one genuinely new
 piece of domain logic is classifying each ticket's audit history into
 created/resolved/reopened transitions, since Zendesk's own ticket object only exposes
-current status, never a history of changes. Run with:
+current status, never a history of changes. specs/030-real-warehouse-connector adds the
+eighth: the fourth real, non-simulated `Collector` (`WarehouseCollector`, a generic SQL
+connection + a client-authored query, not a vendor SDK) — and, separately, closes a real
+pre-existing gap in `_orchestrate_pipeline()` itself: `ComputeRollupsUseCase` (REQ-M2-06,
+feature 005) had no caller anywhere in this codebase until now, so the Usage reader's
+`rollups` projection was always empty in production regardless of source. Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
@@ -35,6 +40,7 @@ current status, never a history of changes. Run with:
     uv run python -m app.worker --run-once pipeline
     uv run python -m app.worker --run-once gmail
     uv run python -m app.worker --run-once zendesk
+    uv run python -m app.worker --run-once warehouse
 """
 
 import argparse
@@ -63,9 +69,11 @@ from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyMeetingSeriesConsentRepository,
     SqlAlchemyRetentionJobRepository,
 )
+from app.ingestion.adapters.warehouse_collector import WarehouseCollector, _RealWarehouseClient
 from app.ingestion.adapters.whisper_transcription import WhisperTranscriptionAdapter
 from app.ingestion.adapters.zendesk_collector import ZendeskCollector, _RealZendeskClient
 from app.ingestion.application.use_cases import (
+    ComputeRollupsUseCase,
     DetectAbsenceUseCase,
     RunCollectorUseCase,
     RunRetentionUseCase,
@@ -321,6 +329,46 @@ async def _collect_zendesk() -> None:
     )
 
 
+def _run_warehouse_collector() -> None:
+    asyncio.run(_collect_warehouse())
+
+
+async def _collect_warehouse() -> None:
+    # specs/030-real-warehouse-connector — a fifth, independent collector run,
+    # never merged with the others above. SimulatedCollector and its JSON
+    # fixture are never touched by this job.
+    with traced("warehouse_collector"):
+        key_store = FileKeyStore(settings.data_keys_dir)
+        encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
+        async with async_session_factory() as session:
+            collector = WarehouseCollector(
+                client=_RealWarehouseClient(
+                    settings.warehouse_connection_url,
+                    settings.warehouse_query_path,
+                ),
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+            )
+            use_case = RunCollectorUseCase(
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                events=SqlAlchemyEventRepository(session),
+                profile_context=SqlAlchemyClientProfileContext(session),
+                encryption=encryption,
+                key_store=key_store,
+            )
+            now = datetime.now(UTC)
+            # window_start/window_end unused by WarehouseCollector.fetch() itself
+            # (research.md Decision 5 — no connector-derived window).
+            result = await use_case.execute(
+                collector, window_start=now, window_end=now, trigger="poll"
+            )
+    logger.info(
+        "warehouse collector: envelopes_emitted=%d duplicates_skipped=%d coverage_report_id=%s",
+        result.envelopes_emitted,
+        result.duplicates_skipped,
+        result.coverage_report_id,
+    )
+
+
 # specs/026-automated-pipeline-orchestration, research.md Decision 2 — in-process only,
 # not persisted. A restart re-runs one harmless cycle if nothing changed (the readers'
 # own idempotency checks, e.g. RecurrenceReader's already_interpreted() dedup, make a
@@ -373,6 +421,17 @@ async def _orchestrate_pipeline() -> None:
             encryption = BucketedFernetEncryption(
                 FileKeyStore(settings.data_keys_dir), settings.encryption_key_path
             )
+
+            # specs/030-real-warehouse-connector, research.md Decision 6 — closes a
+            # real, pre-existing gap: ComputeRollupsUseCase (REQ-M2-06, feature 005)
+            # had no caller anywhere in this codebase until now, so `rollups` was
+            # always empty in production regardless of source, and UsageReader below
+            # could never see real usage/CSAT data. Rebuilds `rollups` from every
+            # usage_measurement/survey_response event in the ledger — the same
+            # "truncate + rebuild from events" shape event_threads/response_pairs
+            # already have, unmodified from its own existing implementation.
+            await ComputeRollupsUseCase(SqlAlchemyEventRepository(session)).execute()
+
             reader_findings = ReadersFindingRepository(session)
             messages = SqlAlchemyMessageEventRepository(session, encryption)
             gate = ValidationGate(
@@ -470,6 +529,7 @@ _RUN_ONCE_JOBS = {
     "pipeline": _run_pipeline_orchestration,
     "gmail": _run_gmail_collector,
     "zendesk": _run_zendesk_collector,
+    "warehouse": _run_warehouse_collector,
 }
 
 
@@ -531,15 +591,25 @@ def main() -> None:
         hours=settings.zendesk_poll_interval_hours,
         id="zendesk_collector",
     )
+    # specs/030-real-warehouse-connector — its own configurable interval, same
+    # shape as the gmail/zendesk collectors above.
+    scheduler.add_job(
+        _run_warehouse_collector,
+        "interval",
+        hours=settings.warehouse_poll_interval_hours,
+        id="warehouse_collector",
+    )
     scheduler.start()
     logger.info(
         "worker started — absence collector and score recompute on the hourly "
         "heartbeat, retention job on the daily heartbeat, audio collector every "
         "%d hour(s), pipeline orchestration (readers/recompute/narration) every 30s, "
-        "gmail collector every %d hour(s), zendesk collector every %d hour(s)",
+        "gmail collector every %d hour(s), zendesk collector every %d hour(s), "
+        "warehouse collector every %d hour(s)",
         settings.audio_poll_interval_hours,
         settings.gmail_poll_interval_hours,
         settings.zendesk_poll_interval_hours,
+        settings.warehouse_poll_interval_hours,
     )
 
     running = True

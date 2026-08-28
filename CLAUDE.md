@@ -1,5 +1,5 @@
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
-at specs/029-real-zendesk-connector/plan.md
+at specs/030-real-warehouse-connector/plan.md
 <!-- SPECKIT END -->

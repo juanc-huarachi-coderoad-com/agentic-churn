@@ -236,16 +236,25 @@ class ScoringCalculator:
         return min(total_positive_points, cap)
 
     def points_to_score(self, total_points: float) -> float:
+        # e^(-total_points/33) underflows to exactly 0.0 in float64 for very large
+        # total_points, which would otherwise yield score == 100.0 exactly —
+        # violating REQ-M6-16 ("never reaches 100") and score_runs.score's DB CHECK
+        # (score < 100). `min(raw, 99.99)` is deliberate over an `if raw >= X: return
+        # 99.99` threshold: score_runs.score is NUMERIC(5,2), so Postgres rounds any
+        # stored value >= 99.995 up to 100.00 before evaluating the CHECK — a raw
+        # value like 99.9999999999774 (float64 rarely lands on exactly 100.0) passed
+        # a naive `raw >= 100.0` guard uncaught, then failed the CHECK anyway once
+        # rounded at insert (specs/030-real-warehouse-connector — first surfaced once
+        # ComputeRollupsUseCase started actually feeding the Usage reader real data).
+        # A hard `if raw >= 99.995: return 99.99` threshold fixes that but introduces
+        # a discontinuity — total_points values straddling the threshold would
+        # produce a LOWER score just past it (99.994... -> 99.99), breaking
+        # tests/scoring/test_monotonicity.py's invariant. `min(raw, 99.99)` has no
+        # such jump: it's non-decreasing everywhere, a flat 99.99 plateau for every
+        # raw >= 99.99 (comfortably clear of the 99.995 rounding boundary) and the
+        # real asymptotic value below that.
         raw = 100.0 * (1.0 - math.exp(-total_points / _SCORE_SATURATION))
-        if raw >= 100.0:
-            # e^(-total_points/33) underflows to exactly 0.0 in float64 for very
-            # large total_points, which would otherwise yield score == 100.0 exactly
-            # — violating REQ-M6-16 ("never reaches 100") and score_runs.score's DB
-            # CHECK (score < 100). 99.99 is the largest value the NUMERIC(5,2) column
-            # can represent below 100. Only substituted for this genuine underflow
-            # case — ordinary high-but-truly-sub-100 scores keep their real precision.
-            return 99.99
-        return raw
+        return min(raw, 99.99)
 
 
 def compute_stakes(

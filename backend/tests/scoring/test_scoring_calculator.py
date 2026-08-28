@@ -107,15 +107,21 @@ def test_score_never_reaches_100():
 
 
 def test_score_approaches_100_smoothly_for_large_but_representable_points():
-    """A large but non-pathological total_points keeps its real sub-100 precision —
+    """A large total_points, safely below the 99.995 boundary where
+    `points_to_score`'s own NUMERIC(5,2)-rounding safeguard kicks in (raw values from
+    there round up to 100.00 at insert and fail `score_runs.score`'s CHECK —
+    specs/030-real-warehouse-connector, first surfaced once `ComputeRollupsUseCase`
+    started feeding the Usage reader real data), keeps its real sub-100 precision —
     proves points_to_score's saturation is genuine asymptotic behavior, not just the
-    99.99 clamp applying everywhere above some threshold."""
+    99.99 clamp applying everywhere above some threshold. (total_points=1000.0, used
+    here previously, actually lands at raw≈99.999999999993 — inside the clamp zone —
+    so it no longer demonstrates unclamped behavior; 200.0 does.)"""
     calculator = ScoringCalculator()
 
-    score = calculator.points_to_score(1000.0)
+    score = calculator.points_to_score(200.0)
 
-    assert score < 100.0
-    assert score == pytest.approx(100.0, abs=0.01)
+    assert score < 99.995
+    assert score == pytest.approx(99.7667, abs=0.001)
 
 
 def test_stakes_worked_check_for_meridian():

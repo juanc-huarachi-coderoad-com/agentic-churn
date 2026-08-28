@@ -123,5 +123,16 @@ class Settings(BaseSettings):
     zendesk_api_token: str = ""
     zendesk_poll_interval_hours: int = 1
 
+    # Real warehouse connector (specs/030-real-warehouse-connector) — a generic
+    # read-only SQL connection + a client-authored query file (research.md
+    # Decision 3), not a vendor SDK; "the warehouse" is inherently
+    # client-specific infrastructure, matching client_profile_path's own
+    # precedent above. warehouse_connection_url has no safe default (a real
+    # secret); warehouse_query_path does, matching client_profile_path's own
+    # "a real file location, not a secret" precedent.
+    warehouse_connection_url: str = ""
+    warehouse_query_path: str = "./demo/warehouse-query.sql"
+    warehouse_poll_interval_hours: int = 1
+
 
 settings = Settings()
