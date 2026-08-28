@@ -21,7 +21,12 @@ real signals (constitution P6). specs/028-real-gmail-connector adds the sixth: t
 second real, non-simulated `Collector` (`GmailCollector`, after `AudioCollector`) — its
 own independent `RunCollectorUseCase.execute()` call, on its own configurable interval,
 never merged with `SimulatedCollector`'s run (that collector and its JSON fixture are
-untouched by this feature, an explicit requirement). Run with:
+untouched by this feature, an explicit requirement). specs/029-real-zendesk-connector
+adds the seventh: the third real, non-simulated `Collector` (`ZendeskCollector`) — same
+shape, same explicit "SimulatedCollector untouched" requirement; the one genuinely new
+piece of domain logic is classifying each ticket's audit history into
+created/resolved/reopened transitions, since Zendesk's own ticket object only exposes
+current status, never a history of changes. Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
@@ -29,6 +34,7 @@ untouched by this feature, an explicit requirement). Run with:
     uv run python -m app.worker --run-once audio
     uv run python -m app.worker --run-once pipeline
     uv run python -m app.worker --run-once gmail
+    uv run python -m app.worker --run-once zendesk
 """
 
 import argparse
@@ -58,6 +64,7 @@ from app.ingestion.adapters.sqlalchemy_repositories import (
     SqlAlchemyRetentionJobRepository,
 )
 from app.ingestion.adapters.whisper_transcription import WhisperTranscriptionAdapter
+from app.ingestion.adapters.zendesk_collector import ZendeskCollector, _RealZendeskClient
 from app.ingestion.application.use_cases import (
     DetectAbsenceUseCase,
     RunCollectorUseCase,
@@ -272,6 +279,48 @@ async def _collect_gmail() -> None:
     )
 
 
+def _run_zendesk_collector() -> None:
+    asyncio.run(_collect_zendesk())
+
+
+async def _collect_zendesk() -> None:
+    # specs/029-real-zendesk-connector — a fourth, independent collector run,
+    # never merged with the others above. SimulatedCollector and its JSON
+    # fixture are never touched by this job.
+    with traced("zendesk_collector"):
+        key_store = FileKeyStore(settings.data_keys_dir)
+        encryption = BucketedFernetEncryption(key_store, settings.encryption_key_path)
+        async with async_session_factory() as session:
+            collector = ZendeskCollector(
+                client=_RealZendeskClient(
+                    settings.zendesk_subdomain,
+                    settings.zendesk_agent_email,
+                    settings.zendesk_api_token,
+                ),
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                session=session,
+            )
+            use_case = RunCollectorUseCase(
+                collector_runs=SqlAlchemyCollectorRunRepository(session),
+                events=SqlAlchemyEventRepository(session),
+                profile_context=SqlAlchemyClientProfileContext(session),
+                encryption=encryption,
+                key_store=key_store,
+            )
+            now = datetime.now(UTC)
+            # window_start/window_end unused by ZendeskCollector.fetch() itself
+            # (research.md Decision 6) — same shape as GmailCollector above.
+            result = await use_case.execute(
+                collector, window_start=now, window_end=now, trigger="poll"
+            )
+    logger.info(
+        "zendesk collector: envelopes_emitted=%d duplicates_skipped=%d coverage_report_id=%s",
+        result.envelopes_emitted,
+        result.duplicates_skipped,
+        result.coverage_report_id,
+    )
+
+
 # specs/026-automated-pipeline-orchestration, research.md Decision 2 — in-process only,
 # not persisted. A restart re-runs one harmless cycle if nothing changed (the readers'
 # own idempotency checks, e.g. RecurrenceReader's already_interpreted() dedup, make a
@@ -420,6 +469,7 @@ _RUN_ONCE_JOBS = {
     "audio": _run_audio_collector,
     "pipeline": _run_pipeline_orchestration,
     "gmail": _run_gmail_collector,
+    "zendesk": _run_zendesk_collector,
 }
 
 
@@ -473,14 +523,23 @@ def main() -> None:
         hours=settings.gmail_poll_interval_hours,
         id="gmail_collector",
     )
+    # specs/029-real-zendesk-connector — its own configurable interval, same
+    # shape as the gmail collector above.
+    scheduler.add_job(
+        _run_zendesk_collector,
+        "interval",
+        hours=settings.zendesk_poll_interval_hours,
+        id="zendesk_collector",
+    )
     scheduler.start()
     logger.info(
         "worker started — absence collector and score recompute on the hourly "
         "heartbeat, retention job on the daily heartbeat, audio collector every "
         "%d hour(s), pipeline orchestration (readers/recompute/narration) every 30s, "
-        "gmail collector every %d hour(s)",
+        "gmail collector every %d hour(s), zendesk collector every %d hour(s)",
         settings.audio_poll_interval_hours,
         settings.gmail_poll_interval_hours,
+        settings.zendesk_poll_interval_hours,
     )
 
     running = True
