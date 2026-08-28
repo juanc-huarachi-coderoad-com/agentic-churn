@@ -115,5 +115,13 @@ class Settings(BaseSettings):
     gmail_refresh_token: str = ""
     gmail_poll_interval_hours: int = 1
 
+    # Real Zendesk connector (specs/029-real-zendesk-connector) — static API-token
+    # auth, no interactive consent flow needed (unlike Gmail's OAuth). Same
+    # honest-empty-default discipline as gmail_client_id above.
+    zendesk_subdomain: str = ""
+    zendesk_agent_email: str = ""
+    zendesk_api_token: str = ""
+    zendesk_poll_interval_hours: int = 1
+
 
 settings = Settings()
