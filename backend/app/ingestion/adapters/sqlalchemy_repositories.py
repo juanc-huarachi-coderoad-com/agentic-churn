@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ingestion.application.ports import (
+    BackupJobRepositoryPort,
     ClientProfileContext,
     ClientProfileContextPort,
     CollectorRunRepositoryPort,
@@ -625,6 +626,47 @@ class SqlAlchemyRetentionJobRepository(RetentionJobRepositoryPort):
                 "completed_at": completed_at,
                 "buckets_evaluated": buckets_evaluated,
                 "buckets_shredded": buckets_shredded,
+                "status": status,
+                "error_detail": error_detail,
+            },
+        )
+        await self._session.commit()
+        return run_id
+
+
+class SqlAlchemyBackupJobRepository(BackupJobRepositoryPort):
+    """Mirrors `SqlAlchemyRetentionJobRepository.record_run`'s own shape — a single,
+    unrestricted `session`, no narrowly-scoped role needed (unlike `shred_bucket`,
+    this never writes application data, only its own audit row)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record_run(
+        self,
+        *,
+        started_at: datetime,
+        completed_at: datetime | None,
+        destination_path: str | None,
+        file_size_bytes: int | None,
+        status: str,
+        error_detail: str | None,
+    ) -> UUID:
+        run_id = uuid4()
+        await self._session.execute(
+            text(
+                "INSERT INTO backup_job_runs "
+                "(id, started_at, completed_at, destination_path, file_size_bytes, "
+                "status, error_detail) "
+                "VALUES (:id, :started_at, :completed_at, :destination_path, "
+                ":file_size_bytes, (:status)::backup_job_status, :error_detail)"
+            ),
+            {
+                "id": run_id,
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "destination_path": destination_path,
+                "file_size_bytes": file_size_bytes,
                 "status": status,
                 "error_detail": error_detail,
             },

@@ -351,6 +351,52 @@ class RetentionJobRepositoryPort(ABC):
 
 
 # ---------------------------------------------------------------------------
+# Backup job (specs/031-production-deployment-hardening-ii, FR-001..004)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BackupResult:
+    destination_path: str
+    file_size_bytes: int
+
+
+class BackupDestinationPort(ABC):
+    """A real, verifiable `pg_dump` run against this deployment's own database, plus
+    pruning files older than the configured retention window (`research.md` Decision
+    1/2) — a real, provider-agnostic filesystem implementation today
+    (`FilesystemBackupDestination`), with a cloud object-storage adapter deferred until
+    a concrete provider is chosen (FR-014), matching `KeyStorePort`'s own "port now,
+    cloud adapter later" precedent exactly."""
+
+    @abstractmethod
+    async def create_backup(self) -> BackupResult:
+        """Runs the backup and prunes old files; raises on any failure (a `pg_dump`
+        non-zero exit, an unwritable destination) rather than returning a partial or
+        sentinel result — `RunBackupUseCase` is the only caller and always wraps this
+        in a try/except that records the outcome either way."""
+        ...
+
+
+class BackupJobRepositoryPort(ABC):
+    @abstractmethod
+    async def record_run(
+        self,
+        *,
+        started_at: datetime,
+        completed_at: datetime | None,
+        destination_path: str | None,
+        file_size_bytes: int | None,
+        status: str,
+        error_detail: str | None,
+    ) -> UUID:
+        """Writes one `backup_job_runs` row (FR-004) — durable, queryable
+        independent of application logs, mirroring `RetentionJobRepositoryPort.
+        record_run`'s own shape."""
+        ...
+
+
+# ---------------------------------------------------------------------------
 # Meeting series consent (specs/019-meeting-audio-ingestion, FR-004/FR-005)
 # ---------------------------------------------------------------------------
 

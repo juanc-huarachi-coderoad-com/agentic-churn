@@ -31,7 +31,13 @@ eighth: the fourth real, non-simulated `Collector` (`WarehouseCollector`, a gene
 connection + a client-authored query, not a vendor SDK) — and, separately, closes a real
 pre-existing gap in `_orchestrate_pipeline()` itself: `ComputeRollupsUseCase` (REQ-M2-06,
 feature 005) had no caller anywhere in this codebase until now, so the Usage reader's
-`rollups` projection was always empty in production regardless of source. Run with:
+`rollups` projection was always empty in production regardless of source.
+specs/031-production-deployment-hardening-ii adds the ninth and tenth: a daily `pg_dump`
+backup job (`RunBackupUseCase`, mirroring `RunRetentionUseCase`'s own try/record/re-raise
+shape) and a short-interval alert-check job (`RunAlertCheckUseCase`, `app.alerting`) that
+evaluates three fixed, already-detectable conditions and sends a provider-agnostic
+webhook, de-duplicated via a DB-enforced "one open alert per condition" constraint —
+silent when nothing is wrong (constitution P6). Run with:
     uv run python -m app.worker                  # scheduler loop (production)
     uv run python -m app.worker --run-once absence
     uv run python -m app.worker --run-once score
@@ -41,6 +47,8 @@ feature 005) had no caller anywhere in this codebase until now, so the Usage rea
     uv run python -m app.worker --run-once gmail
     uv run python -m app.worker --run-once zendesk
     uv run python -m app.worker --run-once warehouse
+    uv run python -m app.worker --run-once backup
+    uv run python -m app.worker --run-once alert_check
 """
 
 import argparse
@@ -53,15 +61,21 @@ from datetime import UTC, datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import text
 
+from app.alerting.adapters.sqlalchemy_alert_repository import SqlAlchemyAlertRepository
+from app.alerting.adapters.sqlalchemy_condition_reader import SqlAlchemyAlertConditionReader
+from app.alerting.adapters.webhook_notifier import HttpxWebhookNotifier
+from app.alerting.application.use_cases import RunAlertCheckUseCase
 from app.config import settings
 from app.db import async_session_factory, shredder_session_factory
 from app.ingestion.adapters.audio_collector import AudioCollector
+from app.ingestion.adapters.backup_destination import FilesystemBackupDestination
 from app.ingestion.adapters.encryption import BucketedFernetEncryption
 from app.ingestion.adapters.gmail_collector import GmailCollector, _RealGmailClient
 from app.ingestion.adapters.key_store import FileKeyStore
 from app.ingestion.adapters.local_storage_client import LocalStorageClient
 from app.ingestion.adapters.pyannote_diarization import diarize
 from app.ingestion.adapters.sqlalchemy_repositories import (
+    SqlAlchemyBackupJobRepository,
     SqlAlchemyClientProfileContext,
     SqlAlchemyCollectorRunRepository,
     SqlAlchemyCommitmentLookup,
@@ -75,6 +89,7 @@ from app.ingestion.adapters.zendesk_collector import ZendeskCollector, _RealZend
 from app.ingestion.application.use_cases import (
     ComputeRollupsUseCase,
     DetectAbsenceUseCase,
+    RunBackupUseCase,
     RunCollectorUseCase,
     RunRetentionUseCase,
 )
@@ -194,6 +209,42 @@ async def _retain() -> None:
         result.buckets_shredded,
         result.buckets_evaluated,
     )
+
+
+def _run_backup() -> None:
+    asyncio.run(_backup())
+
+
+async def _backup() -> None:
+    with traced("backup_job"):
+        destination = FilesystemBackupDestination(
+            database_url=settings.database_url,
+            backup_dir=settings.backup_dir,
+            retention_days=settings.backup_retention_days,
+        )
+        async with async_session_factory() as session:
+            use_case = RunBackupUseCase(
+                destination=destination,
+                backup_repo=SqlAlchemyBackupJobRepository(session),
+            )
+            await use_case.execute()
+    logger.info("backup job succeeded")
+
+
+def _run_alert_check() -> None:
+    asyncio.run(_alert_check())
+
+
+async def _alert_check() -> None:
+    with traced("alert_check"):
+        async with async_session_factory() as session:
+            use_case = RunAlertCheckUseCase(
+                conditions=SqlAlchemyAlertConditionReader(session),
+                alerts=SqlAlchemyAlertRepository(session),
+                notifier=HttpxWebhookNotifier(settings.alert_webhook_url),
+            )
+            await use_case.execute()
+    logger.info("alert check completed")
 
 
 def _run_audio_collector() -> None:
@@ -530,6 +581,8 @@ _RUN_ONCE_JOBS = {
     "gmail": _run_gmail_collector,
     "zendesk": _run_zendesk_collector,
     "warehouse": _run_warehouse_collector,
+    "backup": _run_backup,
+    "alert_check": _run_alert_check,
 }
 
 
@@ -599,17 +652,34 @@ def main() -> None:
         hours=settings.warehouse_poll_interval_hours,
         id="warehouse_collector",
     )
+    # specs/031-production-deployment-hardening-ii, research.md Decision 1 — its own
+    # configurable interval, matching the retention job's own daily cadence.
+    scheduler.add_job(
+        _run_backup, "interval", hours=settings.backup_poll_interval_hours, id="backup_job"
+    )
+    # specs/031-production-deployment-hardening-ii, research.md Decision 3 — a much
+    # shorter interval than the safety jobs it watches, since an alert's whole value is
+    # noticing a failure promptly, not on the next daily cycle.
+    scheduler.add_job(
+        _run_alert_check,
+        "interval",
+        minutes=settings.alert_poll_interval_minutes,
+        id="alert_check",
+    )
     scheduler.start()
     logger.info(
         "worker started — absence collector and score recompute on the hourly "
         "heartbeat, retention job on the daily heartbeat, audio collector every "
         "%d hour(s), pipeline orchestration (readers/recompute/narration) every 30s, "
         "gmail collector every %d hour(s), zendesk collector every %d hour(s), "
-        "warehouse collector every %d hour(s)",
+        "warehouse collector every %d hour(s), backup job every %d hour(s), "
+        "alert check every %d minute(s)",
         settings.audio_poll_interval_hours,
         settings.gmail_poll_interval_hours,
         settings.zendesk_poll_interval_hours,
         settings.warehouse_poll_interval_hours,
+        settings.backup_poll_interval_hours,
+        settings.alert_poll_interval_minutes,
     )
 
     running = True

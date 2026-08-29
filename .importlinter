@@ -61,3 +61,4 @@ containers =
     app.narrator
     app.experience
     app.auth
+    app.alerting
