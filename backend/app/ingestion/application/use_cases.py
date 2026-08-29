@@ -14,6 +14,8 @@ from uuid import UUID
 
 from app.ingestion.application.collector import Collector
 from app.ingestion.application.ports import (
+    BackupDestinationPort,
+    BackupJobRepositoryPort,
     ClientProfileContext,
     ClientProfileContextPort,
     CollectorRunRepositoryPort,
@@ -731,4 +733,47 @@ class RunRetentionUseCase:
             buckets_evaluated=buckets_evaluated,
             buckets_shredded=buckets_shredded,
             status="succeeded",
+        )
+
+
+# ---------------------------------------------------------------------------
+# Backup job (specs/031-production-deployment-hardening-ii, FR-001..004)
+# ---------------------------------------------------------------------------
+
+
+class RunBackupUseCase:
+    """Scheduled `pg_dump` backup with retention cleanup (`research.md` Decisions 1/2) —
+    exact mirror of `RunRetentionUseCase`'s own try/record/re-raise shape: a failure is
+    recorded as an honest `backup_job_runs` row either way, then re-raised so the
+    caller's own schedule naturally retries on the next cycle."""
+
+    def __init__(
+        self, destination: BackupDestinationPort, backup_repo: BackupJobRepositoryPort
+    ) -> None:
+        self._destination = destination
+        self._backup_repo = backup_repo
+
+    async def execute(self, *, now: datetime | None = None) -> UUID:
+        started_at = now or datetime.now(UTC)
+        try:
+            result = await self._destination.create_backup()
+        except Exception as exc:
+            logger.error("backup job failed: %s", exc)
+            await self._backup_repo.record_run(
+                started_at=started_at,
+                completed_at=datetime.now(UTC),
+                destination_path=None,
+                file_size_bytes=None,
+                status="failed",
+                error_detail=str(exc),
+            )
+            raise
+
+        return await self._backup_repo.record_run(
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+            destination_path=result.destination_path,
+            file_size_bytes=result.file_size_bytes,
+            status="succeeded",
+            error_detail=None,
         )

@@ -36,6 +36,12 @@ WORKDIR /app
 
 COPY --from=builder --chown=app:app /app /app
 
+# specs/031-production-deployment-hardening-ii — pg_dump/pg_restore for the scheduled
+# backup job (research.md Decision 2); not needed by the api service but shared here since
+# both stages come from the same image (docker-compose.yml only mounts ./backups on worker).
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 USER app
 
 ENV PATH="/app/.venv/bin:$PATH"

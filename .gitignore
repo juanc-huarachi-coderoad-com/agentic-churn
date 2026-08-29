@@ -24,6 +24,12 @@ tmp/
 secrets/
 backend/secrets/
 
+# Database backup dumps (specs/031-production-deployment-hardening-ii) — contain the
+# same encrypted-at-rest ciphertext plus plaintext metadata the live database does;
+# never committed, same discipline as secrets/ above.
+backups/
+backend/backups/
+
 # Google Cloud Console's own default download filename for OAuth client
 # credentials (specs/028-real-gmail-connector) — never committed. The real
 # values belong in backend/.env (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET) instead.

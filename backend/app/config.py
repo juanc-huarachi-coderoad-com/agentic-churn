@@ -134,5 +134,22 @@ class Settings(BaseSettings):
     warehouse_query_path: str = "./demo/warehouse-query.sql"
     warehouse_poll_interval_hours: int = 1
 
+    # Backup job (specs/031-production-deployment-hardening-ii, research.md Decision 1) —
+    # a real file location like client_profile_path above, not a secret, so it gets a real
+    # default. backup_retention_days is deliberately independent of retention_window_days
+    # (that one governs crypto-shredding of live rows; this one governs how long backup
+    # *files* are kept for disaster recovery — conflating them would let an old backup file
+    # outlive the very key it needs to be decrypted safely).
+    backup_dir: str = "./backups"
+    backup_poll_interval_hours: int = 24
+    backup_retention_days: int = 30
+
+    # Alerting (specs/031-production-deployment-hardening-ii, research.md Decision 3) — a
+    # plain webhook POST, not a named vendor's API (Slack/PagerDuty/anything that accepts
+    # JSON all work identically). Same honest-empty-default discipline as every other secret
+    # above: unset means the alert check still runs and logs, but sends nothing (FR-009).
+    alert_webhook_url: str = ""
+    alert_poll_interval_minutes: int = 15
+
 
 settings = Settings()

@@ -57,6 +57,10 @@ services:
       # running here may also be the first to create a new day's bucket key.
       - ./secrets/data-keys:/app/secrets/data-keys
       - ./demo:/app/demo:ro
+      # Read-write: the scheduled backup job (specs/031-production-deployment-hardening-ii)
+      # writes pg_dump output here and prunes files older than backup_retention_days — only
+      # the worker runs scheduled jobs, matching every other job's own precedent above.
+      - ./backups:/app/backups
     depends_on:
       migrate:
         condition: service_completed_successfully
